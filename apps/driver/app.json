@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "ماسية الشرق - السائق",
+    "slug": "masiat-driver",
+    "scheme": "masiatdriver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#1B1564",
+    "plugins": [
+      "expo-router",
+      ["expo-camera", { "cameraPermission": "نحتاج الكاميرا لمسح باركود العامل" }],
+      ["expo-location", { "locationAlwaysAndWhenInUsePermission": "نحتاج الموقع لتسجيل نقاط المسح" }]
+    ],
+    "extra": {
+      "supabaseUrl": "",
+      "supabaseAnonKey": "",
+      "googleMapsApiKey": ""
+    }
+  }
+}

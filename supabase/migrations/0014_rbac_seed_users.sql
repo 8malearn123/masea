@@ -1,0 +1,36 @@
+-- =============================================================
+-- Masiat Alsharq ERP — 0014 RBAC demo users (reference)
+-- =============================================================
+-- Auth users must be created through Supabase Auth (GoTrue), not by
+-- inserting into auth.users directly. Create each user below via the
+-- Supabase dashboard (Authentication → Add user) or the Admin API, then
+-- the on_auth_user_created trigger provisions a user_profiles row.
+-- After creation, set role + branch with the statements at the bottom.
+--
+-- Demo credentials (password for all: Demo@1234):
+--   role                | name                | branch  | email
+--   --------------------|---------------------|---------|---------------------------
+--   admin (مدير عام)    | منصور المكرمي       | نجران   | gm@demo.masiatalsharq.sa
+--   operations_manager  | فهد الشهري          | نجران   | ops@demo.masiatalsharq.sa
+--   branch_manager      | سعد آل مريح         | جازان   | branch@demo.masiatalsharq.sa
+--   sales               | نورة العتيبي        | شرورة   | sales@demo.masiatalsharq.sa
+--   call_center         | ريم الزهراني        | حبونا   | cc@demo.masiatalsharq.sa
+--   driver              | ماجد الحربي         | نجران   | driver@demo.masiatalsharq.sa
+--   housing_supervisor  | منى الغامدي         | جازان   | housing@demo.masiatalsharq.sa
+--   hr                  | خالد الدوسري        | نجران   | hr@demo.masiatalsharq.sa
+--   accountant          | بدر المالكي         | نجران   | acc@demo.masiatalsharq.sa
+--   external_office     | ياسر الأنصاري       | شرورة   | ext@demo.masiatalsharq.sa
+--
+-- The same ten accounts are available instantly (no backend) via the
+-- frontend demo mode on the login screen for testing the permission UI.
+-- =============================================================
+
+-- Example: after creating the auth users, assign role + branch by email.
+-- (Run once the users exist.)
+--
+-- update user_profiles p set
+--   role = 'branch_manager',
+--   branch_id = (select id from branches where name = 'جازان' limit 1),
+--   full_name = 'سعد آل مريح'
+-- from auth.users u
+-- where u.id = p.id and u.email = 'branch@demo.masiatalsharq.sa';

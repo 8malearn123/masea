@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "ماسية الشرق - السكن",
+    "slug": "masiat-housing",
+    "scheme": "masiathousing",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "primaryColor": "#1B1564",
+    "plugins": ["expo-router"],
+    "extra": {
+      "supabaseUrl": "",
+      "supabaseAnonKey": ""
+    }
+  }
+}

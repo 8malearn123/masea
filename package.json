@@ -1,0 +1,38 @@
+{
+  "name": "masiat-alsharq-erp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Masiat Alsharq Recruitment ERP — by Qimmah Code (QUO-000105)",
+  "workspaces": [
+    "packages/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/web",
+    "lint": "npm run lint --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace apps/web",
+    "format": "npm run format --workspace apps/web",
+    "prepare": "husky || true",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7"
+  },
+  "lint-staged": {
+    "apps/web/**/*.{ts,tsx}": [
+      "bash -c 'npm run typecheck --workspace apps/web'",
+      "prettier --write"
+    ],
+    "*.{css,json,md}": [
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

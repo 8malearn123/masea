@@ -1,0 +1,98 @@
+import type { SystemUser } from '@/features/rbac/types';
+
+const USERS: SystemUser[] = [
+  {
+    id: 'u1',
+    full_name: 'سلطان المالكي',
+    email: 'sultan@masiat.sa',
+    role: 'admin',
+    branch: 'نجران',
+    is_active: true,
+    last_login: '2026-06-14T07:30:00Z',
+  },
+  {
+    id: 'u2',
+    full_name: 'عبدالرحمن الحربي',
+    email: 'ops@masiat.sa',
+    role: 'operations_manager',
+    branch: 'كل الفروع',
+    is_active: true,
+    last_login: '2026-06-13T19:00:00Z',
+  },
+  {
+    id: 'u3',
+    full_name: 'نوال العمري',
+    email: 'jazan.mgr@masiat.sa',
+    role: 'branch_manager',
+    branch: 'جازان',
+    is_active: true,
+    last_login: '2026-06-13T16:45:00Z',
+  },
+  {
+    id: 'u4',
+    full_name: 'خالد الدوسري',
+    email: 'khaled.sales@masiat.sa',
+    role: 'sales',
+    branch: 'نجران',
+    is_active: true,
+    last_login: '2026-06-14T08:10:00Z',
+  },
+  {
+    id: 'u5',
+    full_name: 'ريم الزهراني',
+    email: 'reem.cc@masiat.sa',
+    role: 'call_center',
+    branch: 'نجران',
+    is_active: true,
+    last_login: '2026-06-14T08:00:00Z',
+  },
+  {
+    id: 'u6',
+    full_name: 'سعيد المطيري',
+    email: 'saeed.driver@masiat.sa',
+    role: 'driver',
+    branch: 'جازان',
+    is_active: true,
+    last_login: '2026-06-14T06:20:00Z',
+  },
+  {
+    id: 'u7',
+    full_name: 'منى الغامدي',
+    email: 'mona.housing@masiat.sa',
+    role: 'housing_supervisor',
+    branch: 'نجران',
+    is_active: true,
+    last_login: '2026-06-13T21:00:00Z',
+  },
+  {
+    id: 'u8',
+    full_name: 'فاطمة السبيعي',
+    email: 'hr@masiat.sa',
+    role: 'hr',
+    branch: 'كل الفروع',
+    is_active: true,
+    last_login: '2026-06-13T14:30:00Z',
+  },
+  {
+    id: 'u9',
+    full_name: 'ماجد الشهري',
+    email: 'acc@masiat.sa',
+    role: 'accountant',
+    branch: 'كل الفروع',
+    is_active: true,
+    last_login: '2026-06-12T11:00:00Z',
+  },
+  {
+    id: 'u10',
+    full_name: 'مكتب مانيلا',
+    email: 'manila@external.com',
+    role: 'external_office',
+    branch: 'شرورة',
+    is_active: false,
+    last_login: '2026-05-28T09:00:00Z',
+  },
+];
+
+export async function listSystemUsers(): Promise<SystemUser[]> {
+  return USERS;
+}

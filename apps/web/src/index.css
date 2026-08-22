@@ -1,0 +1,151 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+
+  /* ---- Design tokens (Masiat identity — diamond-blue system) ---- */
+  --color-navy: #1f58a8;
+  --color-gold: #c9a24a;
+  --color-purple: #65738c;
+  --color-teal: #2e9e5b;
+  --color-brand: #1f58a8;
+  --color-brand-accent: #c9a24a;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+
+  --shadow-card: 0 1px 3px rgba(27, 21, 100, 0.08), 0 1px 2px rgba(27, 21, 100, 0.06);
+}
+
+/* Always-visible focus ring for keyboard users (a11y) */
+:focus-visible {
+  outline: 2px solid var(--color-navy);
+  outline-offset: 2px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-navy-50 font-sans text-navy-900 antialiased;
+}
+
+/* Numbers always rendered with JetBrains Mono, even inside Arabic text */
+.num,
+[data-num] {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-feature-settings: 'tnum';
+  direction: ltr;
+  unicode-bidi: embed;
+  display: inline-block;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-white p-5 shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition;
+  }
+  .btn-primary {
+    @apply btn bg-navy text-white hover:bg-navy-700;
+  }
+  .btn-gold {
+    @apply btn bg-gold text-white hover:bg-gold-600;
+  }
+  .btn-ghost {
+    @apply btn text-navy hover:bg-navy-50;
+  }
+  .input {
+    @apply w-full rounded-xl border border-navy-100 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-navy focus:ring-2 focus:ring-navy/15;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  /* Masiat customer funnel — flat brand buttons */
+  .btn-brand {
+    @apply btn bg-brand text-white hover:bg-brand-dark;
+  }
+  .btn-accent {
+    @apply btn bg-brand-accent font-bold text-white hover:brightness-95;
+  }
+  .btn-outline-brand {
+    @apply btn border border-brand text-brand hover:bg-brand-50;
+  }
+}
+
+/* ---- Landing / marketing animations ---- */
+@layer utilities {
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+    background-size: 38px 38px;
+  }
+  /* Subtle Islamic geometric (8-pointed khatam star) — gold lines on dark surfaces */
+  .bg-arabesque {
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='72'%20height='72'%20viewBox='0%200%2072%2072'%3E%3Cg%20fill='none'%20stroke='%23C9A24A'%20stroke-width='1'%3E%3Cpolygon%20points='36,6%2066,36%2036,66%206,36'/%3E%3Cpolygon%20points='14,14%2058,14%2058,58%2014,58'/%3E%3Ccircle%20cx='36'%20cy='36'%20r='8'/%3E%3Ccircle%20cx='0'%20cy='0'%20r='4'/%3E%3Ccircle%20cx='72'%20cy='0'%20r='4'/%3E%3Ccircle%20cx='0'%20cy='72'%20r='4'/%3E%3Ccircle%20cx='72'%20cy='72'%20r='4'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 72px 72px;
+  }
+  .animate-fade-up {
+    opacity: 0;
+    animation: fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  .animate-gradient {
+    background-size: 200% 200%;
+    animation: gradientShift 8s ease infinite;
+  }
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+@keyframes gradientShift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-float,
+  .animate-gradient {
+    animation: none;
+    opacity: 1;
+  }
+}
