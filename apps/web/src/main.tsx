@@ -7,8 +7,8 @@ if (!root) throw new Error('Root element #root not found');
 if (envError) {
   renderBootError(
     root,
-    'إعداد ناقص — متغيّرات البيئة',
-    `${envError}\n\nSet these in your host's environment variables\n(Vercel → Settings → Environment Variables), then redeploy.\nVite inlines them at build time, so a redeploy is required.`,
+    'إعداد غير مكتمل — متغيّرات البيئة',
+    `${envError}\n\nSupabase is optional: leave both variables unset and the app runs\nin demo mode. Set BOTH to connect a real backend, then redeploy —\nVite inlines them at build time, so a redeploy is required.`,
   );
 } else {
   // Dynamic import: defers loading the app (and everything it pulls in) until

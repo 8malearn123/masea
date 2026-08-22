@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { env } from '@/shared/lib/env';
+import { env, isBackendConfigured } from '@/shared/lib/env';
 import { isDemoActive } from '@/lib/demo';
 
 /**
@@ -17,7 +17,9 @@ function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise
   // Demo mode: no real backend — reject immediately so every read shows its seed
   // data at once and every write swallows the (ignorable) unreachable-backend
   // error, keeping the optimistic UI. Avoids a pointless network wait per page.
-  if (isDemoActive()) {
+  // Applies both when a demo account is signed in and when the host supplied no
+  // Supabase credentials at all, where there is nothing to reach either.
+  if (!isBackendConfigured || isDemoActive()) {
     return Promise.reject(new DOMException('demo mode — offline', 'AbortError'));
   }
 
