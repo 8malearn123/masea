@@ -1,18 +1,28 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { FileText } from 'lucide-react';
 import { sar } from '@/lib/format';
-import type { ServiceCode, WorkerProfile } from '@/lib/funnel';
+import type { ServiceCode } from '@/lib/funnel';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { usePrice } from '@/hooks/usePricing';
 import { useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { SERVICE_FLOWS } from '@/lib/wizardConfig';
+import { BeneficiaryStep } from '@/features/requests/components/BeneficiaryStep';
+import { PlaceStep } from '@/features/requests/components/PlaceStep';
+import { PeriodFields } from '@/features/requests/components/PeriodFields';
+import { MatchedWorkerPicker } from '@/features/catalog/components/MatchedWorkerPicker';
+import type { RequestNeed } from '@/features/catalog/lib/matching';
+import { isOccasion, type PlaceDetails } from '@/features/requests/types';
+import { periodLabel } from '@/features/requests/lib/period';
 import {
   NATIONALITIES,
   PROFESSIONS,
   TASK_TYPES,
   PAYMENT_METHODS,
   TRACKING_STAGES,
+  draftPeriod,
   priceParams,
   type OrderDraft,
 } from '@/lib/orderTypes';
@@ -86,63 +96,6 @@ function RadioCards({
   );
 }
 
-function WorkerPicker({
-  workers,
-  selectedId,
-  onSelect,
-  allowNone,
-}: {
-  workers: WorkerProfile[];
-  selectedId: string | null;
-  onSelect: (w: WorkerProfile | null) => void;
-  allowNone?: boolean;
-}) {
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {allowNone && (
-        <button
-          type="button"
-          onClick={() => onSelect(null)}
-          className={
-            'rounded-xl border p-4 text-center text-sm transition ' +
-            (selectedId === null
-              ? 'border-brand bg-brand-50'
-              : 'border-brand-100 hover:border-brand')
-          }
-        >
-          بدون تحديد — اتركوا الاختيار لكم
-        </button>
-      )}
-      {workers.map((w) => (
-        <button
-          key={w.id}
-          type="button"
-          onClick={() => onSelect(w)}
-          className={
-            'flex items-center gap-3 rounded-xl border p-3.5 text-right transition ' +
-            (selectedId === w.id
-              ? 'border-brand bg-brand-50'
-              : 'border-brand-100 hover:border-brand')
-          }
-        >
-          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand-50 font-bold text-brand">
-            {w.full_name.charAt(0)}
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-bold text-brand">{w.full_name}</span>
-            <span className="block text-xs text-brand-dark/60">
-              {w.nationality} · {w.profession}
-            </span>
-            <span className="num block text-xs text-brand-accent">
-              {w.monthly_salary} ر.س / شهر
-            </span>
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function Money({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
   return (
     <div className="flex items-center justify-between py-1.5">
@@ -173,13 +126,29 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   const [paying, setPaying] = useState(false);
   const [result, setResult] = useState<CreateResult | null>(null);
 
-  const { data: workers = [] } = useWorkerProfiles();
+  const { data: workers = [], isLoading: workersLoading } = useWorkerProfiles();
   const params = useMemo(() => priceParams(draft), [draft]);
   const { data: price } = usePrice(service, params, true);
   const createRequest = useCreateRequest();
 
   const step = flow[stepIndex];
   const update = (patch: Partial<OrderDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const updatePlace = (patch: Partial<PlaceDetails>) =>
+    setDraft((d) => ({ ...d, place: { ...d.place, ...patch } }));
+
+  const period = useMemo(() => draftPeriod(draft), [draft]);
+  const selectedWorker = workers.find((w) => w.id === draft.workerProfileId) ?? null;
+
+  /** احتياج الطلب كما يُغذّي محرّك الترشيح. */
+  const need: RequestNeed = useMemo(
+    () => ({
+      place: draft.place,
+      period,
+      nationality: draft.nationality || undefined,
+      profession: draft.profession || undefined,
+    }),
+    [draft.place, draft.nationality, draft.profession, period],
+  );
 
   const filteredWorkers = useMemo(() => {
     if (service === 'recruitment') {
@@ -199,16 +168,28 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
     switch (key) {
       case 'nationality_profession':
         return draft.nationality && draft.profession ? null : 'اختر الجنسية والمهنة.';
-      case 'package':
-        return draft.monthlySalary > 0 && draft.contractMonths > 0
+      case 'beneficiary':
+        if (!draft.place.beneficiaryType) return 'اختر نوع المستفيد من الخدمة.';
+        return isOccasion(draft.place.beneficiaryType) && !draft.place.occasionType
+          ? 'اختر نوع المناسبة.'
+          : null;
+      case 'place':
+        if (draft.place.floors < 1 || draft.place.rooms < 1)
+          return 'حدّد عدد الأدوار والغرف في مكان الخدمة.';
+        return draft.place.careNeeds.length > 0
           ? null
-          : 'حدّد الراتب ومدة العقد.';
+          : 'اختر احتياج رعاية واحدًا على الأقل ليُرشَّح لك الأنسب.';
+      case 'package':
+        return draft.monthlySalary > 0 && draft.contractMonths > 0 && draft.startDate
+          ? null
+          : 'حدّد الراتب ومدة العقد وتاريخ المباشرة المتوقّع.';
       case 'select_worker':
+        if (service === 'daily_rental') return null; // يجوز ترك الاختيار للشركة
         return draft.workerProfileId ? null : 'اختر العاملة المطلوبة.';
       case 'duration':
-        return draft.months >= 1 ? null : 'حدّد عدد الأشهر.';
+        return draft.startDate && draft.months >= 1 ? null : 'حدّد تاريخ البداية وعدد الأشهر.';
       case 'dates':
-        return draft.startDate && draft.days >= 1 ? null : 'حدّد التاريخ وعدد الأيام.';
+        return draft.startDate && draft.days >= 1 ? null : 'حدّد تاريخ البداية وعدد الأيام.';
       case 'task':
         return draft.taskType ? null : 'اختر نوع المهمة.';
       case 'employer':
@@ -249,7 +230,12 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
     setPaying(true);
     // TODO: integrate Moyasar (mada/Apple Pay) + Tamara here. Stubbed success.
     await new Promise((r) => setTimeout(r, 1200));
-    const res = await createRequest.mutateAsync({ draft, price });
+    const res = await createRequest.mutateAsync({
+      draft,
+      price,
+      serviceName,
+      worker: selectedWorker,
+    });
     setResult(res);
     setPaying(false);
     setStepIndex(flow.length - 1); // jump to confirm
@@ -279,6 +265,10 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             </Field>
           </div>
         );
+      case 'beneficiary':
+        return <BeneficiaryStep place={draft.place} onChange={updatePlace} />;
+      case 'place':
+        return <PlaceStep place={draft.place} onChange={updatePlace} />;
       case 'package':
         return (
           <div className="space-y-4">
@@ -298,30 +288,50 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
                 placeholder="اختر المدة بالأشهر"
               />
             </Field>
+            <PeriodFields
+              startDate={draft.startDate}
+              unit="month"
+              count={draft.contractMonths}
+              maxCount={36}
+              onChange={(patch) =>
+                update({
+                  ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
+                  ...(patch.count !== undefined ? { contractMonths: patch.count } : {}),
+                })
+              }
+            />
           </div>
         );
       case 'cv':
         return (
           <div>
             <p className="mb-3 text-sm text-brand-dark/60">
-              تصفّح السير المتاحة المطابقة لاختيارك، أو اتركوا الاختيار لنا.
+              رتّبنا السير المتاحة حسب مطابقتها لاحتياج طلبك، أو اتركوا الاختيار لنا.
             </p>
-            <WorkerPicker
+            <MatchedWorkerPicker
               workers={filteredWorkers}
+              need={need}
+              isLoading={workersLoading}
               selectedId={draft.workerProfileId}
               allowNone
-              onSelect={(w) => update({ workerProfileId: w?.id ?? null })}
+              onSelect={(w, m) =>
+                update({ workerProfileId: w?.id ?? null, matchScore: m?.score ?? null })
+              }
             />
           </div>
         );
       case 'select_worker':
         return (
-          <WorkerPicker
+          <MatchedWorkerPicker
             workers={workers}
+            need={need}
+            isLoading={workersLoading}
             selectedId={draft.workerProfileId}
-            onSelect={(w) =>
+            allowNone={service === 'daily_rental'}
+            onSelect={(w, m) =>
               update({
                 workerProfileId: w?.id ?? null,
+                matchScore: m?.score ?? null,
                 nationality: w?.nationality ?? '',
                 profession: w?.profession ?? '',
               })
@@ -330,36 +340,35 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
         );
       case 'duration':
         return (
-          <Field label="مدة الإيجار (عدد الأشهر)">
-            <TextInput
-              type="number"
-              min={1}
-              max={24}
-              value={draft.months}
-              onChange={(e) => update({ months: Number(e.target.value) })}
-            />
-          </Field>
+          <PeriodFields
+            startDate={draft.startDate}
+            unit="month"
+            count={draft.months}
+            workerId={draft.workerProfileId}
+            workerName={selectedWorker?.full_name ?? null}
+            onChange={(patch) =>
+              update({
+                ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
+                ...(patch.count !== undefined ? { months: patch.count } : {}),
+              })
+            }
+          />
         );
       case 'dates':
         return (
-          <div className="space-y-4">
-            <Field label="تاريخ بداية الخدمة">
-              <TextInput
-                type="date"
-                value={draft.startDate}
-                onChange={(e) => update({ startDate: e.target.value })}
-              />
-            </Field>
-            <Field label="عدد الأيام">
-              <TextInput
-                type="number"
-                min={1}
-                max={30}
-                value={draft.days}
-                onChange={(e) => update({ days: Number(e.target.value) })}
-              />
-            </Field>
-          </div>
+          <PeriodFields
+            startDate={draft.startDate}
+            unit="day"
+            count={draft.days}
+            workerId={draft.workerProfileId}
+            workerName={selectedWorker?.full_name ?? null}
+            onChange={(patch) =>
+              update({
+                ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
+                ...(patch.count !== undefined ? { days: patch.count } : {}),
+              })
+            }
+          />
         );
       case 'task':
         return (
@@ -570,6 +579,14 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
                 (لم يُحفظ في القاعدة بعد — طبّق الـ migrations لتفعيل الحفظ الفعلي)
               </p>
             )}
+            {result && (
+              <Link
+                to={`/order/request/${result.requestNo}`}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white transition hover:bg-brand-dark"
+              >
+                <FileText size={16} /> عرض ملف الطلب
+              </Link>
+            )}
             <div className="mt-6">
               <p className="mb-3 text-sm font-semibold text-brand-dark">مراحل تتبّع الطلب</p>
               <ol className="flex flex-wrap items-center justify-center gap-2">
@@ -662,8 +679,12 @@ function contractTerms(
   serviceName: string,
   total: number,
 ): string[] {
+  const period = draftPeriod(d);
   const base = [
     `نوع الخدمة: ${serviceName}.`,
+    ...(period
+      ? [`مدة الطلب: من ${period.startDate} إلى ${period.endDate} (${periodLabel(period)}).`]
+      : []),
     `الفرع: ${d.branch || '—'}.`,
     `إجمالي القيمة شاملة الضريبة: ${sar(total)} ر.س.`,
     'العقد موثّق ومتوافق مع أنظمة وزارة الموارد البشرية ومنصة مساند.',

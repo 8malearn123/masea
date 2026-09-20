@@ -42,7 +42,15 @@ function daysBetween(from: Date, isoDate: string | null): number | null {
   return Math.round((b - a) / DAY);
 }
 
-export function contractInsight(c: ContractListItem, now: Date = new Date()): ContractInsight {
+/**
+ * `windowDays` هي مهلة التنبيه قبل انتهاء العقد، وقيمتها إدارية تُقرأ من
+ * إعدادات النظام (`contract_expiry_alert_days`)؛ الثابت هنا قيمة احتياطية فقط.
+ */
+export function contractInsight(
+  c: ContractListItem,
+  now: Date = new Date(),
+  windowDays: number = RENEWAL_WINDOW_DAYS,
+): ContractInsight {
   const total = c.total_amount ?? 0;
   const paid = Math.min(c.amount_paid ?? 0, total);
   const remaining = Math.max(total - paid, 0);
@@ -56,7 +64,7 @@ export function contractInsight(c: ContractListItem, now: Date = new Date()): Co
     c.status === 'active' &&
     daysToExpiry !== null &&
     daysToExpiry >= 0 &&
-    daysToExpiry <= RENEWAL_WINDOW_DAYS;
+    daysToExpiry <= windowDays;
 
   const payLabel =
     remaining === 0 ? 'مسدّد بالكامل' : `متبقٍ ${Math.round(remaining).toLocaleString('en-US')}`;
@@ -152,10 +160,14 @@ export interface ContractKpis {
   activeCount: number;
 }
 
-export function contractKpis(rows: ContractListItem[], now: Date = new Date()): ContractKpis {
+export function contractKpis(
+  rows: ContractListItem[],
+  now: Date = new Date(),
+  windowDays: number = RENEWAL_WINDOW_DAYS,
+): ContractKpis {
   return rows.reduce<ContractKpis>(
     (acc, c) => {
-      const ins = contractInsight(c, now);
+      const ins = contractInsight(c, now, windowDays);
       if (ins.isOverdue) acc.overdueTotal += ins.remaining;
       if (c.status !== 'cancelled') acc.portfolioValue += c.total_amount ?? 0;
       if (ins.nearExpiry) acc.renewals += 1;
@@ -190,4 +202,72 @@ export function sortContracts(
     default:
       return copy.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }
+}
+
+/* --------------------------- تنبيهات انتهاء العقود -------------------------- */
+/** درجة إلحاح التنبيه: منتهٍ فعلًا · حرِج · قريب. */
+export type ExpiryUrgency = 'expired' | 'critical' | 'soon';
+
+export interface ExpiryAlert {
+  contract: ContractListItem;
+  insight: ContractInsight;
+  urgency: ExpiryUrgency;
+  /** نص التنبيه جاهزًا للعرض («ينتهي بعد ٥ أيام» / «انتهى منذ يومين»). */
+  message: string;
+}
+
+export const EXPIRY_URGENCY_LABEL: Record<ExpiryUrgency, string> = {
+  expired: 'منتهٍ',
+  critical: 'حرِج',
+  soon: 'قريب الانتهاء',
+};
+
+const EXPIRY_TONE: Record<ExpiryUrgency, Extract<BadgeTone, 'danger' | 'gold' | 'navy'>> = {
+  expired: 'danger',
+  critical: 'danger',
+  soon: 'gold',
+};
+
+export function expiryTone(urgency: ExpiryUrgency): Extract<BadgeTone, 'danger' | 'gold' | 'navy'> {
+  return EXPIRY_TONE[urgency];
+}
+
+function daysMessage(days: number): string {
+  if (days < 0) {
+    const n = Math.abs(days);
+    if (n === 1) return 'انتهى أمس';
+    if (n === 2) return 'انتهى منذ يومين';
+    return `انتهى منذ ${n} يومًا`;
+  }
+  if (days === 0) return 'ينتهي اليوم';
+  if (days === 1) return 'ينتهي غدًا';
+  if (days === 2) return 'ينتهي بعد يومين';
+  return `ينتهي بعد ${days} يومًا`;
+}
+
+/**
+ * العقود التي تستوجب تنبيهًا: السارية التي اقترب انتهاؤها داخل مهلة التنبيه،
+ * والسارية التي تجاوزت تاريخ نهايتها ولم تُجدَّد أو تُقفل. الأقرب انتهاءً أولًا.
+ * «حرِج» = ما تبقّى له أقل من ثلث المهلة — مشتقّة من القيمة الإدارية لا رقم ثابت.
+ */
+export function expiryAlerts(
+  rows: ContractListItem[],
+  windowDays: number = RENEWAL_WINDOW_DAYS,
+  now: Date = new Date(),
+): ExpiryAlert[] {
+  const criticalAt = Math.max(1, Math.round(windowDays / 3));
+  return rows
+    .map((contract) => ({ contract, insight: contractInsight(contract, now, windowDays) }))
+    .filter(({ contract, insight }) => {
+      if (contract.status !== 'active') return false;
+      const d = insight.daysToExpiry;
+      return d !== null && d <= windowDays;
+    })
+    .map(({ contract, insight }) => {
+      const days = insight.daysToExpiry ?? 0;
+      const urgency: ExpiryUrgency =
+        days < 0 ? 'expired' : days <= criticalAt ? 'critical' : 'soon';
+      return { contract, insight, urgency, message: daysMessage(days) };
+    })
+    .sort((a, b) => (a.insight.daysToExpiry ?? 0) - (b.insight.daysToExpiry ?? 0));
 }

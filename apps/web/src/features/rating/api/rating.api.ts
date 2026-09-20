@@ -1,4 +1,4 @@
-import type { Rating } from '@/features/rating/types';
+import type { Rating, RatingSummary } from '@/features/rating/types';
 
 const RATINGS: Rating[] = [
   {
@@ -6,6 +6,7 @@ const RATINGS: Rating[] = [
     customer_name: 'محمد الأحمدي',
     target_type: 'worker',
     target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
     stars: 5,
     comment: 'عاملة ممتازة ومتعاونة جدًا',
     created_at: '2026-06-12T10:00:00Z',
@@ -33,6 +34,7 @@ const RATINGS: Rating[] = [
     customer_name: 'نورة الشهري',
     target_type: 'worker',
     target_name: 'سيتي نورهاليزا',
+    worker_id: 'w3',
     stars: 3,
     comment: 'أداء متوسط',
     created_at: '2026-06-10T20:15:00Z',
@@ -60,6 +62,7 @@ const RATINGS: Rating[] = [
     customer_name: 'تركي السبيعي',
     target_type: 'worker',
     target_name: 'غريس وانجيرو',
+    worker_id: 'w5',
     stars: 4,
     comment: 'جيدة في الأعمال المنزلية',
     created_at: '2026-06-08T16:40:00Z',
@@ -73,8 +76,153 @@ const RATINGS: Rating[] = [
     comment: 'مهذب ومتعاون',
     created_at: '2026-06-08T08:00:00Z',
   },
+  {
+    id: 'rt9',
+    customer_name: 'أمل الشهراني',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'نظيفة ومرتّبة، وتعاملها مع الأطفال ممتاز.',
+    created_at: '2026-07-02T09:10:00Z',
+  },
+  {
+    id: 'rt10',
+    customer_name: 'خالد بن يحيى',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 4,
+    comment: 'ملتزمة بالمواعيد، وتحتاج وقتًا للتأقلم مع المطبخ السعودي.',
+    created_at: '2026-06-24T17:30:00Z',
+  },
+  {
+    id: 'rt11',
+    customer_name: 'منيرة آل مفرح',
+    target_type: 'worker',
+    target_name: 'غريس ريّس',
+    worker_id: 'w2',
+    stars: 5,
+    comment: 'خبرتها مع الرضّع واضحة، والوالدة ارتاحت لها من أول يوم.',
+    created_at: '2026-08-05T11:00:00Z',
+  },
+  {
+    id: 'rt12',
+    customer_name: 'سلطان الوادعي',
+    target_type: 'worker',
+    target_name: 'غريس ريّس',
+    worker_id: 'w2',
+    stars: 4,
+    comment: 'متعاونة، لكن نتمنى تحسّن لغتها العربية.',
+    created_at: '2026-07-19T08:45:00Z',
+  },
+  {
+    id: 'rt13',
+    customer_name: 'حصة اليامي',
+    target_type: 'worker',
+    target_name: 'سيتي نورهاليزا',
+    worker_id: 'w3',
+    stars: 4,
+    comment: 'شغلها في تنظيم البيت ممتاز، والطبخ مقبول.',
+    created_at: '2026-08-12T15:20:00Z',
+  },
+  {
+    id: 'rt14',
+    customer_name: 'ماجد الحارثي',
+    target_type: 'worker',
+    target_name: 'ديوي أنغرايني',
+    worker_id: 'w4',
+    stars: 5,
+    comment: 'جهّزت وليمة لستين شخصًا بإتقان — ننصح بها للمناسبات.',
+    created_at: '2026-09-02T19:00:00Z',
+  },
+  {
+    id: 'rt15',
+    customer_name: 'لطيفة القحطاني',
+    target_type: 'worker',
+    target_name: 'ديوي أنغرايني',
+    worker_id: 'w4',
+    stars: 5,
+    comment: 'حلوياتها ممتازة والتقديم منظّم.',
+    created_at: '2026-08-21T20:10:00Z',
+  },
+  {
+    id: 'rt16',
+    customer_name: 'بدر المنجومي',
+    target_type: 'worker',
+    target_name: 'فيث أتيينو',
+    worker_id: 'w6',
+    stars: 5,
+    comment: 'صبورة جدًا مع الأطفال وتتابع واجباتهم.',
+    created_at: '2026-07-28T16:00:00Z',
+  },
+  {
+    id: 'rt17',
+    customer_name: 'نوف آل سالم',
+    target_type: 'worker',
+    target_name: 'روكسانا بيغم',
+    worker_id: 'w9',
+    stars: 4,
+    comment: 'اعتنت بوالدي خلال فترة النقاهة باهتمام.',
+    created_at: '2026-09-08T10:25:00Z',
+  },
+  {
+    id: 'rt18',
+    customer_name: 'عهود الصيعري',
+    target_type: 'worker',
+    target_name: 'نيلوكا فرناندو',
+    worker_id: 'w11',
+    stars: 5,
+    comment: 'خبرتها مع حديثي الولادة أراحتنا كثيرًا.',
+    created_at: '2026-09-11T07:40:00Z',
+  },
 ];
 
+const newest = (a: Rating, b: Rating) => (a.created_at < b.created_at ? 1 : -1);
+
 export async function listRatings(): Promise<Rating[]> {
-  return RATINGS;
+  return [...RATINGS].sort(newest);
+}
+
+/** تقييمات وتعليقات عاملة واحدة — الأحدث أولًا. */
+export async function listWorkerReviews(workerId: string): Promise<Rating[]> {
+  return RATINGS.filter((r) => r.worker_id === workerId).sort(newest);
+}
+
+/** ملخّص تقييمات عاملة (متوسّط + توزيع) — يُحسب من نفس القائمة، بلا تخزين مكرّر. */
+export function ratingSummaryOf(workerId: string): RatingSummary {
+  const rows = RATINGS.filter((r) => r.worker_id === workerId);
+  const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  rows.forEach((r) => {
+    distribution[r.stars] = (distribution[r.stars] ?? 0) + 1;
+  });
+  const average =
+    rows.length === 0
+      ? 0
+      : Math.round((rows.reduce((sum, r) => sum + r.stars, 0) / rows.length) * 10) / 10;
+  return { count: rows.length, average, distribution };
+}
+
+let reviewSeq = 1;
+
+/** إضافة تقييم/تعليق جديد على عاملة (Prototype — يُحفظ في نفس المخزن). */
+export async function addWorkerReview(input: {
+  workerId: string;
+  workerName: string;
+  customerName: string;
+  stars: number;
+  comment: string;
+}): Promise<Rating> {
+  const row: Rating = {
+    id: `rt-new-${reviewSeq++}`,
+    customer_name: input.customerName.trim() || 'عميل',
+    target_type: 'worker',
+    target_name: input.workerName,
+    worker_id: input.workerId,
+    stars: Math.min(5, Math.max(1, Math.round(input.stars))),
+    comment: input.comment.trim(),
+    created_at: new Date().toISOString(),
+  };
+  RATINGS.unshift(row);
+  return row;
 }

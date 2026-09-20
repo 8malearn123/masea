@@ -3,12 +3,13 @@ import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
   listConfig,
+  listRef,
   listSources,
   listStages,
-  saveSource,
-  saveStage,
+  saveRef,
   updateConfig,
   type RefItem,
+  type RefKind,
 } from '@/features/settings/api/settings.api';
 
 export function useSources() {
@@ -33,12 +34,20 @@ export function useConfig() {
   });
 }
 
-export function useSaveRef(kind: 'sources' | 'stages') {
+/** أي قائمة مرجعية بكودها — مصدر واحد لكل الشاشات (الإعدادات ونماذج الطلب). */
+export function useRefList(kind: RefKind) {
+  return useQuery({
+    queryKey: ['settings', kind],
+    queryFn: () => listRef(kind),
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function useSaveRef(kind: RefKind) {
   const qc = useQueryClient();
   const toast = useToast();
-  const fn = kind === 'sources' ? saveSource : saveStage;
   return useMutation<void, Error, { item: RefItem; isNew: boolean }>({
-    mutationFn: ({ item, isNew }) => fn(item, isNew),
+    mutationFn: ({ item, isNew }) => saveRef(kind, item, isNew),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['settings', kind] });
       toast.success('تم الحفظ');

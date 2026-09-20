@@ -1,8 +1,15 @@
 /** Order draft model + shared option lists for the customer wizard. */
 import type { ServiceCode } from '@/lib/funnel';
+import { buildPeriod } from '@/features/requests/lib/period';
+import { emptyPlaceDetails } from '@/features/requests/types';
+import type { PeriodUnit, PlaceDetails, RequestPeriod } from '@/features/requests/types';
 
 export interface OrderDraft {
   service: ServiceCode;
+  /** نوع المستفيد وبيانات مكان الخدمة (منزل/منشأة/تجاري/مناسبة). */
+  place: PlaceDetails;
+  /** نسبة مطابقة العاملة المختارة لاحتياج الطلب (٪) — تُملأ عند الترشيح. */
+  matchScore: number | null;
   // recruitment
   nationality: string;
   profession: string;
@@ -33,7 +40,14 @@ export interface OrderDraft {
   paymentMethod: string;
 }
 
-export const NATIONALITIES = ['الفلبين', 'إندونيسيا', 'كينيا', 'أوغندا', 'بنغلاديش', 'سريلانكا'] as const;
+export const NATIONALITIES = [
+  'الفلبين',
+  'إندونيسيا',
+  'كينيا',
+  'أوغندا',
+  'بنغلاديش',
+  'سريلانكا',
+] as const;
 export const PROFESSIONS = ['عاملة منزلية', 'طباخة', 'مربية أطفال', 'سائق'] as const;
 export const TASK_TYPES = ['تنظيف', 'طبخ', 'رعاية'] as const;
 
@@ -60,6 +74,8 @@ export const TRACKING_STAGES: Record<ServiceCode, string[]> = {
 export function emptyDraft(service: ServiceCode): OrderDraft {
   return {
     service,
+    place: emptyPlaceDetails(),
+    matchScore: null,
     nationality: '',
     profession: '',
     monthlySalary: 1500,
@@ -86,8 +102,40 @@ export function emptyDraft(service: ServiceCode): OrderDraft {
   };
 }
 
+/** وحدة قياس مدة الطلب بحسب الخدمة: التأجير اليومي بالأيام، وما عداه بالأشهر. */
+export function periodUnitFor(service: ServiceCode): PeriodUnit {
+  return service === 'daily_rental' ? 'day' : 'month';
+}
+
+/** عدد وحدات المدة في المسودة بحسب الخدمة. */
+export function periodCountOf(d: OrderDraft): number {
+  switch (d.service) {
+    case 'daily_rental':
+      return Math.max(d.days, 1);
+    case 'monthly_rental':
+      return Math.max(d.months, 1);
+    case 'recruitment':
+      return Math.max(d.contractMonths, 1);
+    default:
+      return 1;
+  }
+}
+
+/**
+ * مدة الطلب (بداية · نهاية · عدد) — تُحسب من مصدر واحد في `period.ts`.
+ * تُرجع null قبل إدخال تاريخ البداية أو لخدمة لا تُقاس بمدة (نقل الكفالة).
+ */
+export function draftPeriod(d: OrderDraft): RequestPeriod | null {
+  if (d.service === 'sponsorship_transfer' || !d.startDate) return null;
+  return buildPeriod(d.startDate, periodUnitFor(d.service), periodCountOf(d));
+}
+
 /** Pricing params passed to calc_price / fallback. quantity scales by duration. */
-export function priceParams(d: OrderDraft): { nationality?: string; profession?: string; quantity: number } {
+export function priceParams(d: OrderDraft): {
+  nationality?: string;
+  profession?: string;
+  quantity: number;
+} {
   switch (d.service) {
     case 'recruitment':
       return { nationality: d.nationality, profession: d.profession, quantity: 1 };

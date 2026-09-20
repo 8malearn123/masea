@@ -1,4 +1,5 @@
 import { fallbackPrice } from '@/shared/lib/pricing';
+import { ratingSummaryOf } from '@/features/rating/api/rating.api';
 import type { ServiceCode, WorkerProfile } from '@/lib/funnel';
 
 /** Customer-facing catalog helpers — enrich the existing worker_profiles with
@@ -41,11 +42,17 @@ function hash01(id: string): number {
   return h / 100000;
 }
 
+/** تقييم العاملة: متوسّط تقييمات عملائها الفعلية، وإلا تقدير ثابت للعرض. */
 export function ratingOf(w: WorkerProfile): number {
+  const summary = ratingSummaryOf(w.id);
+  if (summary.count > 0) return summary.average;
   return Math.round((4.4 + hash01(w.id) * 0.5) * 10) / 10; // 4.4–4.9
 }
 
+/** عدد التقييمات المنشورة على العاملة. */
 export function reviewsOf(w: WorkerProfile): number {
+  const summary = ratingSummaryOf(w.id);
+  if (summary.count > 0) return summary.count;
   return 8 + Math.floor(hash01(w.id + 'r') * 40);
 }
 

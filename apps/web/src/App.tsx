@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from '@/store/auth';
 import Layout from '@/components/Layout';
 import { RequirePerm } from '@/components/RequirePerm';
@@ -10,6 +10,10 @@ const Login = lazy(() => import('@/pages/Login'));
 const OrderLanding = lazy(() => import('@/pages/order/OrderLanding'));
 const OrderWizard = lazy(() => import('@/pages/order/OrderWizard'));
 const OrderTracking = lazy(() => import('@/pages/order/OrderTracking'));
+const RequestSummary = lazy(() => import('@/features/requests/components/RequestSummary'));
+const ChatWidget = lazy(() =>
+  import('@/features/chatbot/components/ChatWidget').then((m) => ({ default: m.ChatWidget })),
+);
 const WorkerCatalog = lazy(() => import('@/features/catalog/components/WorkerCatalog'));
 const WorkerProfile = lazy(() => import('@/features/catalog/components/WorkerProfile'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -38,6 +42,21 @@ const ReportsBoard = lazy(() => import('@/features/reports/components/ReportsBoa
 const RbacBoard = lazy(() => import('@/features/rbac/components/RbacBoard'));
 const SettingsBoard = lazy(() => import('@/features/settings/components/SettingsBoard'));
 
+/**
+ * مساعد العميل — يظهر في صفحات العميل فقط (لا داخل لوحات الموظفين).
+ * له حدّ Suspense خاص به حتى لا يحجب تحميله الصفحة نفسها.
+ */
+function CustomerChat({ signedIn }: { signedIn: boolean }) {
+  const { pathname } = useLocation();
+  const isCustomerRoute = pathname.startsWith('/order') || (!signedIn && pathname === '/');
+  if (!isCustomerRoute) return null;
+  return (
+    <Suspense fallback={null}>
+      <ChatWidget />
+    </Suspense>
+  );
+}
+
 function PageFallback() {
   return (
     <div className="grid min-h-[60vh] place-items-center text-navy">
@@ -63,6 +82,7 @@ export default function App() {
 
   return (
     <Suspense fallback={<PageFallback />}>
+      <CustomerChat signedIn={Boolean(session)} />
       {!session ? (
         <Routes>
           {/* Public customer funnel is the home page */}
@@ -72,6 +92,7 @@ export default function App() {
           <Route path="/order/workers/:id" element={<WorkerProfile />} />
           <Route path="/order/start" element={<OrderWizard />} />
           <Route path="/order/track" element={<OrderTracking />} />
+          <Route path="/order/request/:requestNo" element={<RequestSummary />} />
           <Route path="/login" element={<Login />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -83,6 +104,7 @@ export default function App() {
           <Route path="/order/workers/:id" element={<WorkerProfile />} />
           <Route path="/order/start" element={<OrderWizard />} />
           <Route path="/order/track" element={<OrderTracking />} />
+          <Route path="/order/request/:requestNo" element={<RequestSummary />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route element={<Layout />}>

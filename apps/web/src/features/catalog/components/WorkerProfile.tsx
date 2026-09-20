@@ -4,9 +4,11 @@ import {
   ArrowRight,
   BadgeCheck,
   CalendarCheck,
+  CalendarDays,
   CheckCircle2,
   Languages,
   MessageCircle,
+  MessageSquare,
   PlayCircle,
   RefreshCw,
   ShieldCheck,
@@ -20,6 +22,8 @@ import { flagFor } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import type { ServiceCode } from '@/lib/funnel';
+import { AvailabilityCalendar } from '@/features/catalog/components/AvailabilityCalendar';
+import { WorkerReviews } from '@/features/catalog/components/WorkerReviews';
 import {
   availabilityOf,
   AVAILABILITY_LABEL,
@@ -170,6 +174,16 @@ export default function WorkerProfile() {
                 </div>
               ))}
             </div>
+          </Section>
+
+          {/* جدول التوفّر */}
+          <Section icon={CalendarDays} title="جدول التوفّر — التواريخ المحجوزة والمتاحة">
+            <AvailabilityCalendar workerId={worker.id} />
+          </Section>
+
+          {/* التقييمات والتعليقات */}
+          <Section icon={MessageSquare} title="تقييمات وتعليقات العملاء">
+            <WorkerReviews workerId={worker.id} workerName={worker.full_name} />
           </Section>
 
           {/* trust */}
