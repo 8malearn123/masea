@@ -23,6 +23,23 @@ export function LeadFormModal({
   open: boolean;
   onClose: () => void;
 }) {
+  return (
+    <Modal open={open} onClose={onClose} title={lead ? 'تعديل العميل المحتمل' : 'عميل محتمل جديد'}>
+      <LeadForm lead={lead} onDone={onClose} onCancel={onClose} />
+    </Modal>
+  );
+}
+
+/** حقول العميل المحتمل — تُستخدم داخل نافذة التعديل وفي صفحة الإضافة. */
+export function LeadForm({
+  lead,
+  onDone,
+  onCancel,
+}: {
+  lead: Lead | null;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
   const create = useCreateLead();
   const update = useUpdateLead();
   const { sources, activeStages } = useCrmMeta();
@@ -52,89 +69,83 @@ export function LeadFormModal({
       notes: notes.trim() ? notes.trim() : null,
     };
     if (editing && lead) {
-      update.mutate({ id: lead.id, patch: input }, { onSuccess: onClose });
+      update.mutate({ id: lead.id, patch: input }, { onSuccess: onDone });
     } else {
-      create.mutate(input, { onSuccess: onClose });
+      create.mutate(input, { onSuccess: onDone });
     }
   }
 
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={editing ? 'تعديل العميل المحتمل' : 'عميل محتمل جديد'}
-    >
-      <div className="space-y-3">
+    <div className="space-y-3">
+      <div>
+        <label className="mb-1 block text-xs font-medium text-navy-900">الاسم</label>
+        <Input
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          placeholder="اسم العميل"
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">الاسم</label>
+          <label className="mb-1 block text-xs font-medium text-navy-900">الجوال</label>
           <Input
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            placeholder="اسم العميل"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="05xxxxxxxx"
           />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-navy-900">الجوال</label>
-            <Input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="05xxxxxxxx"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-navy-900">
-              القيمة المتوقعة (ر.س)
-            </label>
-            <Input
-              value={estValue}
-              onChange={(e) => setEstValue(e.target.value)}
-              inputMode="numeric"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-navy-900">المصدر</label>
-            <Select
-              value={source}
-              onChange={(e) => setSource(e.target.value as LeadSourceCode)}
-              options={sourceOpts}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-navy-900">الخدمة</label>
-            <Select
-              value={service}
-              onChange={(e) => setService(e.target.value as ServiceCode)}
-              options={SERVICE_OPTS}
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-navy-900">المرحلة</label>
-            <Select
-              value={stage}
-              onChange={(e) => setStage(e.target.value as LeadStageCode)}
-              options={stageOpts}
-            />
-          </div>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">ملاحظات</label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            className="w-full rounded-xl border border-navy-100 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/15"
+          <label className="mb-1 block text-xs font-medium text-navy-900">
+            القيمة المتوقعة (ر.س)
+          </label>
+          <Input
+            value={estValue}
+            onChange={(e) => setEstValue(e.target.value)}
+            inputMode="numeric"
           />
         </div>
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="outline" onClick={onClose}>
-            إلغاء
-          </Button>
-          <Button variant="primary" loading={busy} onClick={submit}>
-            {editing ? 'حفظ' : 'إضافة'}
-          </Button>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-900">المصدر</label>
+          <Select
+            value={source}
+            onChange={(e) => setSource(e.target.value as LeadSourceCode)}
+            options={sourceOpts}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-900">الخدمة</label>
+          <Select
+            value={service}
+            onChange={(e) => setService(e.target.value as ServiceCode)}
+            options={SERVICE_OPTS}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-900">المرحلة</label>
+          <Select
+            value={stage}
+            onChange={(e) => setStage(e.target.value as LeadStageCode)}
+            options={stageOpts}
+          />
         </div>
       </div>
-    </Modal>
+      <div>
+        <label className="mb-1 block text-xs font-medium text-navy-900">ملاحظات</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          className="w-full rounded-xl border border-navy-100 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-navy focus:ring-2 focus:ring-navy/15"
+        />
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <Button variant="outline" onClick={onCancel}>
+          إلغاء
+        </Button>
+        <Button variant="primary" loading={busy} onClick={submit}>
+          {editing ? 'حفظ' : 'إضافة'}
+        </Button>
+      </div>
+    </div>
   );
 }
