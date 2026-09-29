@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { GripVertical, KanbanSquare, Pencil, Phone, Plus, Search } from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
@@ -15,7 +16,7 @@ export default function PipelineBoard() {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Lead | null>(null);
   const [viewing, setViewing] = useState<Lead | null>(null);
-  const [creating, setCreating] = useState(false);
+  const navigate = useNavigate();
   // سحب وإفلات البطاقات بين مراحل الأنبوب
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export default function PipelineBoard() {
             </p>
           </div>
         </div>
-        <Button variant="primary" onClick={() => setCreating(true)}>
+        <Button variant="success" onClick={() => navigate('/leads/new')}>
           <Plus size={16} /> عميل محتمل جديد
         </Button>
       </div>
@@ -156,7 +157,6 @@ export default function PipelineBoard() {
         </div>
       )}
 
-      <LeadFormModal lead={null} open={creating} onClose={() => setCreating(false)} />
       <LeadFormModal lead={editing} open={editing !== null} onClose={() => setEditing(null)} />
       <LeadDrawer lead={liveViewing} onClose={() => setViewing(null)} />
     </div>

@@ -1,12 +1,13 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { Spinner } from '@/shared/ui/Spinner';
 
-export type ButtonVariant = 'primary' | 'accent' | 'outline' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'accent' | 'success' | 'outline' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: 'bg-navy text-white hover:bg-navy-700',
   accent: 'bg-gold text-white hover:bg-gold-600',
+  success: 'bg-teal text-white hover:bg-teal/90',
   outline: 'border border-navy text-navy hover:bg-navy-50',
   ghost: 'text-navy hover:bg-navy-50',
   danger: 'bg-red-600 text-white hover:bg-red-700',
