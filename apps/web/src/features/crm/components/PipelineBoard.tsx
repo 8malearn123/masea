@@ -76,7 +76,7 @@ export default function PipelineBoard() {
             </p>
           </div>
         </div>
-        <Button variant="primary" onClick={() => setCreatingStage('new')}>
+        <Button variant="success" onClick={() => setCreatingStage('new')}>
           <Plus size={16} /> عميل محتمل جديد
         </Button>
       </div>
