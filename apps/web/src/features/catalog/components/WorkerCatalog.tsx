@@ -4,6 +4,10 @@ import { BellRing, Filter, RotateCcw, Search, SlidersHorizontal, UserRound } fro
 import { BRAND } from '@masiat/shared';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { WorkerCard } from '@/features/catalog/components/WorkerCard';
+import { useBeneficiaryTypes, useEventTypes } from '@/features/settings/hooks/useSettings';
+import type { RefItem } from '@/features/settings/api/settings.api';
+import { BENEFICIARY_EVENT_CODE, EVENT_OTHER_CODE } from '@/lib/orderTypes';
+import { useOrderIntent } from '@/store/orderIntent';
 import {
   AGE_RANGES,
   availabilityOf,
@@ -35,6 +39,10 @@ export default function WorkerCatalog() {
   const [onlyAvailable, setOnlyAvailable] = useState(false);
   const [sort, setSort] = useState<Sort>('rating');
   const [showFilters, setShowFilters] = useState(false);
+  // نوع المستفيد — not a worker filter: it rides along into the order wizard.
+  const { data: beneficiaryTypes = [] } = useBeneficiaryTypes();
+  const { data: eventTypes = [] } = useEventTypes();
+  const intent = useOrderIntent();
 
   const languageOptions = useMemo(() => spokenLanguages(workers), [workers]);
 
@@ -93,6 +101,7 @@ export default function WorkerCatalog() {
     setMinExp(0);
     setOnlyAvailable(false);
     setSearch('');
+    intent.clearIntent();
   }
 
   return (
@@ -146,6 +155,42 @@ export default function WorkerCatalog() {
               </button>
             </div>
 
+            <Group label="نوع المستفيد">
+              <RefPills
+                items={beneficiaryTypes}
+                value={intent.beneficiaryType}
+                onChange={(b) =>
+                  intent.setIntent({
+                    beneficiaryType: b.code,
+                    beneficiaryLabel: b.name_ar,
+                    eventType: '',
+                    eventLabel: '',
+                  })
+                }
+              />
+            </Group>
+            {intent.beneficiaryType === BENEFICIARY_EVENT_CODE && (
+              <Group label="نوع المناسبة">
+                <RefPills
+                  items={eventTypes}
+                  value={intent.eventType}
+                  onChange={(t) =>
+                    intent.setIntent({
+                      eventType: t.code,
+                      eventLabel: t.code === EVENT_OTHER_CODE ? '' : t.name_ar,
+                    })
+                  }
+                />
+                {intent.eventType === EVENT_OTHER_CODE && (
+                  <input
+                    value={intent.eventLabel}
+                    onChange={(e) => intent.setIntent({ eventLabel: e.target.value })}
+                    placeholder="اكتب اسم المناسبة"
+                    className="mt-2 w-full rounded-lg border border-navy-100 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-navy"
+                  />
+                )}
+              </Group>
+            )}
             <Group label="الجنسية">
               <Pills value={nationality} onChange={setNationality} options={NATIONALITIES} />
             </Group>
@@ -263,6 +308,34 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
     <div className="mb-3 border-t border-navy-50 pt-3 first:border-0 first:pt-0">
       <p className="mb-2 text-xs font-bold text-navy-900">{label}</p>
       {children}
+    </div>
+  );
+}
+
+/** Single-choice chips over a managed reference list (no «الكل» option). */
+function RefPills({
+  items,
+  value,
+  onChange,
+}: {
+  items: RefItem[];
+  value: string;
+  onChange: (item: RefItem) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items
+        .filter((it) => it.is_active)
+        .map((it) => (
+          <button
+            key={it.code}
+            type="button"
+            onClick={() => onChange(it)}
+            className={`rounded-lg px-2.5 py-1.5 text-xs font-medium transition ${value === it.code ? 'bg-navy text-white' : 'bg-navy-50 text-navy hover:bg-navy-100'}`}
+          >
+            {it.name_ar}
+          </button>
+        ))}
     </div>
   );
 }
