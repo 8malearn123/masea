@@ -2,9 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
+  listBeneficiaryTypes,
   listConfig,
+  listEventTypes,
   listSources,
   listStages,
+  saveBeneficiaryType,
+  saveEventType,
   saveSource,
   saveStage,
   updateConfig,
@@ -25,6 +29,20 @@ export function useStages() {
     staleTime: QUERY_DEFAULTS.staleTime,
   });
 }
+export function useBeneficiaryTypes() {
+  return useQuery({
+    queryKey: ['settings', 'beneficiary_types'],
+    queryFn: listBeneficiaryTypes,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+export function useEventTypes() {
+  return useQuery({
+    queryKey: ['settings', 'event_types'],
+    queryFn: listEventTypes,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
 export function useConfig() {
   return useQuery({
     queryKey: ['settings', 'config'],
@@ -33,10 +51,19 @@ export function useConfig() {
   });
 }
 
-export function useSaveRef(kind: 'sources' | 'stages') {
+export type RefKind = 'sources' | 'stages' | 'beneficiary_types' | 'event_types';
+
+const SAVE_REF: Record<RefKind, (item: RefItem, isNew: boolean) => Promise<void>> = {
+  sources: saveSource,
+  stages: saveStage,
+  beneficiary_types: saveBeneficiaryType,
+  event_types: saveEventType,
+};
+
+export function useSaveRef(kind: RefKind) {
   const qc = useQueryClient();
   const toast = useToast();
-  const fn = kind === 'sources' ? saveSource : saveStage;
+  const fn = SAVE_REF[kind];
   return useMutation<void, Error, { item: RefItem; isNew: boolean }>({
     mutationFn: ({ item, isNew }) => fn(item, isNew),
     onSuccess: () => {

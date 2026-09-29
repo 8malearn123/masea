@@ -191,6 +191,8 @@ export function addLocalOrder(input: {
   service_code: Order['service_code'];
   branch: string | null;
   total_amount: number;
+  beneficiary_type?: string | null;
+  event_type?: string | null;
 }): void {
   FALLBACK_ORDERS.unshift({
     id: `o-${Date.now()}`,
@@ -204,6 +206,8 @@ export function addLocalOrder(input: {
     total_amount: input.total_amount,
     created_at: new Date().toISOString(),
     trip_stage: 'none',
+    beneficiary_type: input.beneficiary_type ?? null,
+    event_type: input.event_type ?? null,
   });
 }
 

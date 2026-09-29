@@ -7,7 +7,11 @@ import { usePrice } from '@/hooks/usePricing';
 import { useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { SERVICE_FLOWS } from '@/lib/wizardConfig';
+import { useBeneficiaryTypes, useEventTypes } from '@/features/settings/hooks/useSettings';
 import {
+  BENEFICIARY_EVENT_CODE,
+  EVENT_OTHER_CODE,
+  beneficiarySummary,
   NATIONALITIES,
   PROFESSIONS,
   TASK_TYPES,
@@ -174,6 +178,8 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   const [result, setResult] = useState<CreateResult | null>(null);
 
   const { data: workers = [] } = useWorkerProfiles();
+  const { data: beneficiaryTypes = [] } = useBeneficiaryTypes();
+  const { data: eventTypes = [] } = useEventTypes();
   const params = useMemo(() => priceParams(draft), [draft]);
   const { data: price } = usePrice(service, params, true);
   const createRequest = useCreateRequest();
@@ -197,6 +203,11 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   /* --------------------------- per-step validation -------------------------- */
   function stepError(key: string): string | null {
     switch (key) {
+      case 'beneficiary':
+        if (!draft.beneficiaryType) return 'اختر نوع المستفيد.';
+        if (draft.beneficiaryType !== BENEFICIARY_EVENT_CODE) return null;
+        if (!draft.eventType) return 'اختر نوع المناسبة.';
+        return draft.eventLabel.trim() ? null : 'اكتب اسم المناسبة.';
       case 'nationality_profession':
         return draft.nationality && draft.profession ? null : 'اختر الجنسية والمهنة.';
       case 'package':
@@ -258,6 +269,55 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   /* ------------------------------ step bodies ------------------------------ */
   function body(key: string) {
     switch (key) {
+      case 'beneficiary':
+        return (
+          <div className="space-y-5">
+            <RadioCards
+              value={draft.beneficiaryType}
+              onChange={(code) =>
+                // Switching away from an event clears the event choice.
+                update({
+                  beneficiaryType: code,
+                  beneficiaryLabel: beneficiaryTypes.find((b) => b.code === code)?.name_ar ?? code,
+                  eventType: '',
+                  eventLabel: '',
+                })
+              }
+              options={beneficiaryTypes
+                .filter((b) => b.is_active)
+                .map((b) => ({ key: b.code, label: b.name_ar }))}
+            />
+            {draft.beneficiaryType === BENEFICIARY_EVENT_CODE && (
+              <div className="space-y-4 border-t border-brand-100 pt-5">
+                <p className="text-sm font-medium text-brand-dark">نوع المناسبة</p>
+                <RadioCards
+                  value={draft.eventType}
+                  onChange={(code) =>
+                    update({
+                      eventType: code,
+                      eventLabel:
+                        code === EVENT_OTHER_CODE
+                          ? ''
+                          : (eventTypes.find((t) => t.code === code)?.name_ar ?? code),
+                    })
+                  }
+                  options={eventTypes
+                    .filter((t) => t.is_active)
+                    .map((t) => ({ key: t.code, label: t.name_ar }))}
+                />
+                {draft.eventType === EVENT_OTHER_CODE && (
+                  <Field label="اسم المناسبة">
+                    <TextInput
+                      placeholder="مثال: حفل تخرج"
+                      value={draft.eventLabel}
+                      onChange={(e) => update({ eventLabel: e.target.value })}
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
+          </div>
+        );
       case 'nationality_profession':
         return (
           <div className="space-y-4">
@@ -565,6 +625,29 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             <p className="num mt-1 text-lg font-bold text-brand-accent">
               {result?.requestNo ?? '—'}
             </p>
+            <div className="mx-auto mt-5 max-w-sm rounded-xl border border-brand-100 p-4 text-right text-sm">
+              <p className="mb-2 font-bold text-brand">ملخص الطلب</p>
+              <dl className="space-y-1.5 text-brand-dark/80">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-brand-dark/60">الخدمة</dt>
+                  <dd>{serviceName}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-brand-dark/60">نوع المستفيد</dt>
+                  <dd>{draft.beneficiaryLabel || '—'}</dd>
+                </div>
+                {draft.beneficiaryType === BENEFICIARY_EVENT_CODE && (
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-brand-dark/60">نوع المناسبة</dt>
+                    <dd>{draft.eventLabel || '—'}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between gap-3">
+                  <dt className="text-brand-dark/60">الفرع</dt>
+                  <dd>{draft.branch || '—'}</dd>
+                </div>
+              </dl>
+            </div>
             {result && !result.persisted && (
               <p className="mx-auto mt-2 max-w-sm text-[11px] text-amber-600">
                 (لم يُحفظ في القاعدة بعد — طبّق الـ migrations لتفعيل الحفظ الفعلي)
@@ -664,6 +747,7 @@ function contractTerms(
 ): string[] {
   const base = [
     `نوع الخدمة: ${serviceName}.`,
+    `نوع المستفيد: ${beneficiarySummary(d)}.`,
     `الفرع: ${d.branch || '—'}.`,
     `إجمالي القيمة شاملة الضريبة: ${sar(total)} ر.س.`,
     'العقد موثّق ومتوافق مع أنظمة وزارة الموارد البشرية ومنصة مساند.',

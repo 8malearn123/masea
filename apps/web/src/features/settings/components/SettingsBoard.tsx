@@ -1,22 +1,42 @@
 import { useMemo, useState } from 'react';
-import { KanbanSquare, Plus, Settings2, SlidersHorizontal, Tag } from 'lucide-react';
+import {
+  CalendarHeart,
+  KanbanSquare,
+  Plus,
+  Settings2,
+  SlidersHorizontal,
+  Tag,
+  UsersRound,
+} from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
 import {
+  useBeneficiaryTypes,
   useConfig,
+  useEventTypes,
   useSaveRef,
   useSources,
   useStages,
   useUpdateConfig,
+  type RefKind,
 } from '@/features/settings/hooks/useSettings';
 import { newCode, type ConfigItem, type RefItem } from '@/features/settings/api/settings.api';
 
-type Tab = 'sources' | 'stages' | 'config';
+type Tab = RefKind | 'config';
 
 const TABS: { key: Tab; label: string; icon: typeof Tag }[] = [
   { key: 'sources', label: 'مصادر العملاء', icon: Tag },
   { key: 'stages', label: 'مراحل المبيعات', icon: KanbanSquare },
+  { key: 'beneficiary_types', label: 'أنواع المستفيد', icon: UsersRound },
+  { key: 'event_types', label: 'أنواع المناسبات', icon: CalendarHeart },
   { key: 'config', label: 'قيم النظام', icon: SlidersHorizontal },
 ];
+
+const REF_QUERY = {
+  sources: useSources,
+  stages: useStages,
+  beneficiary_types: useBeneficiaryTypes,
+  event_types: useEventTypes,
+} satisfies Record<RefKind, typeof useSources>;
 
 export default function SettingsBoard() {
   const [tab, setTab] = useState<Tab>('sources');
@@ -66,21 +86,27 @@ export default function SettingsBoard() {
           hint="مراحل تقدّم العميل المحتمل في الـpipeline."
         />
       )}
+      {tab === 'beneficiary_types' && (
+        <RefSection
+          kind="beneficiary_types"
+          title="أنواع المستفيد في الطلب"
+          hint="تظهر للعميل عند إنشاء طلب جديد (منزل، منشأة تجارية…). النوع «مناسبة أو فعالية» يُظهر قائمة المناسبات."
+        />
+      )}
+      {tab === 'event_types' && (
+        <RefSection
+          kind="event_types"
+          title="أنواع المناسبات"
+          hint="تظهر عند اختيار «مناسبة أو فعالية». النوع «مناسبة أخرى» يسمح للعميل بكتابة اسمها."
+        />
+      )}
       {tab === 'config' && <ConfigSection />}
     </div>
   );
 }
 
-function RefSection({
-  kind,
-  title,
-  hint,
-}: {
-  kind: 'sources' | 'stages';
-  title: string;
-  hint: string;
-}) {
-  const query = kind === 'sources' ? useSources : useStages;
+function RefSection({ kind, title, hint }: { kind: RefKind; title: string; hint: string }) {
+  const query = REF_QUERY[kind];
   const { data: items = [], isLoading } = query();
   const save = useSaveRef(kind);
 

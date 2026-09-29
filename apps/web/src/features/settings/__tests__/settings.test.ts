@@ -36,3 +36,30 @@ describe('settings — managed lists & config', () => {
     expect((await listConfig()).find((c) => c.key === 'commission_rate')?.value).toBe(3);
   });
 });
+
+describe('settings — order beneficiary & event types', () => {
+  it('seeds the Masiat beneficiary types and event types', async () => {
+    const { listBeneficiaryTypes, listEventTypes } =
+      await import('@/features/settings/api/settings.api');
+    const beneficiaries = await listBeneficiaryTypes();
+    expect(beneficiaries.map((b) => b.name_ar)).toEqual([
+      'منزل',
+      'منشأة تجارية',
+      'مقهى أو مطعم',
+      'مناسبة أو فعالية',
+    ]);
+    const events = await listEventTypes();
+    expect(events.map((e) => e.code)).toContain('other');
+    expect(events).toHaveLength(6);
+  });
+
+  it('adds a new event type from settings', async () => {
+    const { listEventTypes, saveEventType } = await import('@/features/settings/api/settings.api');
+    const before = (await listEventTypes()).length;
+    await saveEventType(
+      { code: newCode('event'), name_ar: 'حفل تخرج', is_active: true, sort_order: 7 },
+      true,
+    );
+    expect((await listEventTypes()).length).toBe(before + 1);
+  });
+});

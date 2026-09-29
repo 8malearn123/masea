@@ -66,6 +66,8 @@ export function useCreateRequest() {
         service_code: service as ServiceCode,
         branch: draft.branch || null,
         total_amount: price.total,
+        beneficiary_type: draft.beneficiaryLabel || null,
+        event_type: draft.eventLabel || null,
       });
       // Auto-capture the deal into the sales pipeline (landing page = website source).
       captureLead({

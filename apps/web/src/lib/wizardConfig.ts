@@ -10,8 +10,12 @@ export interface WizardStepDef {
   title: string;
 }
 
+/** First step of every flow — who the service is for (منزل، منشأة، مناسبة…). */
+const BENEFICIARY_STEP: WizardStepDef = { key: 'beneficiary', title: 'نوع المستفيد' };
+
 export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
   recruitment: [
+    BENEFICIARY_STEP,
     { key: 'nationality_profession', title: 'الجنسية والمهنة' },
     { key: 'package', title: 'تفاصيل الباقة' },
     { key: 'cv', title: 'اختيار السيرة' },
@@ -22,6 +26,7 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'confirm', title: 'التأكيد' },
   ],
   monthly_rental: [
+    BENEFICIARY_STEP,
     { key: 'select_worker', title: 'اختيار العاملة' },
     { key: 'duration', title: 'مدة الإيجار' },
     { key: 'customer', title: 'بيانات العميل' },
@@ -31,6 +36,7 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'confirm', title: 'التأكيد' },
   ],
   daily_rental: [
+    BENEFICIARY_STEP,
     { key: 'dates', title: 'التواريخ والأيام' },
     { key: 'task', title: 'نوع المهمة' },
     { key: 'customer', title: 'العنوان والبيانات' },
@@ -39,6 +45,7 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'confirm', title: 'التأكيد' },
   ],
   sponsorship_transfer: [
+    BENEFICIARY_STEP,
     { key: 'worker', title: 'بيانات العاملة' },
     { key: 'sponsors', title: 'الكفيل الحالي والجديد' },
     { key: 'documents', title: 'رفع المستندات' },

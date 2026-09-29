@@ -140,6 +140,59 @@ export async function saveStage(item: RefItem, isNew: boolean): Promise<void> {
   else if (idx !== -1) STAGES[idx] = item;
 }
 
+/* ------------------- order beneficiary & event types --------------------- */
+// Managed reference lists for the order wizard (نوع المستفيد / نوع المناسبة).
+// Codes 'event' and 'other' carry wizard behavior (see lib/orderTypes); labels,
+// order and activation are editable from الإعدادات like the lists above.
+const BENEFICIARY_TYPES: RefItem[] = [
+  { code: 'home', name_ar: 'منزل', is_active: true, sort_order: 1 },
+  { code: 'business', name_ar: 'منشأة تجارية', is_active: true, sort_order: 2 },
+  { code: 'cafe_restaurant', name_ar: 'مقهى أو مطعم', is_active: true, sort_order: 3 },
+  { code: 'event', name_ar: 'مناسبة أو فعالية', is_active: true, sort_order: 4 },
+];
+const EVENT_TYPES: RefItem[] = [
+  { code: 'wedding', name_ar: 'حفل زواج', is_active: true, sort_order: 1 },
+  { code: 'opening', name_ar: 'افتتاح', is_active: true, sort_order: 2 },
+  { code: 'conference', name_ar: 'مؤتمر', is_active: true, sort_order: 3 },
+  { code: 'exhibition', name_ar: 'معرض', is_active: true, sort_order: 4 },
+  { code: 'festival', name_ar: 'فعالية', is_active: true, sort_order: 5 },
+  { code: 'other', name_ar: 'مناسبة أخرى', is_active: true, sort_order: 6 },
+];
+
+async function listRef(table: string, store: RefItem[]): Promise<RefItem[]> {
+  try {
+    const { data, error } = await supabase.from(table).select('*').order('sort_order');
+    if (!error && data && data.length > 0) return data as RefItem[];
+  } catch {
+    /* demo */
+  }
+  return [...store].sort(byOrder);
+}
+async function saveRef(
+  table: string,
+  store: RefItem[],
+  item: RefItem,
+  isNew: boolean,
+): Promise<void> {
+  try {
+    const { error } = await supabase.from(table).upsert(item);
+    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+    if (!error) return;
+  } catch {
+    /* demo */
+  }
+  const idx = store.findIndex((s) => s.code === item.code);
+  if (isNew && idx === -1) store.push(item);
+  else if (idx !== -1) store[idx] = item;
+}
+
+export const listBeneficiaryTypes = () => listRef('beneficiary_types', BENEFICIARY_TYPES);
+export const saveBeneficiaryType = (item: RefItem, isNew: boolean) =>
+  saveRef('beneficiary_types', BENEFICIARY_TYPES, item, isNew);
+export const listEventTypes = () => listRef('event_types', EVENT_TYPES);
+export const saveEventType = (item: RefItem, isNew: boolean) =>
+  saveRef('event_types', EVENT_TYPES, item, isNew);
+
 /** Generate a code from an Arabic name (demo new items). */
 export function newCode(prefix = 'item'): string {
   return `${prefix}_${Date.now()}_${seq++}`;

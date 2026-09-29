@@ -58,5 +58,8 @@ export const orderSchema = z.object({
   customer_address: z.string().nullable().optional(),
   dropoff_at: z.string().nullable().optional(), // متى تكون عند العميل
   pickup_at: z.string().nullable().optional(), // متى تأخذها من العميل
+  // who the order serves (labels from the managed beneficiary/event lists)
+  beneficiary_type: z.string().nullable().optional(), // منزل، منشأة تجارية، مناسبة…
+  event_type: z.string().nullable().optional(), // حفل زواج، مؤتمر… (للمناسبات فقط)
 });
 export type Order = z.infer<typeof orderSchema>;
