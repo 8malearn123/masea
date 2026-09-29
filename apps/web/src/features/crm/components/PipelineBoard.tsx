@@ -15,7 +15,8 @@ export default function PipelineBoard() {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Lead | null>(null);
   const [viewing, setViewing] = useState<Lead | null>(null);
-  const [creating, setCreating] = useState(false);
+  // المرحلة التي يُضاف إليها عميل محتمل جديد (null = النموذج مغلق)
+  const [creatingStage, setCreatingStage] = useState<LeadStageCode | null>(null);
   // سحب وإفلات البطاقات بين مراحل الأنبوب
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export default function PipelineBoard() {
             </p>
           </div>
         </div>
-        <Button variant="primary" onClick={() => setCreating(true)}>
+        <Button variant="primary" onClick={() => setCreatingStage('new')}>
           <Plus size={16} /> عميل محتمل جديد
         </Button>
       </div>
@@ -125,7 +126,18 @@ export default function PipelineBoard() {
               >
                 <div className="mb-2 flex items-center justify-between px-1">
                   <Badge tone={stageTone(stage)}>{stageLabel(stage)}</Badge>
-                  <span className="num text-xs font-bold text-purple">{items.length}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="num text-xs font-bold text-purple">{items.length}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCreatingStage(stage as LeadStageCode)}
+                      className="grid h-6 w-6 place-items-center rounded-lg text-purple transition hover:bg-white hover:text-navy"
+                      aria-label={`إضافة عميل محتمل إلى ${stageLabel(stage)}`}
+                      title="إضافة عميل محتمل هنا"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {items.map((l) => (
@@ -156,7 +168,16 @@ export default function PipelineBoard() {
         </div>
       )}
 
-      <LeadFormModal lead={null} open={creating} onClose={() => setCreating(false)} />
+      {creatingStage && (
+        // key: a fresh form per opening, preselected on the column's stage
+        <LeadFormModal
+          key={creatingStage}
+          lead={null}
+          open
+          defaultStage={creatingStage}
+          onClose={() => setCreatingStage(null)}
+        />
+      )}
       <LeadFormModal lead={editing} open={editing !== null} onClose={() => setEditing(null)} />
       <LeadDrawer lead={liveViewing} onClose={() => setViewing(null)} />
     </div>

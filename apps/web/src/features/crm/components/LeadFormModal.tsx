@@ -18,10 +18,13 @@ export function LeadFormModal({
   lead,
   open,
   onClose,
+  defaultStage = 'new',
 }: {
   lead: Lead | null;
   open: boolean;
   onClose: () => void;
+  /** Stage preselected for a new lead (e.g. the column it was added from). */
+  defaultStage?: LeadStageCode;
 }) {
   const create = useCreateLead();
   const update = useUpdateLead();
@@ -34,7 +37,7 @@ export function LeadFormModal({
   const [phone, setPhone] = useState(lead?.phone ?? '');
   const [source, setSource] = useState<LeadSourceCode>(lead?.source_code ?? 'website');
   const [service, setService] = useState<ServiceCode>(lead?.service_code ?? 'recruitment');
-  const [stage, setStage] = useState<LeadStageCode>(lead?.stage_code ?? 'new');
+  const [stage, setStage] = useState<LeadStageCode>(lead?.stage_code ?? defaultStage);
   const [estValue, setEstValue] = useState(String(lead?.est_value ?? 0));
   const [notes, setNotes] = useState(lead?.notes ?? '');
 
