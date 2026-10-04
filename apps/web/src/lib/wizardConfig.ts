@@ -13,8 +13,10 @@ export interface WizardStepDef {
 export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
   recruitment: [
     { key: 'nationality_profession', title: 'الجنسية والمهنة' },
-    { key: 'package', title: 'تفاصيل الباقة' },
-    { key: 'cv', title: 'اختيار السيرة' },
+    { key: 'beneficiary', title: 'نوع المستفيد' },
+    { key: 'place', title: 'بيانات مكان الخدمة' },
+    { key: 'package', title: 'الباقة والمدة' },
+    { key: 'cv', title: 'السير المرشّحة' },
     { key: 'employer', title: 'بيانات صاحب العمل' },
     { key: 'pricing', title: 'التسعير' },
     { key: 'contract', title: 'العقد' },
@@ -22,8 +24,10 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'confirm', title: 'التأكيد' },
   ],
   monthly_rental: [
-    { key: 'select_worker', title: 'اختيار العاملة' },
-    { key: 'duration', title: 'مدة الإيجار' },
+    { key: 'beneficiary', title: 'نوع المستفيد' },
+    { key: 'place', title: 'بيانات مكان الخدمة' },
+    { key: 'duration', title: 'مدة الطلب والتواريخ' },
+    { key: 'select_worker', title: 'ترشيح العاملة' },
     { key: 'customer', title: 'بيانات العميل' },
     { key: 'pricing', title: 'التسعير' },
     { key: 'contract', title: 'العقد' },
@@ -31,8 +35,11 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'confirm', title: 'التأكيد' },
   ],
   daily_rental: [
-    { key: 'dates', title: 'التواريخ والأيام' },
+    { key: 'beneficiary', title: 'نوع المستفيد' },
+    { key: 'place', title: 'بيانات مكان الخدمة' },
+    { key: 'dates', title: 'مدة الطلب والتواريخ' },
     { key: 'task', title: 'نوع المهمة' },
+    { key: 'select_worker', title: 'ترشيح العاملة' },
     { key: 'customer', title: 'العنوان والبيانات' },
     { key: 'pricing', title: 'التسعير' },
     { key: 'payment', title: 'الدفع' },

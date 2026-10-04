@@ -7,9 +7,20 @@ export interface Rating {
   customer_name: string;
   target_type: RatingTarget;
   target_name: string;
+  /** مُعرّف العاملة في `worker_profiles` — يربط التقييم بملفها (تقييمات العاملة). */
+  worker_id?: string | null;
   stars: number; // 1..5
   comment: string;
   created_at: string;
+}
+
+/** ملخّص تقييمات عاملة واحدة. */
+export interface RatingSummary {
+  count: number;
+  /** المتوسّط من ٥ (٠ عند عدم وجود تقييمات). */
+  average: number;
+  /** توزيع النجوم: العدد لكل درجة من ١ إلى ٥. */
+  distribution: Record<number, number>;
 }
 
 export const RATING_TARGET_LABEL: Record<RatingTarget, string> = {

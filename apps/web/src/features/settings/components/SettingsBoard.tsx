@@ -1,22 +1,62 @@
 import { useMemo, useState } from 'react';
-import { KanbanSquare, Plus, Settings2, SlidersHorizontal, Tag } from 'lucide-react';
+import {
+  CalendarHeart,
+  HeartHandshake,
+  Home,
+  KanbanSquare,
+  Plus,
+  Settings2,
+  SlidersHorizontal,
+  Tag,
+} from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
 import {
   useConfig,
+  useRefList,
   useSaveRef,
-  useSources,
-  useStages,
   useUpdateConfig,
 } from '@/features/settings/hooks/useSettings';
-import { newCode, type ConfigItem, type RefItem } from '@/features/settings/api/settings.api';
+import {
+  newCode,
+  type ConfigItem,
+  type RefItem,
+  type RefKind,
+} from '@/features/settings/api/settings.api';
 
-type Tab = 'sources' | 'stages' | 'config';
+type Tab = RefKind | 'config';
 
 const TABS: { key: Tab; label: string; icon: typeof Tag }[] = [
   { key: 'sources', label: 'مصادر العملاء', icon: Tag },
   { key: 'stages', label: 'مراحل المبيعات', icon: KanbanSquare },
+  { key: 'beneficiary_types', label: 'أنواع المستفيد', icon: Home },
+  { key: 'occasion_types', label: 'أنواع المناسبات', icon: CalendarHeart },
+  { key: 'care_needs', label: 'احتياجات الرعاية', icon: HeartHandshake },
   { key: 'config', label: 'قيم النظام', icon: SlidersHorizontal },
 ];
+
+/** عنوان ووصف كل قائمة مرجعية في شاشة الإعدادات. */
+const REF_SECTIONS: Record<RefKind, { title: string; hint: string }> = {
+  sources: {
+    title: 'مصادر العملاء المحتملين',
+    hint: 'من أين يأتي العميل المحتمل (الموقع، مركز الاتصال، إحالة…).',
+  },
+  stages: {
+    title: 'مراحل خط المبيعات',
+    hint: 'مراحل تقدّم العميل المحتمل في الـpipeline.',
+  },
+  beneficiary_types: {
+    title: 'أنواع المستفيد ومكان الخدمة',
+    hint: 'لمن تُقدَّم خدمة العاملة: منزل، منشأة، مقهى/تجاري، مناسبة.',
+  },
+  occasion_types: {
+    title: 'أنواع المناسبات',
+    hint: 'تظهر للعميل عند اختيار «مناسبة» كنوع للمستفيد.',
+  },
+  care_needs: {
+    title: 'احتياجات الرعاية',
+    hint: 'احتياجات مكان الخدمة (أطفال، كبار سن، طبخ، ضيافة…) — أساس ترشيح العاملة.',
+  },
+};
 
 export default function SettingsBoard() {
   const [tab, setTab] = useState<Tab>('sources');
@@ -52,36 +92,22 @@ export default function SettingsBoard() {
         })}
       </div>
 
-      {tab === 'sources' && (
+      {tab === 'config' ? (
+        <ConfigSection />
+      ) : (
         <RefSection
-          kind="sources"
-          title="مصادر العملاء المحتملين"
-          hint="من أين يأتي العميل المحتمل (الموقع، مركز الاتصال، إحالة…)."
+          key={tab}
+          kind={tab}
+          title={REF_SECTIONS[tab].title}
+          hint={REF_SECTIONS[tab].hint}
         />
       )}
-      {tab === 'stages' && (
-        <RefSection
-          kind="stages"
-          title="مراحل خط المبيعات"
-          hint="مراحل تقدّم العميل المحتمل في الـpipeline."
-        />
-      )}
-      {tab === 'config' && <ConfigSection />}
     </div>
   );
 }
 
-function RefSection({
-  kind,
-  title,
-  hint,
-}: {
-  kind: 'sources' | 'stages';
-  title: string;
-  hint: string;
-}) {
-  const query = kind === 'sources' ? useSources : useStages;
-  const { data: items = [], isLoading } = query();
+function RefSection({ kind, title, hint }: { kind: RefKind; title: string; hint: string }) {
+  const { data: items = [], isLoading } = useRefList(kind);
   const save = useSaveRef(kind);
 
   return (

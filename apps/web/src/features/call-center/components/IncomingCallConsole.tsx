@@ -379,7 +379,11 @@ export function IncomingCallConsole({
       days: deal.quantity,
     };
     createRequest.mutate(
-      { draft, price: { base: dealDetail.base, vat: dealDetail.vat, total } },
+      {
+        draft,
+        price: { base: dealDetail.base, vat: dealDetail.vat, total },
+        serviceName: SERVICE_LABEL[deal.service],
+      },
       {
         onSuccess: (res) => {
           add.mutate(

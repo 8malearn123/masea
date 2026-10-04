@@ -17,10 +17,14 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useContracts } from '@/features/contracts/hooks/useContracts';
 import { useRecruitmentStages } from '@/features/contracts/hooks/useRecruitment';
 import { StatusBadge } from '@/features/contracts/components/StatusBadge';
+import { ExpiryAlerts } from '@/features/contracts/components/ExpiryAlerts';
 import { CONTRACT_STATUS_LABEL } from '@/features/contracts/lib/contractState';
+import { useConfig } from '@/features/settings/hooks/useSettings';
+import { configValue } from '@/features/settings/api/settings.api';
 import {
   contractInsight,
   contractKpis,
+  RENEWAL_WINDOW_DAYS,
   contractStageLabel,
   matchesTab,
   sortContracts,
@@ -113,12 +117,16 @@ function EnhancedContractsList() {
   const stageName = (code: string | null) => stages.find((s) => s.code === code)?.name_ar ?? null;
 
   const now = useMemo(() => new Date(), []);
-  const kpis = useMemo(() => contractKpis(data, now), [data, now]);
+  // مهلة التنبيه/التجديد قيمة إدارية من إعدادات النظام — مصدر واحد للتنبيهات
+  // ولتبويب التجديدات ومؤشّره، فتغييرها من الواجهة ينعكس على الشاشة كلها.
+  const { data: config = [] } = useConfig();
+  const renewalWindow = configValue(config, 'contract_expiry_alert_days', RENEWAL_WINDOW_DAYS);
+  const kpis = useMemo(() => contractKpis(data, now, renewalWindow), [data, now, renewalWindow]);
 
   // rows enriched with derived insight, then tab-filtered + sorted
   const enriched = useMemo(
-    () => data.map((c) => ({ c, ins: contractInsight(c, now) })),
-    [data, now],
+    () => data.map((c) => ({ c, ins: contractInsight(c, now, renewalWindow) })),
+    [data, now, renewalWindow],
   );
   const tabCounts = useMemo(() => {
     const counts: Record<ContractTab, number> = {
@@ -195,6 +203,9 @@ function EnhancedContractsList() {
         )}
       </div>
 
+      {/* تنبيهات انتهاء العقود */}
+      <ExpiryAlerts contracts={data} />
+
       {/* KPI row */}
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         <Kpi
@@ -214,7 +225,7 @@ function EnhancedContractsList() {
         <Kpi
           icon={<RefreshCw size={18} />}
           tone="gold"
-          label="تجديدات خلال 30 يوم"
+          label={`تجديدات خلال ${renewalWindow} يوم`}
           value={String(kpis.renewals)}
           hint="فرصة دخل متكرر"
         />

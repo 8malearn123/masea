@@ -33,6 +33,35 @@ const STAGES: RefItem[] = [
   { code: 'won', name_ar: 'مكسوب', is_active: true, sort_order: 5 },
   { code: 'lost', name_ar: 'مفقود', is_active: true, sort_order: 6 },
 ];
+/** أنواع المستفيد / مكان الخدمة — طلب العاملة يُقدّم لمنزل أو منشأة أو محل تجاري أو مناسبة. */
+const BENEFICIARY_TYPES: RefItem[] = [
+  { code: 'home', name_ar: 'منزل', is_active: true, sort_order: 1 },
+  { code: 'facility', name_ar: 'منشأة', is_active: true, sort_order: 2 },
+  { code: 'commercial', name_ar: 'مقهى / محل تجاري', is_active: true, sort_order: 3 },
+  { code: 'occasion', name_ar: 'مناسبة', is_active: true, sort_order: 4 },
+];
+/** أنواع المناسبات — تظهر عند اختيار «مناسبة» كنوع للمستفيد. */
+const OCCASION_TYPES: RefItem[] = [
+  { code: 'wedding', name_ar: 'حفل زواج', is_active: true, sort_order: 1 },
+  { code: 'marriage_contract', name_ar: 'عقد قران', is_active: true, sort_order: 2 },
+  { code: 'banquet', name_ar: 'عزيمة / وليمة', is_active: true, sort_order: 3 },
+  { code: 'graduation', name_ar: 'حفل تخرّج', is_active: true, sort_order: 4 },
+  { code: 'condolence', name_ar: 'عزاء', is_active: true, sort_order: 5 },
+  { code: 'eid', name_ar: 'استقبال العيد', is_active: true, sort_order: 6 },
+  { code: 'conference', name_ar: 'مؤتمر / اجتماع', is_active: true, sort_order: 7 },
+];
+/** احتياجات الرعاية داخل مكان الخدمة (أطفال، كبار سن، حالات خاصة…). */
+const CARE_NEEDS: RefItem[] = [
+  { code: 'newborn', name_ar: 'رعاية حديثي الولادة', is_active: true, sort_order: 1 },
+  { code: 'children', name_ar: 'رعاية أطفال ومتابعة دراسية', is_active: true, sort_order: 2 },
+  { code: 'elderly', name_ar: 'رعاية كبار السن', is_active: true, sort_order: 3 },
+  { code: 'bedridden', name_ar: 'رعاية حالة طريح الفراش', is_active: true, sort_order: 4 },
+  { code: 'special_needs', name_ar: 'رعاية ذوي احتياج خاص', is_active: true, sort_order: 5 },
+  { code: 'cooking', name_ar: 'طبخ وإعداد وجبات', is_active: true, sort_order: 6 },
+  { code: 'cleaning', name_ar: 'تنظيف وترتيب', is_active: true, sort_order: 7 },
+  { code: 'serving', name_ar: 'ضيافة وتقديم', is_active: true, sort_order: 8 },
+];
+
 const CONFIG: ConfigItem[] = [
   {
     key: 'vat_rate',
@@ -89,6 +118,22 @@ const CONFIG: ConfigItem[] = [
     value: 90,
     unit: 'يوم',
     sort_order: 7,
+  },
+  {
+    key: 'contract_expiry_alert_days',
+    label_ar: 'مهلة التنبيه قبل انتهاء العقد',
+    grp: 'العقود',
+    value: 30,
+    unit: 'يوم',
+    sort_order: 8,
+  },
+  {
+    key: 'match_min_score',
+    label_ar: 'أدنى نسبة مطابقة لترشيح العاملة',
+    grp: 'العقود',
+    value: 45,
+    unit: '٪',
+    sort_order: 9,
   },
 ];
 
@@ -165,4 +210,61 @@ export async function updateConfig(key: string, value: number): Promise<void> {
   }
   const row = CONFIG.find((c) => c.key === key);
   if (row) row.value = value;
+}
+
+/* ------------------- prototype reference lists (mock) --------------------- */
+/**
+ * القوائم المرجعية الجديدة لنموذج طلب العاملة (أنواع المستفيد، أنواع المناسبات،
+ * احتياجات الرعاية). في مرحلة الـPrototype تُقرأ وتُكتب من مخزن mock في الذاكرة
+ * حتى تُنشأ جداولها؛ الشكل هو نفسه `RefItem` المستخدم في بقية القوائم المرجعية،
+ * فلا تكرار لمفهوم ولا شاشة «عرض فقط»: الإداري يضيف ويعدّل ويعطّل من الإعدادات.
+ */
+export type RefKind = 'sources' | 'stages' | 'beneficiary_types' | 'occasion_types' | 'care_needs';
+
+const MOCK_LISTS: Record<Exclude<RefKind, 'sources' | 'stages'>, RefItem[]> = {
+  beneficiary_types: BENEFICIARY_TYPES,
+  occasion_types: OCCASION_TYPES,
+  care_needs: CARE_NEEDS,
+};
+
+export const REF_KIND_LABEL: Record<RefKind, string> = {
+  sources: 'مصادر العملاء',
+  stages: 'مراحل المبيعات',
+  beneficiary_types: 'أنواع المستفيد',
+  occasion_types: 'أنواع المناسبات',
+  care_needs: 'احتياجات الرعاية',
+};
+
+/** قائمة مرجعية واحدة بأي نوع — نقطة قراءة موحّدة لكل الشاشات. */
+export async function listRef(kind: RefKind): Promise<RefItem[]> {
+  if (kind === 'sources') return listSources();
+  if (kind === 'stages') return listStages();
+  return [...MOCK_LISTS[kind]].sort(byOrder);
+}
+
+/** إضافة/تعديل/تعطيل عنصر في أي قائمة مرجعية (الحذف = تعطيل، لا حذف نهائي). */
+export async function saveRef(kind: RefKind, item: RefItem, isNew: boolean): Promise<void> {
+  if (kind === 'sources') return saveSource(item, isNew);
+  if (kind === 'stages') return saveStage(item, isNew);
+  const store = MOCK_LISTS[kind];
+  const idx = store.findIndex((r) => r.code === item.code);
+  if (isNew && idx === -1) store.push(item);
+  else if (idx !== -1) store[idx] = item;
+}
+
+/** العناصر المُفعّلة فقط — ما يُعرض للعميل في نماذج الطلب. */
+export function activeOnly(items: RefItem[]): RefItem[] {
+  return items.filter((i) => i.is_active);
+}
+
+/** الاسم العربي لكود في قائمة مرجعية (للملخّصات والعروض). */
+export function refName(items: RefItem[], code: string | null): string {
+  if (!code) return '—';
+  return items.find((i) => i.code === code)?.name_ar ?? code;
+}
+
+/** قيمة معيار من قيم النظام مع قيمة احتياطية عند عدم التحميل بعد. */
+export function configValue(items: ConfigItem[], key: string, fallback: number): number {
+  const row = items.find((c) => c.key === key);
+  return row ? Number(row.value) : fallback;
 }

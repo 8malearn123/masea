@@ -84,6 +84,16 @@ function mk(o: {
 /** The demo external-office account id (mirrors demoProfile id for that role). */
 export const DEMO_OFFICE_ID = 'demo-external_office';
 
+/**
+ * تاريخ نسبةً لليوم (yyyy-mm-dd) — تواريخ نهاية العقود التجريبية محسوبة نسبيًا
+ * حتى تبقى تنبيهات الانتهاء حيّة مهما طال الوقت على بيانات العرض.
+ */
+function inDays(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /** Demo-only: mutate a fallback contract in place so offline writes are visible. */
 export function demoMutateContract(id: string, patch: Partial<ContractListItem>): boolean {
   const row = FALLBACK.find((c) => c.id === id);
@@ -117,6 +127,7 @@ const FALLBACK: ContractListItem[] = [
     customer_name: 'سارة القحطاني',
     branch: 'جازان',
     start_date: '2026-02-05',
+    end_date: inDays(95),
   }),
   mk({
     id: '00003',
@@ -138,7 +149,7 @@ const FALLBACK: ContractListItem[] = [
     customer_name: 'نورة الشهري',
     branch: 'نجران',
     start_date: '2026-01-10',
-    end_date: '2026-08-10',
+    end_date: inDays(11),
     signed_at: '2026-01-12T08:00:00Z',
     musaned_contract_no: '4059930127',
     assigned_office_id: DEMO_OFFICE_ID,
@@ -160,6 +171,32 @@ const FALLBACK: ContractListItem[] = [
     assigned_office_id: DEMO_OFFICE_ID,
     assigned_at: '2026-03-03T10:00:00Z',
     recruitment_stage: 'medical_exam',
+  }),
+  mk({
+    id: '00008',
+    contract_no: 'MAS-2026-00008',
+    service_code: 'monthly_rental',
+    status: 'active',
+    base_amount: 9000,
+    amount_paid: 9000,
+    customer_name: 'هيا آل مفرح',
+    branch: 'جازان',
+    start_date: '2026-06-20',
+    end_date: inDays(4),
+    signed_at: '2026-06-20T11:00:00Z',
+  }),
+  mk({
+    id: '00009',
+    contract_no: 'MAS-2026-00009',
+    service_code: 'monthly_rental',
+    status: 'active',
+    base_amount: 6600,
+    amount_paid: 4400,
+    customer_name: 'مشعل الصيعري',
+    branch: 'نجران',
+    start_date: '2026-03-15',
+    end_date: inDays(-6),
+    signed_at: '2026-03-16T09:30:00Z',
   }),
   mk({
     id: '00005',
