@@ -18,14 +18,17 @@ export function LeadFormModal({
   lead,
   open,
   onClose,
+  defaultStage = 'new',
 }: {
   lead: Lead | null;
   open: boolean;
   onClose: () => void;
+  /** Stage preselected for a new lead (e.g. the column it was added from). */
+  defaultStage?: LeadStageCode;
 }) {
   return (
     <Modal open={open} onClose={onClose} title={lead ? 'تعديل العميل المحتمل' : 'عميل محتمل جديد'}>
-      <LeadForm lead={lead} onDone={onClose} onCancel={onClose} />
+      <LeadForm lead={lead} defaultStage={defaultStage} onDone={onClose} onCancel={onClose} />
     </Modal>
   );
 }
@@ -33,10 +36,12 @@ export function LeadFormModal({
 /** حقول العميل المحتمل — تُستخدم داخل نافذة التعديل وفي صفحة الإضافة. */
 export function LeadForm({
   lead,
+  defaultStage = 'new',
   onDone,
   onCancel,
 }: {
   lead: Lead | null;
+  defaultStage?: LeadStageCode;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -51,7 +56,7 @@ export function LeadForm({
   const [phone, setPhone] = useState(lead?.phone ?? '');
   const [source, setSource] = useState<LeadSourceCode>(lead?.source_code ?? 'website');
   const [service, setService] = useState<ServiceCode>(lead?.service_code ?? 'recruitment');
-  const [stage, setStage] = useState<LeadStageCode>(lead?.stage_code ?? 'new');
+  const [stage, setStage] = useState<LeadStageCode>(lead?.stage_code ?? defaultStage);
   const [estValue, setEstValue] = useState(String(lead?.est_value ?? 0));
   const [notes, setNotes] = useState(lead?.notes ?? '');
 
