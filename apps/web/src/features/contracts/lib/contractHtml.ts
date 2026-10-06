@@ -1,6 +1,7 @@
 import { sar } from '@/shared/lib/format';
 import { SERVICE_LABEL, type ContractListItem } from '@/features/contracts/types';
 import { CONTRACT_STATUS_LABEL } from '@/features/contracts/lib/contractState';
+import { contractTermLabel, contractTermUnit } from '@/features/contracts/lib/contractTerm';
 
 /**
  * Builds the RTL Arabic contract document.
@@ -17,6 +18,15 @@ export function buildContractHtml(contract: ContractListItem, clauses: string[])
   const rows = clauses
     .map((c, i) => `<li><span class="n">${i + 1}.</span> ${escapeHtml(c)}</li>`)
     .join('');
+  // نقل الكفالة بلا مدة؛ غيره يُطبع تاريخ نهايته ومدته (أو «غير محدّد» لعقد قديم بلا نهاية).
+  const hasTerm = contractTermUnit(contract.service_code) !== null;
+  const termLabel = contractTermLabel(contract);
+  const endRow = hasTerm
+    ? `<tr><td class="k">تاريخ النهاية</td><td class="num">${escapeHtml(contract.end_date ?? 'غير محدّد')}</td></tr>`
+    : '';
+  const termRow = termLabel
+    ? `<tr><td class="k">مدة العقد</td><td>${escapeHtml(termLabel)}</td></tr>`
+    : '';
 
   return `<!doctype html>
 <html lang="ar" dir="rtl">
@@ -60,6 +70,8 @@ export function buildContractHtml(contract: ContractListItem, clauses: string[])
     <tr><td class="k">العميل</td><td>${escapeHtml(contract.customer_name ?? '—')}</td></tr>
     <tr><td class="k">الفرع</td><td>${escapeHtml(contract.branch_id ?? '—')}</td></tr>
     <tr><td class="k">تاريخ البداية</td><td class="num">${escapeHtml(contract.start_date ?? '—')}</td></tr>
+    ${endRow}
+    ${termRow}
     <tr><td class="k">الحالة</td><td>${CONTRACT_STATUS_LABEL[contract.status]}</td></tr>
   </table>
 

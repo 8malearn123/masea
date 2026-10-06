@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isValidDay } from '@/features/requests/lib/period';
 
 /** Contract state machine — mirrors supabase 0015/0016/0049 (backend is source of truth). */
 export const contractStatusSchema = z.enum([
@@ -154,6 +155,25 @@ export interface ExternalOfficeAccount {
   full_name: string;
   branch: string | null;
 }
+
+/**
+ * مدة العقد كما تُحفظ (contracts.start_date / end_date). تُفحص قبل أي كتابة:
+ * تاريخ تقويمي صحيح، ونهاية لا تسبق البداية. end_date = null لعقد بلا مدة
+ * (نقل الكفالة).
+ */
+export const contractTermSchema = z
+  .object({
+    start_date: z
+      .string()
+      .min(1, { message: 'حدّد تاريخ البداية' })
+      .refine(isValidDay, { message: 'تاريخ البداية غير صالح' }),
+    end_date: z.string().refine(isValidDay, { message: 'تاريخ النهاية غير صالح' }).nullable(),
+  })
+  .refine((t) => t.end_date === null || t.end_date >= t.start_date, {
+    message: 'تاريخ النهاية لا يمكن أن يسبق تاريخ البداية',
+    path: ['end_date'],
+  });
+export type ContractTerm = z.infer<typeof contractTermSchema>;
 
 /** Wizard input — validated on the client and re-validated/priced in the backend. */
 export const createContractInputSchema = z.object({

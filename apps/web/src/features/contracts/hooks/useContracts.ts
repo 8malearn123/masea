@@ -13,6 +13,8 @@ import {
   setMusanedNo,
   signContract,
   transitionContract,
+  updateContractTerm,
+  type CreateDraftInput,
   type SignPayload,
 } from '@/features/contracts/api/contracts.api';
 import type {
@@ -21,8 +23,8 @@ import type {
   ContractSignature,
   ContractStatus,
   ContractStatusHistory,
-  CreateContractInput,
 } from '@/features/contracts/types';
+import type { ContractTerm } from '@/features/contracts/schemas/contract.schema';
 
 const LIST_KEY = ['contracts', 'list'] as const;
 
@@ -70,22 +72,42 @@ export function useContractTemplates() {
   });
 }
 
+/**
+ * إنشاء مسودة عقد. رسالة النجاح والانتقال يتولّاهما المستدعي (المعالج) عبر
+ * onSuccess الخاص بـ mutate — فلا تظهر رسالة نجاح إلا بعد حفظ فعلي.
+ */
 export function useCreateContract() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<ContractListItem, Error, CreateContractInput>({
-    mutationFn: async (input) => ({
-      ...(await createDraft(input)),
-      customer_name: null,
-      worker_name: null,
-    }),
+  return useMutation<ContractListItem, Error, CreateDraftInput>({
+    mutationFn: createDraft,
     onSuccess: (created) => {
+      qc.setQueryData(contractKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: contractKeys.clauses(created.id) });
+      void qc.invalidateQueries({ queryKey: contractKeys.history(created.id) });
       qc.setQueriesData<ContractListItem[]>({ queryKey: LIST_KEY }, (old) =>
-        old ? [created, ...old] : old,
+        old ? [created, ...old.filter((c) => c.id !== created.id)] : old,
       );
-      toast.success('تم حفظ المسودة');
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
     },
     onError: (e) => toast.error(e.message || 'تعذّر إنشاء العقد'),
+  });
+}
+
+/** تعديل مدة مسودة العقد (تاريخ البداية والنهاية). */
+export function useUpdateContractTerm(id: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<ContractTerm, Error, ContractTerm>({
+    mutationFn: ({ start_date, end_date }) => updateContractTerm(id, start_date, end_date),
+    onSuccess: (term) => {
+      qc.setQueryData<ContractListItem | null>(contractKeys.detail(id), (old) =>
+        old ? { ...old, ...term } : old,
+      );
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      toast.success('تم حفظ مدة العقد');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ مدة العقد'),
   });
 }
 

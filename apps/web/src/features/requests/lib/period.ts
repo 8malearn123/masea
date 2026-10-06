@@ -20,6 +20,12 @@ export function toDay(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** تاريخ تقويمي حقيقي بصيغة yyyy-mm-dd (يرفض ٣٠ فبراير و١٣/٠١ وما شابه). */
+export function isValidDay(iso: string): boolean {
+  const d = parseDay(iso);
+  return d !== null && toDay(d) === iso;
+}
+
 /** تاريخ اليوم بصيغة yyyy-mm-dd. */
 export function today(now: Date = new Date()): string {
   return toDay(new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())));
@@ -55,11 +61,18 @@ export function daysBetween(fromIso: string, toIso: string): number {
 /**
  * تاريخ نهاية المدة. اليوم الأول محسوب داخل المدة، فطلب يوم واحد يبدأ وينتهي
  * في نفس التاريخ، وطلب ٣ أيام يبدأ الأحد وينتهي الثلاثاء.
+ * المدة بالأشهر تنتهي في اليوم السابق لنفس التاريخ بعد N شهر؛ فإن لم يوجد ذلك
+ * التاريخ في الشهر الأقصر (٣١ يناير + شهر، ٢٩ فبراير + سنة) تنتهي المدة في آخر
+ * يوم من ذلك الشهر، فلا يسقط يوم من المدة.
  */
 export function computeEndDate(startDate: string, unit: PeriodUnit, count: number): string {
   const n = Math.max(1, Math.floor(count));
-  if (!parseDay(startDate)) return '';
-  return unit === 'day' ? addDays(startDate, n - 1) : addDays(addMonths(startDate, n), -1);
+  const start = parseDay(startDate);
+  if (!start) return '';
+  if (unit === 'day') return addDays(startDate, n - 1);
+  const anniversary = addMonths(startDate, n);
+  const clamped = parseDay(anniversary)?.getUTCDate() !== start.getUTCDate();
+  return clamped ? anniversary : addDays(anniversary, -1);
 }
 
 export function buildPeriod(startDate: string, unit: PeriodUnit, count: number): RequestPeriod {
@@ -80,7 +93,7 @@ export function periodLabel(period: RequestPeriod): string {
   if (n === 1) return unit === 'يوم' ? 'يوم واحد' : 'شهر واحد';
   if (n === 2) return unit === 'يوم' ? 'يومان' : 'شهران';
   if (n <= 10) return `${n} ${unit === 'يوم' ? 'أيام' : 'أشهر'}`;
-  return `${n} ${unit}`;
+  return `${n} ${unit === 'يوم' ? 'يومًا' : 'شهرًا'}`; // ١١ فأكثر: تمييز مفرد منصوب
 }
 
 /** تقاطُع مدّتين (لفحص التواريخ المحجوزة). */

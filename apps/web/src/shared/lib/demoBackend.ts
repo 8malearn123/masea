@@ -12,6 +12,20 @@
  *   2. swallow `isIgnorableWriteError(error.message)` instead of throwing.
  */
 
+import { isBackendConfigured } from '@/shared/lib/env';
+import { isDemoActive } from '@/lib/demo';
+
+/**
+ * Explicit demo mode: no Supabase credentials, or a demo account is signed in.
+ * Same condition `shared/lib/supabase.ts` uses to short-circuit every request.
+ * Writes that must not fake success (e.g. contract creation) use this instead of
+ * guessing from error text: in demo mode they write locally; with a real backend
+ * any error is surfaced to the user.
+ */
+export function isDemoMode(): boolean {
+  return !isBackendConfigured || isDemoActive();
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Seed/demo ids are short tokens; real backend rows use UUIDs. */
