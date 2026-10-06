@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BellRing, CalendarClock, CalendarOff, ChevronLeft, Eye } from 'lucide-react';
+import { BellRing, CalendarClock, CalendarOff, ChevronLeft, Eye, GitBranch } from 'lucide-react';
 import { Badge, Card, Skeleton } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { isDemoMode } from '@/shared/lib/demoBackend';
@@ -11,6 +11,8 @@ import {
   expiryTone,
   EXPIRY_URGENCY_LABEL,
 } from '@/features/contracts/lib/contractInsights';
+import { activeRenewalsOf } from '@/features/contracts/lib/contractRenewal';
+import { RenewContractButton } from '@/features/contracts/components/RenewContract';
 import { SERVICE_LABEL, type ContractListItem } from '@/features/contracts/types';
 
 const PREVIEW = 3;
@@ -102,12 +104,9 @@ export function ExpiryAlerts({
                   متبقٍ {sar(insight.remaining)} ر.س
                 </span>
               )}
-              <Link
-                to={`/contracts/${contract.id}`}
-                className="ms-auto inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-[11px] font-semibold text-navy ring-1 ring-navy-100 transition hover:bg-navy-50"
-              >
-                <Eye size={12} /> عرض العقد
-              </Link>
+              <span className="ms-auto flex flex-wrap items-center gap-2">
+                <RowActions contract={contract} all={contracts} />
+              </span>
             </li>
           ))}
         </ul>
@@ -142,6 +141,31 @@ export function ExpiryAlerts({
             </button>
           )}
     </Card>
+  );
+}
+
+/**
+ * إجراء الصف: إن وُجد تجديد قائم فرابطه، وإلا زر «تجديد العقد» (يظهر لمن يملك
+ * الصلاحية وتنطبق عليه القواعد) مع «عرض العقد».
+ */
+function RowActions({ contract, all }: { contract: ContractListItem; all: ContractListItem[] }) {
+  const renewals = activeRenewalsOf(contract.id, all);
+  const renewal = renewals[0];
+  const linkCls =
+    'inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-[11px] font-semibold text-navy ring-1 ring-navy-100 transition hover:bg-navy-50';
+  return (
+    <>
+      {renewal ? (
+        <Link to={`/contracts/${renewal.id}`} className={linkCls}>
+          <GitBranch size={12} /> تم التجديد · <span className="num">{renewal.contract_no}</span>
+        </Link>
+      ) : (
+        <RenewContractButton contract={contract} existingRenewals={renewals} />
+      )}
+      <Link to={`/contracts/${contract.id}`} className={linkCls}>
+        <Eye size={12} /> عرض العقد
+      </Link>
+    </>
   );
 }
 

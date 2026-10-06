@@ -1,11 +1,19 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { loadDemo } from '@/lib/demo';
-import { ROLE_META, type RoleCode } from '@/lib/permissions';
+import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { fallbackPrice } from '@/shared/lib/pricing';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
+import { addDays, addMonths, computeEndDate } from '@/features/requests/lib/period';
+import type { PeriodUnit } from '@/features/requests/types';
 import { DEFAULT_SERVICE_ORIGIN } from '@/features/contracts/lib/contractOrigin';
+import {
+  nextVersion,
+  renewalRuleError,
+  renewalTerm,
+  renewClauseBody,
+} from '@/features/contracts/lib/contractRenewal';
 import {
   contractTermSchema,
   type ContractTerm,
@@ -100,6 +108,20 @@ function inDays(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * بداية مدة (n أشهر/أيام) تنتهي بعد `endOffset` يومًا من اليوم — حتى تكون تواريخ
+ * عقود العرض النشطة مدة كاملة متّسقة (تُحسب مدتها ويمكن تجديدها) مهما طال الوقت.
+ */
+function termStart(endOffset: number, unit: PeriodUnit, n: number): string {
+  const end = inDays(endOffset);
+  const naive = unit === 'day' ? addDays(end, -(n - 1)) : addMonths(addDays(end, 1), -n);
+  for (const shift of [0, -1, 1, -2, 2, -3, 3]) {
+    const start = addDays(naive, shift);
+    if (computeEndDate(start, unit, n) === end) return start;
+  }
+  return naive;
+}
+
 /** Demo-only: mutate a fallback contract in place so offline writes are visible. */
 export function demoMutateContract(id: string, patch: Partial<ContractListItem>): boolean {
   const row = FALLBACK.find((c) => c.id === id);
@@ -187,9 +209,9 @@ const FALLBACK: ContractListItem[] = [
     amount_paid: 9000,
     customer_name: 'هيا آل مفرح',
     branch: 'جازان',
-    start_date: '2026-06-20',
+    start_date: termStart(4, 'month', 3),
     end_date: inDays(4),
-    signed_at: '2026-06-20T11:00:00Z',
+    signed_at: `${termStart(4, 'month', 3)}T11:00:00Z`,
   }),
   mk({
     id: '00009',
@@ -200,9 +222,9 @@ const FALLBACK: ContractListItem[] = [
     amount_paid: 4400,
     customer_name: 'مشعل الصيعري',
     branch: 'نجران',
-    start_date: '2026-03-15',
+    start_date: termStart(-6, 'month', 3),
     end_date: inDays(-6),
-    signed_at: '2026-03-16T09:30:00Z',
+    signed_at: `${termStart(-6, 'month', 3)}T09:30:00Z`,
   }),
   mk({
     id: '00005',
@@ -718,8 +740,156 @@ export async function updateContractTerm(
   return term;
 }
 
+/**
+ * تجديد العقد: نسخة جديدة مرتبطة بالأصل (parent_contract_id + version) بنفس
+ * مدته، تبدأ بعد نهايته، في حالة «مسودة» برقم عقد جديد. الأصل لا يتغيّر.
+ * - قاعدة بيانات فعلية: دالة الخادم `renew_contract` (0051) — معاملة واحدة ذرّية،
+ *   صلاحية contracts.create ونطاق الفرع، وقفل الأصل يمنع النسخ المكرّرة. أي فشل
+ *   يُرمى للمستخدم؛ لا نسخة محلية بديلة.
+ * - الوضع التجريبي: نفس القواعد على مخزن العرض.
+ */
+export async function renewContract(
+  parentId: string,
+  start_date: string,
+  end_date: string,
+): Promise<ContractListItem> {
+  parseTerm(start_date, end_date);
+
+  if (isDemoMode()) return renewDemoContract(parentId, start_date, end_date);
+
+  const { data, error } = await supabase.rpc('renew_contract', {
+    p_contract_id: parentId,
+    p_start_date: start_date,
+    p_end_date: end_date,
+  });
+  if (error) throw new Error(`تعذّر تجديد العقد: ${error.message}`);
+  const row = data as Contract | null;
+  if (!row?.id) throw new Error('تعذّر تجديد العقد: لم يُرجِع الخادم النسخة الجديدة');
+  // الحفظ تمّ؛ نجلب الصف كاملًا (اسم العميل) وإن تعذّر نكتفي بما أرجعه الخادم
+  const full = await getContract(row.id).catch(() => null);
+  return full ?? { ...row, customer_name: null, worker_name: null };
+}
+
+function renewDemoContract(parentId: string, start: string, end: string): ContractListItem {
+  const profile = useAuth.getState().profile;
+  if (!roleCan(profile?.role as RoleCode | undefined, 'contracts', 'create')) {
+    throw new Error('لا تملك صلاحية إنشاء العقود وتجديدها');
+  }
+  const parent = scopeForViewer(FALLBACK.filter((c) => c.id === parentId))[0];
+  if (!parent) throw new Error('العقد غير موجود');
+
+  const renewals = FALLBACK.filter((c) => c.parent_contract_id === parent.id);
+  const ruleError = renewalRuleError(
+    parent,
+    renewals.filter((c) => c.status !== 'cancelled'),
+  );
+  if (ruleError) throw new Error(ruleError);
+  const plan = renewalTerm(parent, start);
+  if (plan.error !== null) throw new Error(plan.error);
+  if (plan.term.end_date !== end) {
+    throw new Error('تاريخ نهاية النسخة الجديدة لا يطابق مدة العقد الأصلي');
+  }
+
+  const now = new Date();
+  const renewal: ContractListItem = {
+    ...parent,
+    id: `local-${Date.now()}-${++localSeq}`,
+    contract_no: formatContractNo(now.getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    start_date: start,
+    end_date: end,
+    amount_paid: 0,
+    status: 'draft',
+    version: nextVersion(parent, renewals),
+    parent_contract_id: parent.id,
+    created_by: profile?.id ?? null,
+    created_at: now.toISOString(),
+    signed_at: null,
+    musaned_contract_no: null,
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+  };
+  FALLBACK.unshift({ ...renewal });
+  FALLBACK_CLAUSES[renewal.id] = (FALLBACK_CLAUSES[parent.id] ?? []).map((cl, i) => ({
+    id: `cl-${renewal.id}-${i}`,
+    contract_id: renewal.id,
+    sort_order: cl.sort_order,
+    body: renewClauseBody(cl.body, parent.start_date, start),
+  }));
+  return renewal;
+}
+
+/**
+ * سجل إصدارات العقد: من الأصل الأول (الجذر عبر parent_contract_id) وكل تجديداته
+ * ومنها الملغاة، مرتّبة بالإصدار. تحترم الصلاحيات (RLS / نطاق العرض): ما لا يراه
+ * المستخدم لا يظهر.
+ */
+export async function getContractLineage(id: string): Promise<ContractListItem[]> {
+  const MAX = 50;
+  const seen = new Map<string, ContractListItem>();
+  const self = await getContract(id);
+  if (!self) return [];
+  seen.set(self.id, self);
+
+  let root = self;
+  for (let i = 0; root.parent_contract_id && i < MAX; i += 1) {
+    if (seen.has(root.parent_contract_id) && root.parent_contract_id !== root.id) {
+      root = seen.get(root.parent_contract_id) as ContractListItem;
+      continue;
+    }
+    const parent = await getContract(root.parent_contract_id);
+    if (!parent) break;
+    seen.set(parent.id, parent);
+    root = parent;
+  }
+
+  // نزولًا من الجذر: كل عقدة تُوسَّع مرة واحدة (حتى لو رأيناها صعودًا، كالعقد نفسه)
+  const expanded = new Set<string>();
+  let frontier = [root.id];
+  for (let i = 0; frontier.length > 0 && i < MAX; i += 1) {
+    frontier.forEach((f) => expanded.add(f));
+    const children = await listChildren(frontier);
+    frontier = [];
+    for (const c of children) {
+      if (!seen.has(c.id)) seen.set(c.id, c);
+      if (!expanded.has(c.id)) frontier.push(c.id);
+    }
+  }
+  return [...seen.values()].sort((a, b) =>
+    a.version !== b.version ? a.version - b.version : a.created_at < b.created_at ? -1 : 1,
+  );
+}
+
+async function listChildren(parentIds: string[]): Promise<ContractListItem[]> {
+  if (isDemoMode()) {
+    return scopeForViewer(
+      FALLBACK.filter((c) => c.parent_contract_id && parentIds.includes(c.parent_contract_id)),
+    ).map((c) => ({ ...c }));
+  }
+  const { data, error } = await supabase
+    .from('contracts')
+    .select('*, customers(full_name)')
+    .in('parent_contract_id', parentIds);
+  if (error) throw new Error(`تعذّر جلب إصدارات العقد: ${error.message}`);
+  return ((data ?? []) as RawRow[]).map(({ customers, ...rest }) => ({
+    ...rest,
+    customer_name: customers?.full_name ?? null,
+    worker_name: null,
+  }));
+}
+
 export async function transitionContract(id: string, toStatus: ContractStatus): Promise<void> {
-  if (isDemoId(id)) return; // demo contract — optimistic status change is the truth
+  if (isDemoId(id)) {
+    // demo contract — keep the demo store in step with the optimistic status change
+    demoMutateContract(id, {
+      status: toStatus,
+      ...(toStatus === 'signed' ? { signed_at: new Date().toISOString() } : {}),
+    });
+    return;
+  }
   const { error } = await supabase.rpc('transition_contract', {
     p_contract_id: id,
     p_to_status: toStatus,

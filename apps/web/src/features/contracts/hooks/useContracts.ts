@@ -6,10 +6,12 @@ import {
   createDraft,
   getClauses,
   getContract,
+  getContractLineage,
   getHistory,
   getSignatures,
   getTemplates,
   listContracts,
+  renewContract,
   setMusanedNo,
   signContract,
   transitionContract,
@@ -64,6 +66,14 @@ export function useContractSignatures(id: string) {
   return useQuery({ queryKey: contractKeys.signatures(id), queryFn: () => getSignatures(id) });
 }
 
+/** سلسلة إصدارات العقد (الأصول والتجديدات). */
+export function useContractLineage(id: string) {
+  return useQuery({
+    queryKey: ['contracts', 'lineage', id],
+    queryFn: () => getContractLineage(id),
+  });
+}
+
 export function useContractTemplates() {
   return useQuery({
     queryKey: contractKeys.templates(),
@@ -108,6 +118,27 @@ export function useUpdateContractTerm(id: string) {
       toast.success('تم حفظ مدة العقد');
     },
     onError: (e) => toast.error(e.message || 'تعذّر حفظ مدة العقد'),
+  });
+}
+
+/**
+ * تجديد العقد. رسالة النجاح والانتقال للنسخة الجديدة يتولّاهما المستدعي عبر
+ * onSuccess الخاص بـ mutate — فلا تظهر رسالة نجاح إلا بعد حفظ فعلي.
+ */
+export function useRenewContract(parentId: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<ContractListItem, Error, ContractTerm>({
+    mutationFn: ({ start_date, end_date }) => {
+      if (!end_date) throw new Error('حدّد تاريخ نهاية النسخة الجديدة');
+      return renewContract(parentId, start_date, end_date);
+    },
+    onSuccess: (created) => {
+      qc.setQueryData(contractKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      void qc.invalidateQueries({ queryKey: ['contracts', 'lineage'] });
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر تجديد العقد'),
   });
 }
 

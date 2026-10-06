@@ -6,17 +6,20 @@ import {
   ExternalLink,
   FileDown,
   FileText,
+  GitBranch,
   History,
   ScrollText,
   Signature,
 } from 'lucide-react';
-import { Card, Skeleton, EmptyState, ErrorState, Button, Input, Select } from '@/shared/ui';
+import { Badge, Card, Skeleton, EmptyState, ErrorState, Button, Input, Select } from '@/shared/ui';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { sar, dateAr, dateTimeAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   useContract,
   useContractClauses,
   useContractHistory,
+  useContractLineage,
   useContractSignatures,
   useTransitionContract,
   useUpdateContractTerm,
@@ -27,6 +30,8 @@ import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { StatusBadge } from '@/features/contracts/components/StatusBadge';
 import { SignContractModal } from '@/features/contracts/components/SignContractModal';
 import { RecruitmentJourney } from '@/features/contracts/components/RecruitmentJourney';
+import { RenewContractButton } from '@/features/contracts/components/RenewContract';
+import { activeRenewalsOf } from '@/features/contracts/lib/contractRenewal';
 import { CONTRACT_STATUS_LABEL, nextStatuses } from '@/features/contracts/lib/contractState';
 import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
 import {
@@ -69,6 +74,7 @@ export default function ContractDetails() {
   const { id = '' } = useParams();
   const { can } = usePermissions();
   const { data: contract, isLoading, isError, refetch } = useContract(id);
+  const { data: lineage = [] } = useContractLineage(id);
   const { data: clauses = [] } = useContractClauses(id);
   const { data: history = [] } = useContractHistory(id);
   const { data: signatures = [] } = useContractSignatures(id);
@@ -96,6 +102,8 @@ export default function ContractDetails() {
     return can('contracts', 'edit');
   }
   const actions = nextStatuses(contract.status, musaned ? 'musaned' : 'internal').filter(canDo);
+  const parent = lineage.find((c) => c.id === contract.parent_contract_id) ?? null;
+  const renewals = activeRenewalsOf(contract.id, lineage);
 
   return (
     <div>
@@ -117,9 +125,29 @@ export default function ContractDetails() {
               {contract.customer_name ?? '—'} ·{' '}
               {contract.service_code ? SERVICE_LABEL[contract.service_code] : '—'}
             </p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-purple">
+              <GitBranch size={13} /> الإصدار <span className="num">{contract.version}</span>
+              {contract.parent_contract_id && (
+                <>
+                  {' '}
+                  — تجديد العقد{' '}
+                  {parent ? (
+                    <Link
+                      to={`/contracts/${parent.id}`}
+                      className="num font-semibold text-navy hover:underline"
+                    >
+                      {parent.contract_no}
+                    </Link>
+                  ) : (
+                    'السابق'
+                  )}
+                </>
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isDemoMode() && <Badge tone="neutral">بيانات تجريبية</Badge>}
           <StatusBadge status={contract.status} />
           {!musaned && (
             <Button
@@ -180,7 +208,9 @@ export default function ContractDetails() {
             {contract.signed_at && <Row label="تاريخ التوقيع">{dateAr(contract.signed_at)}</Row>}
           </Card>
 
+          {/* نسخة التجديد بمدة الأصل وسعره — لا تُعدَّل مدتها هنا (السعر مرتبط بالمدة) */}
           {contract.status === 'draft' &&
+            !contract.parent_contract_id &&
             can('contracts', 'edit') &&
             contractTermUnit(contract.service_code) && (
               <TermEditor contract={contract} hasClauses={clauses.length > 0} />
@@ -217,6 +247,19 @@ export default function ContractDetails() {
           {/* Actions */}
           <Card>
             <h2 className="mb-3 text-sm font-bold text-navy">الإجراءات</h2>
+            {renewals[0] ? (
+              <Link
+                to={`/contracts/${renewals[0].id}`}
+                className="mb-3 flex items-center gap-1.5 rounded-xl bg-navy-50 px-3 py-2 text-xs font-semibold text-navy hover:underline"
+              >
+                <GitBranch size={14} /> جُدِّد بالعقد{' '}
+                <span className="num">{renewals[0].contract_no}</span>
+              </Link>
+            ) : (
+              <div className="mb-3 flex flex-col">
+                <RenewContractButton contract={contract} existingRenewals={renewals} size="md" />
+              </div>
+            )}
             {actions.length === 0 ? (
               <p className="text-sm text-purple">لا توجد إجراءات متاحة لحالتك ودورك.</p>
             ) : (
@@ -240,6 +283,46 @@ export default function ContractDetails() {
               </div>
             )}
           </Card>
+
+          {/* سجل النسخ (الأصل والتجديدات) */}
+          {lineage.length > 1 && (
+            <Card>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
+                <GitBranch size={16} /> سجل النسخ
+              </h2>
+              <ol className="space-y-2">
+                {lineage.map((v) => (
+                  <li
+                    key={v.id}
+                    className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 ${
+                      v.id === contract.id ? 'bg-navy-50' : 'border border-navy-50'
+                    }`}
+                  >
+                    <span className="text-xs text-navy-900">
+                      الإصدار <span className="num font-bold">{v.version}</span> ·{' '}
+                      {v.id === contract.id ? (
+                        <span className="num font-semibold">{v.contract_no}</span>
+                      ) : (
+                        <Link
+                          to={`/contracts/${v.id}`}
+                          className="num font-semibold text-navy hover:underline"
+                        >
+                          {v.contract_no}
+                        </Link>
+                      )}
+                      {v.id === contract.id && ' (المعروض)'}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="num text-[11px] text-purple">
+                        {dateAr(v.start_date)} ← {dateAr(v.end_date)}
+                      </span>
+                      <StatusBadge status={v.status} />
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          )}
 
           {/* Status history */}
           <Card>
