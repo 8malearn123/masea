@@ -1,5 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
+import { loadDemo } from '@/lib/demo';
+import { ROLE_META, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { fallbackPrice } from '@/shared/lib/pricing';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
@@ -406,57 +408,67 @@ interface RawRow extends Contract {
 /**
  * The external office must only ever see contracts assigned to its own account.
  * The backend enforces this in RLS; in demo mode (no Supabase) we mirror it here
- * so the offline experience matches the secured one. Cross-branch / branch roles
- * are unaffected.
+ * so the offline experience matches the secured one.
+ *
+ * Branch scope (RLS contracts_read): a role that is not cross-branch sees only
+ * its own branch's contracts (plus unassigned ones). With a real backend RLS does
+ * this; in demo mode it is mirrored here from the demo account's branch, and an
+ * unknown branch sees no branch-assigned contracts (deny by default).
  */
 function scopeForViewer(rows: ContractListItem[]): ContractListItem[] {
   const profile = useAuth.getState().profile;
-  if (profile?.role === 'external_office') {
+  if (!profile) return rows;
+  if (profile.role === 'external_office') {
     return rows.filter((r) => r.assigned_office_id === profile.id);
+  }
+  const crossBranch = ROLE_META[profile.role as RoleCode]?.crossBranch ?? false;
+  if (isDemoMode() && !crossBranch) {
+    const branch = loadDemo()?.branch ?? null;
+    return rows.filter((r) => r.branch_id === null || (branch !== null && r.branch_id === branch));
   }
   return rows;
 }
 
 /* ------------------------------- queries --------------------------------- */
+/**
+ * قائمة العقود. الوضع التجريبي يعرض بيانات العرض (نُسخ لا مراجع). مع قاعدة
+ * بيانات فعلية تُعرض صفوفها فقط — حتى لو كانت فارغة — ويُرمى أي خطأ جلب، فلا
+ * تظهر عقود تجريبية على أنها حقيقية.
+ */
 export async function listContracts(filters: ContractFilters): Promise<ContractListItem[]> {
-  try {
-    const { data, error } = await supabase
-      .from('contracts')
-      .select('*, customers(full_name)')
-      .not('contract_no', 'is', null)
-      .order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) {
-      const rows = (data as RawRow[]).map(({ customers, ...rest }) => ({
-        ...rest,
-        customer_name: customers?.full_name ?? null,
-        worker_name: null,
-      }));
-      return applyFilters(scopeForViewer(rows), filters);
-    }
-  } catch {
-    /* fall through */
+  if (isDemoMode()) {
+    // نُسخ لا مراجع: التعديل التجريبي (demoMutateContract) يغيّر صفوف المخزن، فلو شاركت
+    // ذاكرة React Query نفس الكائن لما ظهر التحديث على الشاشة.
+    return applyFilters(scopeForViewer(FALLBACK.map((c) => ({ ...c }))), filters);
   }
-  // نُسخ لا مراجع: التعديل التجريبي (demoMutateContract) يغيّر صفوف المخزن، فلو شاركت
-  // ذاكرة React Query نفس الكائن لما ظهر التحديث على الشاشة.
-  return applyFilters(scopeForViewer(FALLBACK.map((c) => ({ ...c }))), filters);
+  const { data, error } = await supabase
+    .from('contracts')
+    .select('*, customers(full_name)')
+    .not('contract_no', 'is', null)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`تعذّر جلب العقود: ${error.message}`);
+  const rows = ((data ?? []) as RawRow[]).map(({ customers, ...rest }) => ({
+    ...rest,
+    customer_name: customers?.full_name ?? null,
+    worker_name: null,
+  }));
+  return applyFilters(scopeForViewer(rows), filters);
 }
 
 export async function getContract(id: string): Promise<ContractListItem | null> {
-  try {
-    const { data, error } = await supabase
-      .from('contracts')
-      .select('*, customers(full_name)')
-      .eq('id', id)
-      .single();
-    if (!error && data) {
-      const { customers, ...rest } = data as RawRow;
-      return { ...rest, customer_name: customers?.full_name ?? null, worker_name: null };
-    }
-  } catch {
-    /* fall through */
+  if (isDemoMode()) {
+    const row = scopeForViewer(FALLBACK.filter((c) => c.id === id))[0];
+    return row ? { ...row } : null;
   }
-  const row = FALLBACK.find((c) => c.id === id);
-  return row ? { ...row } : null;
+  const { data, error } = await supabase
+    .from('contracts')
+    .select('*, customers(full_name)')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`تعذّر جلب العقد: ${error.message}`);
+  if (!data) return null; // غير موجود أو خارج صلاحية المستخدم (RLS)
+  const { customers, ...rest } = data as RawRow;
+  return { ...rest, customer_name: customers?.full_name ?? null, worker_name: null };
 }
 
 export async function getClauses(contractId: string): Promise<ContractClause[]> {

@@ -15,6 +15,7 @@ import { Badge, Card, FlagCircle, Skeleton } from '@/shared/ui';
 import type { BadgeTone } from '@/shared/ui/Badge';
 import { sar } from '@/shared/lib/format';
 import { DocExpiryAlerts } from '@/features/hr/components/DocExpiryAlerts';
+import { ContractExpiryWidget } from '@/features/contracts/components/ContractExpiryWidget';
 import { getOverview, type Kpi, type LatestStatus } from '@/features/dashboard/api/overview.api';
 
 const SERVICE_COLORS = ['#1f58a8', '#c9a24a', '#2e9e5b', '#65738c'];
@@ -116,6 +117,9 @@ export function CompanyOverview() {
           bg="bg-navy-50 text-navy"
         />
       </div>
+
+      {/* تنبيهات انتهاء العقود — لمن يملك صلاحية عرض العقود، ضمن نطاق فرعه */}
+      <ContractExpiryWidget />
 
       {/* revenue + service mix */}
       <div className="grid gap-5 lg:grid-cols-3">

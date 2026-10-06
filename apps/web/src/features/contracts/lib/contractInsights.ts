@@ -4,6 +4,7 @@ import {
   type ContractListItem,
   type ContractStatus,
 } from '@/features/contracts/types';
+import { contractTermUnit } from '@/features/contracts/lib/contractTerm';
 
 /**
  * Derived, read-only insight for a single contract — the financial + lifecycle
@@ -13,6 +14,21 @@ import {
  * system settings (app_config) later.
  */
 export const RENEWAL_WINDOW_DAYS = 30;
+
+/** مفتاح مهلة التنبيه في إعدادات النظام (app_config). */
+export const EXPIRY_WINDOW_KEY = 'contract_expiry_alert_days';
+
+/**
+ * حالة انتهاء العقد — التصنيف الوحيد الذي تبني عليه التنبيهات والمؤشرات
+ * والتبويبات ولوحة التحكم:
+ * - expired: عقد ساري تجاوز تاريخ نهايته ولم يُجدَّد أو يُغلق.
+ * - critical / soon: ساري وينتهي داخل مهلة التنبيه (حرِج = أقل من ثلثها).
+ * - ok: ساري ونهايته بعد المهلة.
+ * - no_end_date: ساري لخدمة لها مدة لكن تاريخ نهايته غير محدّد — لا يُصنَّف
+ *   منتهيًا ولا قريبًا من الانتهاء، ويُعرض كحالة مستقلة.
+ * - not_applicable: ليس ساريًا (مسودة/مكتمل/ملغى…) أو خدمة بلا مدة (نقل كفالة).
+ */
+export type ExpiryState = 'expired' | 'critical' | 'soon' | 'ok' | 'no_end_date' | 'not_applicable';
 
 export interface ContractInsight {
   paid: number;
@@ -27,6 +43,8 @@ export interface ContractInsight {
   daysToExpiry: number | null;
   /** Active contract inside the renewal window — a renewal opportunity. */
   nearExpiry: boolean;
+  /** تصنيف الانتهاء (انظر ExpiryState). */
+  expiry: ExpiryState;
   /** Short service term label, e.g. «استقدام» / «تأجير شهري». */
   termLabel: string;
 }
@@ -65,6 +83,7 @@ export function contractInsight(
     daysToExpiry !== null &&
     daysToExpiry >= 0 &&
     daysToExpiry <= windowDays;
+  const expiry = expiryStateOf(c, daysToExpiry, windowDays);
 
   const payLabel =
     remaining === 0 ? 'مسدّد بالكامل' : `متبقٍ ${Math.round(remaining).toLocaleString('en-US')}`;
@@ -80,9 +99,41 @@ export function contractInsight(
     isOverdue,
     daysToExpiry,
     nearExpiry,
+    expiry,
     termLabel: c.service_code ? SERVICE_LABEL[c.service_code] : '—',
   };
 }
+
+/** حدّ «حرِج»: أقل من ثلث المهلة — مشتقّ من القيمة الإدارية لا رقم ثابت. */
+function criticalDays(windowDays: number): number {
+  return Math.max(1, Math.round(windowDays / 3));
+}
+
+function expiryStateOf(
+  c: ContractListItem,
+  daysToExpiry: number | null,
+  windowDays: number,
+): ExpiryState {
+  if (c.status !== 'active') return 'not_applicable';
+  if (contractTermUnit(c.service_code) === null && !c.end_date) return 'not_applicable';
+  if (daysToExpiry === null) return 'no_end_date';
+  if (daysToExpiry < 0) return 'expired';
+  if (daysToExpiry <= criticalDays(windowDays)) return 'critical';
+  if (daysToExpiry <= windowDays) return 'soon';
+  return 'ok';
+}
+
+/** يحتاج تجديدًا (أو إغلاقًا): منتهٍ ولم يُجدَّد، أو ينتهي داخل المهلة. */
+export function needsRenewal(state: ExpiryState): boolean {
+  return state === 'expired' || state === 'critical' || state === 'soon';
+}
+
+export const EXPIRY_STATE_LABEL: Partial<Record<ExpiryState, string>> = {
+  expired: 'منتهٍ',
+  critical: 'حرِج',
+  soon: 'قريب الانتهاء',
+  no_end_date: 'تاريخ النهاية غير محدد',
+};
 
 /**
  * A descriptive lifecycle stage line (richer than the raw status badge).
@@ -111,6 +162,7 @@ export function contractStageLabel(
       return 'موقّع — بانتظار التفعيل';
     case 'active':
       if (c.service_code === 'recruitment' && recruitmentStageName) return recruitmentStageName;
+      if (ins.expiry === 'expired') return 'انتهت مدته — يحتاج تجديدًا أو إغلاقًا';
       if (ins.nearExpiry) return 'قارب الانتهاء — تجديد';
       return 'تحت التشغيل';
     case 'completed':
@@ -143,7 +195,7 @@ export function matchesTab(c: ContractListItem, ins: ContractInsight, tab: Contr
     case 'live':
       return c.status === 'signed' || c.status === 'active';
     case 'renewals':
-      return ins.nearExpiry;
+      return needsRenewal(ins.expiry);
     case 'cancelled':
       return c.status === 'cancelled';
     default:
@@ -156,6 +208,12 @@ export interface ContractKpis {
   overdueTotal: number;
   portfolioValue: number;
   renewals: number;
+  /** ساري تجاوز تاريخ نهايته. */
+  expired: number;
+  /** ساري ينتهي داخل المهلة (حرِج + قريب). */
+  expiringSoon: number;
+  /** ساري لخدمة لها مدة وتاريخ نهايته غير محدد. */
+  noEndDate: number;
   pendingApproval: number;
   activeCount: number;
 }
@@ -170,12 +228,24 @@ export function contractKpis(
       const ins = contractInsight(c, now, windowDays);
       if (ins.isOverdue) acc.overdueTotal += ins.remaining;
       if (c.status !== 'cancelled') acc.portfolioValue += c.total_amount ?? 0;
-      if (ins.nearExpiry) acc.renewals += 1;
+      if (needsRenewal(ins.expiry)) acc.renewals += 1;
+      if (ins.expiry === 'expired') acc.expired += 1;
+      if (ins.expiry === 'critical' || ins.expiry === 'soon') acc.expiringSoon += 1;
+      if (ins.expiry === 'no_end_date') acc.noEndDate += 1;
       if (c.status === 'pending_approval') acc.pendingApproval += 1;
       if (c.status === 'active') acc.activeCount += 1;
       return acc;
     },
-    { overdueTotal: 0, portfolioValue: 0, renewals: 0, pendingApproval: 0, activeCount: 0 },
+    {
+      overdueTotal: 0,
+      portfolioValue: 0,
+      renewals: 0,
+      expired: 0,
+      expiringSoon: 0,
+      noEndDate: 0,
+      pendingApproval: 0,
+      activeCount: 0,
+    },
   );
 }
 
@@ -255,19 +325,41 @@ export function expiryAlerts(
   windowDays: number = RENEWAL_WINDOW_DAYS,
   now: Date = new Date(),
 ): ExpiryAlert[] {
-  const criticalAt = Math.max(1, Math.round(windowDays / 3));
   return rows
     .map((contract) => ({ contract, insight: contractInsight(contract, now, windowDays) }))
-    .filter(({ contract, insight }) => {
-      if (contract.status !== 'active') return false;
-      const d = insight.daysToExpiry;
-      return d !== null && d <= windowDays;
-    })
-    .map(({ contract, insight }) => {
-      const days = insight.daysToExpiry ?? 0;
-      const urgency: ExpiryUrgency =
-        days < 0 ? 'expired' : days <= criticalAt ? 'critical' : 'soon';
-      return { contract, insight, urgency, message: daysMessage(days) };
-    })
+    .filter(({ insight }) => needsRenewal(insight.expiry))
+    .map(({ contract, insight }) => ({
+      contract,
+      insight,
+      urgency: insight.expiry as ExpiryUrgency,
+      message: daysMessage(insight.daysToExpiry ?? 0),
+    }))
     .sort((a, b) => (a.insight.daysToExpiry ?? 0) - (b.insight.daysToExpiry ?? 0));
+}
+
+/** أعداد التنبيهات لملخّص صفحة العقود ولوحة التحكم — من نفس التصنيف. */
+export interface ExpirySummary {
+  expired: number;
+  critical: number;
+  soon: number;
+  noEndDate: number;
+  /** منتهٍ + حرِج + قريب = يحتاج تجديدًا. */
+  needsRenewal: number;
+}
+
+export function expirySummary(
+  rows: ContractListItem[],
+  windowDays: number = RENEWAL_WINDOW_DAYS,
+  now: Date = new Date(),
+): ExpirySummary {
+  const out: ExpirySummary = { expired: 0, critical: 0, soon: 0, noEndDate: 0, needsRenewal: 0 };
+  for (const c of rows) {
+    const { expiry } = contractInsight(c, now, windowDays);
+    if (expiry === 'expired') out.expired += 1;
+    else if (expiry === 'critical') out.critical += 1;
+    else if (expiry === 'soon') out.soon += 1;
+    else if (expiry === 'no_end_date') out.noEndDate += 1;
+    if (needsRenewal(expiry)) out.needsRenewal += 1;
+  }
+  return out;
 }

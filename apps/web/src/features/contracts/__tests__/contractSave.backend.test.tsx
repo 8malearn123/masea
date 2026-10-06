@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/shared/ui';
 import {
   createDraft,
+  getContract,
   listContracts,
   updateContractTerm,
   type CreateDraftInput,
@@ -73,6 +74,7 @@ vi.mock('@/shared/lib/supabase', () => {
       order: () => b,
       limit: () => b,
       single: () => b,
+      maybeSingle: () => b,
       insert: (p: unknown) => {
         op = 'insert';
         payload = p;
@@ -152,11 +154,9 @@ describe('إنشاء العقد مع قاعدة بيانات فعلية', () => 
   it('يُبلغ عن فشل الإدخال ولا يُنشئ مسودة محلية بديلة', async () => {
     db.failOn = 'contracts';
     await expect(createDraft(input())).rejects.toThrow('تعذّر حفظ العقد');
-    // لا عقد وهمي أُضيف لمخزن العرض
-    const list = await listContracts(ALL);
-    expect(list.some((c) => c.customer_name === 'سارة القحطاني' && c.status === 'draft')).toBe(
-      false,
-    );
+    // لا عقد وهمي أُضيف: القائمة من قاعدة البيانات وحدها (فارغة هنا) لا من بيانات العرض
+    db.failOn = null;
+    expect(await listContracts(ALL)).toEqual([]);
   });
 
   it('يُبلغ عن فشل التسعير بدل حفظ عقد بمبلغ صفر', async () => {
@@ -206,5 +206,21 @@ describe('تعديل مدة العقد مع قاعدة بيانات فعلية',
       'لا يمكن أن يسبق',
     );
     expect(db.calls).toHaveLength(0);
+  });
+});
+
+describe('جلب العقود مع قاعدة بيانات فعلية', () => {
+  it('يُبلغ عن فشل جلب القائمة بدل عرض عقود تجريبية', async () => {
+    db.failOn = 'contracts';
+    await expect(listContracts(ALL)).rejects.toThrow('تعذّر جلب العقود');
+  });
+
+  it('يُبلغ عن فشل جلب عقد واحد', async () => {
+    db.failOn = 'contracts';
+    await expect(getContract(CONTRACT_ID)).rejects.toThrow('تعذّر جلب العقد');
+  });
+
+  it('قاعدة بيانات بلا عقود تعني قائمة فارغة — لا بيانات عرض', async () => {
+    expect(await listContracts(ALL)).toEqual([]);
   });
 });
