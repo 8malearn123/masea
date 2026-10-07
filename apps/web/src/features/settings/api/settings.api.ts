@@ -37,18 +37,18 @@ const STAGES: RefItem[] = [
 const BENEFICIARY_TYPES: RefItem[] = [
   { code: 'home', name_ar: 'منزل', is_active: true, sort_order: 1 },
   { code: 'facility', name_ar: 'منشأة', is_active: true, sort_order: 2 },
-  { code: 'commercial', name_ar: 'مقهى / محل تجاري', is_active: true, sort_order: 3 },
-  { code: 'occasion', name_ar: 'مناسبة', is_active: true, sort_order: 4 },
+  { code: 'commercial', name_ar: 'مقهى / نشاط تجاري', is_active: true, sort_order: 3 },
+  { code: 'occasion', name_ar: 'مناسبة / فعالية', is_active: true, sort_order: 4 },
 ];
-/** أنواع المناسبات — تظهر عند اختيار «مناسبة» كنوع للمستفيد. */
+/** أنواع المناسبات — تظهر عند اختيار «مناسبة / فعالية» كنوع للمستفيد. */
 const OCCASION_TYPES: RefItem[] = [
-  { code: 'wedding', name_ar: 'حفل زواج', is_active: true, sort_order: 1 },
-  { code: 'marriage_contract', name_ar: 'عقد قران', is_active: true, sort_order: 2 },
-  { code: 'banquet', name_ar: 'عزيمة / وليمة', is_active: true, sort_order: 3 },
-  { code: 'graduation', name_ar: 'حفل تخرّج', is_active: true, sort_order: 4 },
-  { code: 'condolence', name_ar: 'عزاء', is_active: true, sort_order: 5 },
-  { code: 'eid', name_ar: 'استقبال العيد', is_active: true, sort_order: 6 },
-  { code: 'conference', name_ar: 'مؤتمر / اجتماع', is_active: true, sort_order: 7 },
+  { code: 'wedding', name_ar: 'زفاف', is_active: true, sort_order: 1 },
+  { code: 'opening', name_ar: 'افتتاح', is_active: true, sort_order: 2 },
+  { code: 'event', name_ar: 'فعالية', is_active: true, sort_order: 3 },
+  { code: 'conference', name_ar: 'مؤتمر', is_active: true, sort_order: 4 },
+  { code: 'exhibition', name_ar: 'معرض', is_active: true, sort_order: 5 },
+  // «أخرى» يفتح حقلًا لكتابة نوع المناسبة (الكود ثابت: OTHER_OCCASION_CODE)
+  { code: 'other', name_ar: 'أخرى', is_active: true, sort_order: 6 },
 ];
 /** احتياجات الرعاية داخل مكان الخدمة (أطفال، كبار سن، حالات خاصة…). */
 const CARE_NEEDS: RefItem[] = [

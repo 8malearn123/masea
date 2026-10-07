@@ -12,6 +12,7 @@ import { ToastProvider } from '@/shared/ui';
 import StepWizard from '@/components/order/StepWizard';
 import OrderTracking from '@/pages/order/OrderTracking';
 import { emptyDraft } from '@/lib/orderTypes';
+import { answerHome } from './placeHelpers';
 import { requestServiceFor } from '@/features/requests/services';
 import { RequestServiceError } from '@/features/requests/services/types';
 
@@ -51,6 +52,7 @@ async function walkToCustomer(user: ReturnType<typeof userEvent.setup>) {
   const next = () => user.click(screen.getByRole('button', { name: 'التالي' }));
   await user.click(await screen.findByRole('button', { name: /منزل/ }));
   await next();
+  await answerHome(user);
   await user.click(await screen.findByRole('button', { name: 'تنظيف وترتيب' }));
   await next();
   await user.type(container.querySelector('input[type="date"]') as HTMLInputElement, '2026-11-02');

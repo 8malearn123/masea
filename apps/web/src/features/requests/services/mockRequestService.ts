@@ -20,6 +20,7 @@ import {
   type SubmittedRequest,
   type TrackedRequest,
 } from '@/features/requests/services/types';
+import { buildServiceDetails } from '@/features/requests/types';
 import { draftPeriod } from '@/lib/orderTypes';
 import type { ServiceCode } from '@/lib/funnel';
 
@@ -71,7 +72,7 @@ export function createMockRequestService(): RequestService {
           }
         : null,
       match_score: draft.matchScore,
-      place: draft.place,
+      details: buildServiceDetails(draft.place),
       period,
       amounts: { base: price.base, vat: price.vat, total: price.total },
       payment_method: draft.paymentMethod,

@@ -9,7 +9,7 @@
 import { SERVICE_LABEL } from '@/features/catalog/lib/catalog';
 import { buildPeriod } from '@/features/requests/lib/period';
 import type { RequestFile } from '@/features/requests/types';
-import { emptyPlaceDetails } from '@/features/requests/types';
+import { buildServiceDetails, emptyPlaceDetails } from '@/features/requests/types';
 
 /** ملفات تجريبية واقعية — تُعرض قبل إنشاء أي طلب جديد في الجلسة. */
 const SEED: RequestFile[] = [
@@ -32,16 +32,20 @@ const SEED: RequestFile[] = [
       profession: 'عاملة منزلية',
     },
     match_score: 86,
-    place: {
+    details: {
       beneficiaryType: 'home',
       occasionType: null,
-      floors: 2,
-      rooms: 6,
-      children: 3,
-      elderly: 1,
-      elderlyCareNeeded: true,
+      customOccasionType: null,
+      locationDetails: {
+        kind: 'home',
+        floors: 2,
+        rooms: 6,
+        hasChildren: true,
+        childrenCount: 3,
+        hasElderly: true,
+        elderlyNeedCare: true,
+      },
       careNeeds: ['children', 'elderly', 'cleaning'],
-      guests: 0,
       notes: 'يفضّل من تجيد العربية للتواصل مع الوالدة.',
     },
     period: buildPeriod('2026-10-01', 'month', 3),
@@ -67,16 +71,12 @@ const SEED: RequestFile[] = [
       profession: 'طباخة',
     },
     match_score: 92,
-    place: {
+    details: {
       beneficiaryType: 'occasion',
       occasionType: 'wedding',
-      floors: 1,
-      rooms: 2,
-      children: 0,
-      elderly: 0,
-      elderlyCareNeeded: false,
+      customOccasionType: null,
+      locationDetails: { kind: 'occasion', eventDate: '2026-10-09', attendees: 120 },
       careNeeds: ['cooking', 'serving'],
-      guests: 120,
       notes: 'المناسبة مسائية وتبدأ بعد صلاة العشاء.',
     },
     period: buildPeriod('2026-10-09', 'day', 2),
@@ -118,7 +118,7 @@ export function blankRequestFile(requestNo: string): RequestFile {
     branch: '',
     worker: null,
     match_score: null,
-    place: emptyPlaceDetails(),
+    details: buildServiceDetails(emptyPlaceDetails()),
     period: null,
     amounts: { base: 0, vat: 0, total: 0 },
     payment_method: 'mada',

@@ -8,7 +8,11 @@ import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { usePrice } from '@/hooks/usePricing';
 import { newClientToken, useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
 import { useRequestBackend } from '@/features/requests/hooks/useRequestFiles';
-import { customerContactSchema, firstIssue } from '@/features/requests/schemas/request.schema';
+import {
+  customerContactSchema,
+  firstIssue,
+  placeStepIssue,
+} from '@/features/requests/schemas/request.schema';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { SERVICE_FLOWS } from '@/lib/wizardConfig';
 import { BeneficiaryStep } from '@/features/requests/components/BeneficiaryStep';
@@ -16,7 +20,7 @@ import { PlaceStep } from '@/features/requests/components/PlaceStep';
 import { PeriodFields } from '@/features/requests/components/PeriodFields';
 import { MatchedWorkerPicker } from '@/features/catalog/components/MatchedWorkerPicker';
 import type { RequestNeed } from '@/features/catalog/lib/matching';
-import { isOccasion, type PlaceDetails } from '@/features/requests/types';
+import type { PlaceDetails } from '@/features/requests/types';
 import { periodLabel } from '@/features/requests/lib/period';
 import {
   NATIONALITIES,
@@ -177,16 +181,14 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
       case 'nationality_profession':
         return draft.nationality && draft.profession ? null : 'اختر الجنسية والمهنة.';
       case 'beneficiary':
-        if (!draft.place.beneficiaryType) return 'اختر نوع المستفيد من الخدمة.';
-        return isOccasion(draft.place.beneficiaryType) && !draft.place.occasionType
-          ? 'اختر نوع المناسبة.'
-          : null;
+        return placeStepIssue(draft.place, 'beneficiary');
       case 'place':
-        if (draft.place.floors < 1 || draft.place.rooms < 1)
-          return 'حدّد عدد الأدوار والغرف في مكان الخدمة.';
-        return draft.place.careNeeds.length > 0
-          ? null
-          : 'اختر احتياج رعاية واحدًا على الأقل ليُرشَّح لك الأنسب.';
+        return (
+          placeStepIssue(draft.place, 'place') ??
+          (draft.place.careNeeds.length > 0
+            ? null
+            : 'اختر احتياج رعاية واحدًا على الأقل ليُرشَّح لك الأنسب.')
+        );
       case 'package':
         return draft.monthlySalary > 0 && draft.contractMonths > 0 && draft.startDate
           ? null

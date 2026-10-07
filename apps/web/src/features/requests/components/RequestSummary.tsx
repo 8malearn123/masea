@@ -2,15 +2,18 @@ import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight,
   Baby,
+  Building2,
   CalendarClock,
   CreditCard,
   FileText,
   Hash,
   HeartHandshake,
   Home,
+  Layers,
   MapPin,
   Phone,
   Sparkles,
+  Store,
   UserRound,
   UsersRound,
   FlaskConical,
@@ -23,7 +26,7 @@ import { useRefList } from '@/features/settings/hooks/useSettings';
 import { refName } from '@/features/settings/api/settings.api';
 import { useRequestBackend, useRequestFile } from '@/features/requests/hooks/useRequestFiles';
 import { periodLabel } from '@/features/requests/lib/period';
-import { asksForGuests, asksForHouseholdCare, isOccasion } from '@/features/requests/types';
+import { serviceDetailRows } from '@/features/requests/lib/serviceDetails';
 import type { RequestFile } from '@/features/requests/types';
 
 /**
@@ -85,7 +88,11 @@ function RequestBody({ file }: { file: RequestFile }) {
   const beneficiaryTypes = useRefList('beneficiary_types');
   const occasionTypes = useRefList('occasion_types');
   const careNeeds = useRefList('care_needs');
-  const { place } = file;
+  const { details } = file;
+  const detailRows = serviceDetailRows(details, {
+    beneficiary: (code) => refName(beneficiaryTypes.data ?? [], code),
+    occasion: (code) => refName(occasionTypes.data ?? [], code),
+  });
   const paymentLabel =
     PAYMENT_METHODS.find((m) => m.key === file.payment_method)?.label ?? file.payment_method;
 
@@ -121,7 +128,11 @@ function RequestBody({ file }: { file: RequestFile }) {
           <Info
             icon={Home}
             label="نوع المستفيد"
-            value={refName(beneficiaryTypes.data ?? [], place.beneficiaryType)}
+            value={
+              details.beneficiaryType
+                ? refName(beneficiaryTypes.data ?? [], details.beneficiaryType)
+                : '—'
+            }
           />
           <Info icon={MapPin} label="الفرع" value={file.branch || '—'} />
         </div>
@@ -143,44 +154,30 @@ function RequestBody({ file }: { file: RequestFile }) {
 
       {/* مكان الخدمة */}
       <Section icon={Home} title="بيانات مكان الخدمة">
-        <div className="grid gap-3 sm:grid-cols-3">
-          {isOccasion(place.beneficiaryType) && (
-            <Info
-              icon={Sparkles}
-              label="نوع المناسبة"
-              value={refName(occasionTypes.data ?? [], place.occasionType)}
-            />
-          )}
-          <Info icon={Home} label="عدد الأدوار" value={String(place.floors)} />
-          <Info icon={Home} label="عدد الغرف" value={String(place.rooms)} />
-          {asksForHouseholdCare(place.beneficiaryType) && (
-            <>
-              <Info icon={Baby} label="عدد الأطفال" value={String(place.children)} />
+        {detailRows.length === 0 ? (
+          <p className="text-xs text-purple">لم يُحدَّد نوع المستفيد لهذا الطلب.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {detailRows.map((row) => (
               <Info
-                icon={UsersRound}
-                label="كبار السن"
-                value={
-                  place.elderly === 0
-                    ? 'لا يوجد'
-                    : `${place.elderly}${place.elderlyCareNeeded ? ' · يحتاجون رعاية' : ''}`
-                }
+                key={row.label}
+                icon={DETAIL_ICON[row.key] ?? Home}
+                label={row.label}
+                value={row.key === 'date' ? dateAr(row.value) : row.value}
               />
-            </>
-          )}
-          {asksForGuests(place.beneficiaryType) && (
-            <Info icon={UsersRound} label="عدد الحضور" value={String(place.guests)} />
-          )}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-3">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-navy">
             <HeartHandshake size={14} /> احتياجات الرعاية
           </p>
-          {place.careNeeds.length === 0 ? (
+          {details.careNeeds.length === 0 ? (
             <p className="text-xs text-purple">لم تُحدَّد احتياجات رعاية.</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {place.careNeeds.map((code) => (
+              {details.careNeeds.map((code) => (
                 <span
                   key={code}
                   className="rounded-lg bg-navy-50 px-2.5 py-1 text-[11px] font-medium text-navy"
@@ -192,9 +189,9 @@ function RequestBody({ file }: { file: RequestFile }) {
           )}
         </div>
 
-        {place.notes && (
+        {details.notes && (
           <p className="mt-3 rounded-xl bg-navy-50 p-3 text-sm leading-relaxed text-navy-900">
-            {place.notes}
+            {details.notes}
           </p>
         )}
       </Section>
@@ -279,6 +276,21 @@ function RequestBody({ file }: { file: RequestFile }) {
     </>
   );
 }
+
+/** أيقونة كل صف من بيانات المكان. */
+const DETAIL_ICON: Record<string, typeof Home> = {
+  beneficiary: Home,
+  occasion: Sparkles,
+  floors: Layers,
+  rooms: Home,
+  children: Baby,
+  elderly: UsersRound,
+  care: HeartHandshake,
+  type: Store,
+  sections: Building2,
+  people: UsersRound,
+  date: CalendarClock,
+};
 
 function Section({
   icon: Icon,

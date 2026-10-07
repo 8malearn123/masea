@@ -8,6 +8,7 @@ import { ToastProvider } from '@/shared/ui';
 import StepWizard from '@/components/order/StepWizard';
 import { ChatWidget } from '@/features/chatbot/components/ChatWidget';
 import { emptyDraft } from '@/lib/orderTypes';
+import { answerHome } from './placeHelpers';
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -63,7 +64,8 @@ describe('مسار الطلب التفاعلي (Prototype)', () => {
     await user.click(await screen.findByRole('button', { name: /منزل/ }));
     await next();
 
-    // ٢) بيانات مكان الخدمة — احتياج رعاية واحد على الأقل
+    // ٢) بيانات مكان الخدمة — أسئلة المنزل واحتياج رعاية واحد على الأقل
+    await answerHome(user);
     await user.click(await screen.findByRole('button', { name: 'تنظيف وترتيب' }));
     await next();
 

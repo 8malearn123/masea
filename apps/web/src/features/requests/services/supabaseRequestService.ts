@@ -20,6 +20,7 @@ import {
   type SubmitRequestInput,
   type TrackedRequest,
 } from '@/features/requests/services/types';
+import { buildServiceDetails } from '@/features/requests/types';
 import { draftPeriod } from '@/lib/orderTypes';
 
 /**
@@ -45,7 +46,7 @@ export function toSubmitPayload(input: SubmitRequestInput, phone: string) {
     duration_count: period?.count ?? null,
     payment_method: draft.paymentMethod || null,
     details: {
-      place: draft.place,
+      ...buildServiceDetails(draft.place),
       matchScore: draft.matchScore,
       monthlySalary: draft.monthlySalary,
       taskType: draft.taskType,
