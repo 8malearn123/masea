@@ -13,6 +13,7 @@ import {
   Sparkles,
   UserRound,
   UsersRound,
+  FlaskConical,
 } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
 import { EmptyState, ErrorState, Skeleton, flagFor } from '@/shared/ui';
@@ -20,7 +21,7 @@ import { dateAr, sar } from '@/shared/lib/format';
 import { PAYMENT_METHODS, TRACKING_STAGES } from '@/lib/orderTypes';
 import { useRefList } from '@/features/settings/hooks/useSettings';
 import { refName } from '@/features/settings/api/settings.api';
-import { useRequestFile } from '@/features/requests/hooks/useRequestFiles';
+import { useRequestBackend, useRequestFile } from '@/features/requests/hooks/useRequestFiles';
 import { periodLabel } from '@/features/requests/lib/period';
 import { asksForGuests, asksForHouseholdCare, isOccasion } from '@/features/requests/types';
 import type { RequestFile } from '@/features/requests/types';
@@ -80,6 +81,7 @@ export default function RequestSummary() {
 }
 
 function RequestBody({ file }: { file: RequestFile }) {
+  const { backend } = useRequestBackend();
   const beneficiaryTypes = useRefList('beneficiary_types');
   const occasionTypes = useRefList('occasion_types');
   const careNeeds = useRefList('care_needs');
@@ -103,6 +105,11 @@ function RequestBody({ file }: { file: RequestFile }) {
             <span className="inline-flex items-center rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal">
               {file.status}
             </span>
+            {backend === 'mock' && (
+              <span className="mt-1.5 flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                <FlaskConical size={12} /> طلب تجريبي — بيانات عرض
+              </span>
+            )}
             <p className="num mt-2 text-lg font-bold text-gold-600">
               {sar(file.amounts.total)} <span className="text-xs font-normal">ر.س</span>
             </p>

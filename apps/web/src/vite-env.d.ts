@@ -6,6 +6,8 @@ interface ImportMetaEnv {
   readonly VITE_GOOGLE_MAPS_API_KEY?: string;
   readonly VITE_MOYASAR_PUBLISHABLE_KEY?: string;
   readonly VITE_TAMARA_PUBLIC_KEY?: string;
+  /** مصدر الطلبات: 'mock' (افتراضي، عرض تجريبي) أو 'supabase' (مستقبلًا). */
+  readonly VITE_REQUEST_BACKEND?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

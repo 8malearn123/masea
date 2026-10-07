@@ -1,12 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { FileText, FlaskConical, PackageSearch } from 'lucide-react';
 import { sar } from '@/lib/format';
 import type { ServiceCode } from '@/lib/funnel';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { usePrice } from '@/hooks/usePricing';
-import { useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
+import { newClientToken, useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
+import { useRequestBackend } from '@/features/requests/hooks/useRequestFiles';
+import { customerContactSchema, firstIssue } from '@/features/requests/schemas/request.schema';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { SERVICE_FLOWS } from '@/lib/wizardConfig';
 import { BeneficiaryStep } from '@/features/requests/components/BeneficiaryStep';
@@ -125,6 +127,12 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   const [draft, setDraft] = useState<OrderDraft>(initialDraft);
   const [paying, setPaying] = useState(false);
   const [result, setResult] = useState<CreateResult | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // معرّف إرسال ثابت لهذه الجلسة: الضغط المزدوج أو إعادة المحاولة = نفس الطلب.
+  const clientToken = useRef(newClientToken());
+  // حارس متزامن: «paying» لا يتحدّث قبل إعادة الرسم.
+  const submitting = useRef(false);
+  const { supportsRequestFile } = useRequestBackend();
 
   const { data: workers = [], isLoading: workersLoading } = useWorkerProfiles();
   const params = useMemo(() => priceParams(draft), [draft]);
@@ -193,10 +201,12 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
       case 'task':
         return draft.taskType ? null : 'اختر نوع المهمة.';
       case 'employer':
-      case 'customer':
-        return draft.customerName && draft.phone && draft.branch
-          ? null
-          : 'أدخل الاسم والجوال والفرع.';
+      case 'customer': {
+        if (!draft.customerName || !draft.phone || !draft.branch)
+          return 'أدخل الاسم والجوال والفرع.';
+        const contact = customerContactSchema.safeParse(draft);
+        return contact.success ? null : firstIssue(contact.error);
+      }
       case 'worker':
         return draft.currentIqama && draft.currentNationality && draft.currentProfession
           ? null
@@ -226,19 +236,30 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   }
 
   async function pay() {
-    if (!price) return;
+    if (!price || submitting.current) return;
+    submitting.current = true;
     setPaying(true);
-    // TODO: integrate Moyasar (mada/Apple Pay) + Tamara here. Stubbed success.
-    await new Promise((r) => setTimeout(r, 1200));
-    const res = await createRequest.mutateAsync({
-      draft,
-      price,
-      serviceName,
-      worker: selectedWorker,
-    });
-    setResult(res);
-    setPaying(false);
-    setStepIndex(flow.length - 1); // jump to confirm
+    setSubmitError(null);
+    try {
+      // الدفع محاكاة في العرض التجريبي (Moyasar/Tamara لاحقًا)
+      await new Promise((r) => setTimeout(r, 1200));
+      const res = await createRequest.mutateAsync({
+        clientToken: clientToken.current,
+        draft,
+        price,
+        serviceName,
+        worker: selectedWorker,
+      });
+      setResult(res);
+      setStepIndex(flow.length - 1); // jump to confirm
+    } catch (e) {
+      setSubmitError(
+        e instanceof Error && e.message ? e.message : 'تعذّر إرسال الطلب، حاول مرة أخرى.',
+      );
+    } finally {
+      submitting.current = false;
+      setPaying(false);
+    }
   }
 
   /* ------------------------------ step bodies ------------------------------ */
@@ -574,12 +595,20 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             <p className="num mt-1 text-lg font-bold text-brand-accent">
               {result?.requestNo ?? '—'}
             </p>
-            {result && !result.persisted && (
-              <p className="mx-auto mt-2 max-w-sm text-[11px] text-amber-600">
-                (لم يُحفظ في القاعدة بعد — طبّق الـ migrations لتفعيل الحفظ الفعلي)
+            {result?.backend === 'mock' && (
+              <p className="mx-auto mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
+                <FlaskConical size={13} /> طلب تجريبي — عرض للنظام، لا يُرسل لجهة حقيقية
               </p>
             )}
             {result && (
+              <Link
+                to={`/order/track?no=${result.requestNo}`}
+                className="me-2 mt-4 inline-flex items-center gap-2 rounded-xl border border-brand px-5 py-2.5 text-sm font-bold text-brand transition hover:bg-brand-50"
+              >
+                <PackageSearch size={16} /> تتبّع الطلب
+              </Link>
+            )}
+            {result && supportsRequestFile && (
               <Link
                 to={`/order/request/${result.requestNo}`}
                 className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white transition hover:bg-brand-dark"
@@ -651,7 +680,11 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
           <button type="button" onClick={back} className="btn-outline-brand">
             السابق
           </button>
-          {err && <span className="flex-1 text-center text-xs text-red-600">{err}</span>}
+          {(err ?? (isPayment ? submitError : null)) && (
+            <span role="alert" className="flex-1 text-center text-xs text-red-600">
+              {err ?? submitError}
+            </span>
+          )}
           {isPayment ? (
             <button type="button" onClick={pay} disabled={paying} className="btn-accent px-6">
               {paying ? 'جارٍ معالجة الدفع…' : `ادفع ${price ? sar(price.total) : ''} ر.س`}
