@@ -135,6 +135,22 @@ const CONFIG: ConfigItem[] = [
     unit: '٪',
     sort_order: 9,
   },
+  {
+    key: 'request_max_days',
+    label_ar: 'أقصى مدة لطلب التأجير اليومي',
+    grp: 'الطلبات',
+    value: 30,
+    unit: 'يوم',
+    sort_order: 10,
+  },
+  {
+    key: 'request_max_months',
+    label_ar: 'أقصى مدة لطلب التأجير الشهري',
+    grp: 'الطلبات',
+    value: 24,
+    unit: 'شهر',
+    sort_order: 11,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;

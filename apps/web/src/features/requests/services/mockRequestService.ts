@@ -147,6 +147,7 @@ export function createMockRequestService(): RequestService {
         status: 'paid', // الدفع في العرض التجريبي محاكاة ناجحة
         payment_status: 'paid',
         created_at: file.created_at,
+        period: file.period,
         backend: 'mock',
       };
       return tracked;

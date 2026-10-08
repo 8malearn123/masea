@@ -5,7 +5,7 @@
  */
 import type { PriceBreakdown, ServiceCode, WorkerProfile } from '@/lib/funnel';
 import type { OrderDraft } from '@/lib/orderTypes';
-import type { RequestFile } from '@/features/requests/types';
+import type { RequestFile, RequestPeriod } from '@/features/requests/types';
 
 /** مصدر الطلبات: عرض تجريبي في الذاكرة، أو Supabase (للمستقبل). */
 export type RequestBackend = 'mock' | 'supabase';
@@ -37,6 +37,8 @@ export interface TrackedRequest {
   status: string;
   payment_status: string;
   created_at: string;
+  /** مدة الخدمة وتواريخها (ليست بيانات شخصية) — null لخدمة بلا مدة. */
+  period: RequestPeriod | null;
   backend: RequestBackend;
 }
 

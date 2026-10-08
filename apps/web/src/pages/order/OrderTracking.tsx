@@ -12,6 +12,7 @@ import { BRAND } from '@masiat/shared';
 import { dateAr } from '@/shared/lib/format';
 import { FALLBACK_SERVICES } from '@/lib/funnel';
 import { TRACKING_STAGES } from '@/lib/orderTypes';
+import { periodLabel } from '@/features/requests/lib/period';
 import { useServiceRequest } from '@/hooks/useServiceRequest';
 import type { ServiceCode } from '@/lib/funnel';
 
@@ -151,10 +152,32 @@ export default function OrderTracking() {
               <span className="text-brand-dark/60">الخدمة</span>
               <span className="font-medium">{serviceName}</span>
             </div>
-            <div className="flex items-center justify-between border-b border-brand-100 pb-3 text-sm">
+            <div
+              className={`flex items-center justify-between pb-3 text-sm ${
+                data.period?.startDate ? '' : 'border-b border-brand-100'
+              }`}
+            >
               <span className="text-brand-dark/60">تاريخ الطلب</span>
               <span className="num">{dateAr(data.created_at)}</span>
             </div>
+            {data.period?.startDate && (
+              <dl className="grid gap-2 border-b border-brand-100 pb-4 text-sm sm:grid-cols-3">
+                <div className="flex items-center justify-between rounded-xl bg-brand-50 p-2.5 sm:block">
+                  <dt className="text-[11px] text-brand-dark/60">تاريخ بداية الخدمة</dt>
+                  <dd className="num font-semibold sm:mt-0.5">{dateAr(data.period.startDate)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-brand-50 p-2.5 sm:block">
+                  <dt className="text-[11px] text-brand-dark/60">مدة الخدمة</dt>
+                  <dd className="num font-semibold sm:mt-0.5">{periodLabel(data.period)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-brand-50 p-2.5 sm:block">
+                  <dt className="text-[11px] text-brand-dark/60">تاريخ نهاية الخدمة</dt>
+                  <dd className="num font-semibold sm:mt-0.5">
+                    {data.period.endDate ? dateAr(data.period.endDate) : '—'}
+                  </dd>
+                </div>
+              </dl>
+            )}
 
             <p className="mb-4 mt-5 text-sm font-semibold text-brand-dark">مراحل الطلب</p>
             <ol className="space-y-4">

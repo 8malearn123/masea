@@ -21,7 +21,7 @@ import {
   placeForType,
   type PlaceDetails,
 } from '@/features/requests/types';
-import { answer } from './placeHelpers';
+import { answer, futureDay } from './placeHelpers';
 
 function wrap(ui: ReactNode, path = '/') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -321,7 +321,7 @@ describe('الحفظ والعرض في ملخّص الطلب', () => {
     customerName: 'هيا آل مفرح',
     phone: '0501234567',
     branch: 'نجران',
-    startDate: '2026-11-02',
+    startDate: futureDay(25),
     days: 1,
     taskType: 'تنظيف',
     place: p,

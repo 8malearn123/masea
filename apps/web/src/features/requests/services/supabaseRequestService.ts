@@ -100,8 +100,10 @@ export function createSupabaseRequestService(): RequestService {
         p_request_no: requestNo.trim().toUpperCase(),
       });
       if (error) throw backendError('تعذّر جلب حالة الطلب', error.message);
-      const row = (Array.isArray(data) ? data[0] : data) as Omit<TrackedRequest, 'backend'> | null;
-      return row ? { ...row, backend: 'supabase' } : null;
+      const row = (Array.isArray(data) ? data[0] : data) as
+        | (Omit<TrackedRequest, 'backend' | 'period'> & { period?: TrackedRequest['period'] })
+        | null;
+      return row ? { ...row, period: row.period ?? null, backend: 'supabase' } : null;
     },
 
     async getFile() {

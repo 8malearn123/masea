@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { isValidDay, today } from '@/features/requests/lib/period';
+import { buildPeriod, isValidDay, periodLabel, today } from '@/features/requests/lib/period';
+import { DURATION_UNITS } from '@/lib/orderTypes';
+import type { PeriodUnit } from '@/features/requests/types';
+import { configValue, type ConfigItem } from '@/features/settings/api/settings.api';
 import {
   COMMERCIAL_CODE,
   FACILITY_CODE,
@@ -152,28 +155,148 @@ export function placeStepIssue(place: unknown, step: 'beneficiary' | 'place'): s
   return found?.message ?? null;
 }
 
+/**
+ * حدود مدة الطلب — من إعدادات النظام (`request_max_days`، `request_max_months`)،
+ * وهذه القيم احتياطية فقط عند تعذّر قراءة الإعدادات.
+ */
+export interface DurationLimits {
+  maxDays: number;
+  maxMonths: number;
+}
+export const DURATION_LIMITS_FALLBACK: DurationLimits = { maxDays: 30, maxMonths: 24 };
+
+/** الحدود من قيم الإعدادات (المفتاحان قابلان للتعديل من شاشة الإعدادات). */
+export function durationLimitsFrom(config: ConfigItem[]): DurationLimits {
+  const read = (key: string, fallback: number) => {
+    const v = configValue(config, key, fallback);
+    return Number.isInteger(v) && v >= 1 ? v : fallback;
+  };
+  return {
+    maxDays: read('request_max_days', DURATION_LIMITS_FALLBACK.maxDays),
+    maxMonths: read('request_max_months', DURATION_LIMITS_FALLBACK.maxMonths),
+  };
+}
+
+/**
+ * عند الإرسال لا يُعاد فحص الحد الأعلى: خدمة الطلبات التجريبية لا تقرأ الإعدادات
+ * (معزولة عن أي مصدر بيانات)، والحد المضبوط يُفرض في المعالج. الباقي يُفحص كاملًا.
+ */
+const SUBMIT_LIMITS: DurationLimits = { maxDays: Infinity, maxMonths: Infinity };
+
+/** أقصى عدد لوحدة المدة: الأسابيع مشتقة من أقصى عدد أيام. */
+export function maxDurationCount(unit: PeriodUnit, limits: DurationLimits): number {
+  if (unit === 'day') return limits.maxDays;
+  if (unit === 'week') return Math.max(1, Math.floor(limits.maxDays / 7));
+  return limits.maxMonths;
+}
+
+/**
+ * مدة الطلب: تاريخ البداية + وحدة + عدد. تاريخ النهاية لا يُدخل — يُحسب دائمًا
+ * من `computeEndDate` (period.ts)، والتحقق هنا يضمن أنه منطقي.
+ */
+export function durationSchema(limits: DurationLimits, todayIso: string = today()) {
+  return z
+    .object({
+      service: z.enum(SERVICE_CODES),
+      startDate: z.string(),
+      durationUnit: z.string(),
+      // unknown: NaN/نص تُرفض برسالة عربية في التحقق أدناه لا برسالة Zod العامة
+      count: z.unknown(),
+    })
+    .superRefine((d, ctx) => {
+      const issue = (path: string, message: string) =>
+        ctx.addIssue({ code: 'custom', path: [path], message });
+      if (!d.startDate) issue('startDate', 'حدّد تاريخ بداية الخدمة.');
+      else if (!isValidDay(d.startDate)) issue('startDate', 'تاريخ بداية الخدمة غير صالح.');
+      else if (d.startDate < todayIso) issue('startDate', 'تاريخ بداية الخدمة لا يكون في الماضي.');
+
+      const allowed: string[] = DURATION_UNITS[d.service];
+      if (!allowed.includes(d.durationUnit)) {
+        issue('durationUnit', 'اختر وحدة مدة متاحة لهذه الخدمة.');
+        return;
+      }
+      const unit = d.durationUnit as PeriodUnit;
+      const max = maxDurationCount(unit, limits);
+      const count = typeof d.count === 'number' ? d.count : Number.NaN;
+      if (!Number.isInteger(count) || count < 1) {
+        issue('count', 'مدة الخدمة رقم صحيح موجب (١ على الأقل).');
+      } else if (count > max) {
+        const label = periodLabel(buildPeriod('', unit, max));
+        issue('count', `أقصى مدة لهذه الخدمة ${label}.`);
+      } else if (isValidDay(d.startDate)) {
+        const { endDate } = buildPeriod(d.startDate, unit, count);
+        if (!isValidDay(endDate) || endDate < d.startDate) {
+          issue('count', 'تاريخ نهاية الخدمة لا يسبق تاريخ البداية.');
+        }
+      }
+    });
+}
+
+/** خدمات تُطلب بمدة من المعالج (الاستقدام مدته مدة العقد في خطوة الباقة). */
+const DURATION_SERVICES = new Set(['daily_rental', 'monthly_rental']);
+
+/** مدخلات المدة من مسودة الطلب (العدد الخام قبل أي تصحيح، ليُكشف الصفر والسالب). */
+export function draftDuration(d: {
+  service: string;
+  startDate: string;
+  durationUnit?: string | undefined;
+  days?: unknown;
+  months?: unknown;
+}) {
+  return {
+    service: d.service,
+    startDate: d.startDate,
+    durationUnit: d.durationUnit ?? '',
+    count: (d.service === 'daily_rental' ? d.days : d.months) ?? 0,
+  };
+}
+
+/** أول رسالة في مدة الطلب، أو null إذا كانت صالحة. */
+export function durationIssue(
+  draft: Parameters<typeof draftDuration>[0],
+  limits: DurationLimits,
+  todayIso?: string,
+): string | null {
+  const res = durationSchema(limits, todayIso).safeParse(draftDuration(draft));
+  return res.success ? null : firstIssue(res.error);
+}
+
 /** الحد الأدنى من مدخلات إنشاء الطلب كما تصل إلى RequestService.submit. */
 export const submitRequestSchema = z.object({
   clientToken: z.string().min(8, { message: 'معرّف الإرسال مفقود' }),
   serviceName: z.string().min(1, { message: 'اسم الخدمة مفقود' }),
   price: amountsSchema,
-  draft: customerContactSchema.extend({
-    service: z.enum(SERVICE_CODES, { message: 'نوع الخدمة غير معروف' }),
-    startDate: z
-      .string()
-      .refine((v) => v === '' || isValidDay(v), { message: 'تاريخ البداية غير صالح' }),
-    // يُتحقق من المكان متى اختير نوع المستفيد (مسودات مركز الاتصال بلا مكان)
-    place: z.unknown().superRefine((place, ctx) => {
-      const p = place as { beneficiaryType?: unknown } | null;
-      if (!p || !p.beneficiaryType) return;
-      const res = placeDetailsSchema.safeParse(place);
+  draft: customerContactSchema
+    .extend({
+      service: z.enum(SERVICE_CODES, { message: 'نوع الخدمة غير معروف' }),
+      startDate: z
+        .string()
+        .refine((v) => v === '' || isValidDay(v), { message: 'تاريخ البداية غير صالح' }),
+      durationUnit: z.string().optional(),
+      days: z.unknown().optional(),
+      months: z.unknown().optional(),
+      // يُتحقق من المكان متى اختير نوع المستفيد (مسودات مركز الاتصال بلا مكان)
+      place: z.unknown().superRefine((place, ctx) => {
+        const p = place as { beneficiaryType?: unknown } | null;
+        if (!p || !p.beneficiaryType) return;
+        const res = placeDetailsSchema.safeParse(place);
+        if (!res.success) {
+          for (const i of res.error.issues) {
+            ctx.addIssue({ code: 'custom', message: i.message, path: [...i.path] });
+          }
+        }
+      }),
+    })
+    // المدة تُتحقق متى حُدّد تاريخ البداية (مركز الاتصال قد يبيع قبل تحديد الموعد)
+    .superRefine((draft, ctx) => {
+      if (!DURATION_SERVICES.has(draft.service) || !draft.startDate) return;
+      const res = durationSchema(SUBMIT_LIMITS).safeParse(draftDuration(draft));
       if (!res.success) {
         for (const i of res.error.issues) {
           ctx.addIssue({ code: 'custom', message: i.message, path: [...i.path] });
         }
       }
     }),
-  }),
 });
 
 /** أول رسالة خطأ من نتيجة Zod (للعرض للمستخدم). */

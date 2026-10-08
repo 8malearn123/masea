@@ -9,10 +9,11 @@
 import type { ServiceCode } from '@/lib/funnel';
 
 /** وحدة قياس مدة الطلب. */
-export type PeriodUnit = 'day' | 'month';
+export type PeriodUnit = 'day' | 'week' | 'month';
 
 export const PERIOD_UNIT_LABEL: Record<PeriodUnit, string> = {
   day: 'يوم',
+  week: 'أسبوع',
   month: 'شهر',
 };
 

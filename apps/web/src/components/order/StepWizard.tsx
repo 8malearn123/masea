@@ -10,9 +10,13 @@ import { newClientToken, useCreateRequest, type CreateResult } from '@/hooks/use
 import { useRequestBackend } from '@/features/requests/hooks/useRequestFiles';
 import {
   customerContactSchema,
+  durationIssue,
+  durationLimitsFrom,
   firstIssue,
+  maxDurationCount,
   placeStepIssue,
 } from '@/features/requests/schemas/request.schema';
+import { useConfig } from '@/features/settings/hooks/useSettings';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { SERVICE_FLOWS } from '@/lib/wizardConfig';
 import { BeneficiaryStep } from '@/features/requests/components/BeneficiaryStep';
@@ -20,7 +24,7 @@ import { PlaceStep } from '@/features/requests/components/PlaceStep';
 import { PeriodFields } from '@/features/requests/components/PeriodFields';
 import { MatchedWorkerPicker } from '@/features/catalog/components/MatchedWorkerPicker';
 import type { RequestNeed } from '@/features/catalog/lib/matching';
-import type { PlaceDetails } from '@/features/requests/types';
+import { isOccasion, type PlaceDetails } from '@/features/requests/types';
 import { periodLabel } from '@/features/requests/lib/period';
 import {
   NATIONALITIES,
@@ -28,7 +32,9 @@ import {
   TASK_TYPES,
   PAYMENT_METHODS,
   TRACKING_STAGES,
+  DURATION_UNITS,
   draftPeriod,
+  periodUnitOf,
   priceParams,
   type OrderDraft,
 } from '@/lib/orderTypes';
@@ -149,6 +155,8 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
     setDraft((d) => ({ ...d, place: { ...d.place, ...patch } }));
 
   const period = useMemo(() => draftPeriod(draft), [draft]);
+  const { data: config = [] } = useConfig();
+  const durationLimits = useMemo(() => durationLimitsFrom(config), [config]);
   const selectedWorker = workers.find((w) => w.id === draft.workerProfileId) ?? null;
 
   /** احتياج الطلب كما يُغذّي محرّك الترشيح. */
@@ -197,9 +205,8 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
         if (service === 'daily_rental') return null; // يجوز ترك الاختيار للشركة
         return draft.workerProfileId ? null : 'اختر العاملة المطلوبة.';
       case 'duration':
-        return draft.startDate && draft.months >= 1 ? null : 'حدّد تاريخ البداية وعدد الأشهر.';
       case 'dates':
-        return draft.startDate && draft.days >= 1 ? null : 'حدّد تاريخ البداية وعدد الأيام.';
+        return durationIssue(draft, durationLimits);
       case 'task':
         return draft.taskType ? null : 'اختر نوع المهمة.';
       case 'employer':
@@ -362,37 +369,39 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
           />
         );
       case 'duration':
+      case 'dates': {
+        // تأجير شهري: العدد في months · تأجير يومي: العدد في days (أيام أو أسابيع)
+        const countKey = key === 'duration' ? 'months' : 'days';
+        const unit = periodUnitOf(draft);
         return (
           <PeriodFields
             startDate={draft.startDate}
-            unit="month"
-            count={draft.months}
+            unit={unit}
+            units={DURATION_UNITS[service]}
+            count={draft[countKey]}
+            maxCount={maxDurationCount(unit, durationLimits)}
+            eventDate={isOccasion(draft.place.beneficiaryType) ? draft.place.eventDate : null}
             workerId={draft.workerProfileId}
             workerName={selectedWorker?.full_name ?? null}
             onChange={(patch) =>
               update({
                 ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
-                ...(patch.count !== undefined ? { months: patch.count } : {}),
+                ...(patch.count !== undefined ? { [countKey]: patch.count } : {}),
+                // تغيير الوحدة: يُقصّ العدد لأقصى الوحدة الجديدة (٣٠ يومًا ← ٤ أسابيع)
+                ...(patch.unit !== undefined
+                  ? {
+                      durationUnit: patch.unit,
+                      [countKey]: Math.min(
+                        Math.max(draft[countKey], 1),
+                        maxDurationCount(patch.unit, durationLimits),
+                      ),
+                    }
+                  : {}),
               })
             }
           />
         );
-      case 'dates':
-        return (
-          <PeriodFields
-            startDate={draft.startDate}
-            unit="day"
-            count={draft.days}
-            workerId={draft.workerProfileId}
-            workerName={selectedWorker?.full_name ?? null}
-            onChange={(patch) =>
-              update({
-                ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
-                ...(patch.count !== undefined ? { days: patch.count } : {}),
-              })
-            }
-          />
-        );
+      }
       case 'task':
         return (
           <RadioCards
@@ -733,7 +742,8 @@ function contractTerms(
     );
   if (service === 'monthly_rental')
     base.splice(1, 0, `مدة الإيجار: ${d.months} شهرًا، تجدد تلقائيًا.`);
-  if (service === 'daily_rental') base.splice(1, 0, `المهمة: ${d.taskType} لمدة ${d.days} يوم.`);
+  if (service === 'daily_rental' && period)
+    base.splice(1, 0, `المهمة: ${d.taskType} لمدة ${periodLabel(period)}.`);
   if (service === 'sponsorship_transfer') base.splice(1, 0, 'يشمل إجراءات النقل عبر مساند وأبشر.');
   return base;
 }

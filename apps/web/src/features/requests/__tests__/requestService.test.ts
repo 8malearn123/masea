@@ -22,6 +22,10 @@ import {
 } from '@/features/requests/services';
 import { RequestServiceError, type SubmitRequestInput } from '@/features/requests/services/types';
 import { emptyDraft } from '@/lib/orderTypes';
+import { addDays, today } from '@/features/requests/lib/period';
+
+/** تاريخ بداية مستقبلي دائمًا (التاريخ الماضي مرفوض). */
+const START = addDays(today(), 25);
 
 let seq = 0;
 function input(
@@ -40,7 +44,7 @@ function input(
       nationalId: '',
       city: 'نجران',
       branch: 'نجران',
-      startDate: '2026-11-02',
+      startDate: START,
       days: 2,
       taskType: 'تنظيف',
       ...over,
@@ -90,7 +94,7 @@ describe('MockRequestService (العرض التجريبي)', () => {
 
     const file = await svc.getFile(res.requestNo);
     expect(file?.phone).toBe('0501234567'); // موحّد
-    expect(file?.period).toMatchObject({ startDate: '2026-11-02', endDate: '2026-11-03' });
+    expect(file?.period).toMatchObject({ startDate: START, endDate: addDays(START, 1) });
     expect(await svc.track(res.requestNo)).toMatchObject({
       request_no: res.requestNo,
       service_code: 'daily_rental',
@@ -181,7 +185,7 @@ describe('SupabaseRequestService (مستقبلي — غير مفعّل)', () => 
     const payload = args.p_payload as Record<string, unknown>;
     expect(payload).toMatchObject({
       customer_phone: '0501234567',
-      start_date: '2026-11-02',
+      start_date: START,
       duration_unit: 'day',
       duration_count: 2,
     });

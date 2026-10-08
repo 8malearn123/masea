@@ -8,7 +8,7 @@ import { ToastProvider } from '@/shared/ui';
 import StepWizard from '@/components/order/StepWizard';
 import { ChatWidget } from '@/features/chatbot/components/ChatWidget';
 import { emptyDraft } from '@/lib/orderTypes';
-import { answerHome } from './placeHelpers';
+import { answerHome, futureDay } from './placeHelpers';
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -71,8 +71,8 @@ describe('مسار الطلب التفاعلي (Prototype)', () => {
 
     // ٣) المدة: تاريخ البداية وعدد الأيام ثم تاريخ النهاية المحسوب
     const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
-    await user.type(dateInput, '2026-11-02');
-    expect(await screen.findByText('تاريخ النهاية')).toBeInTheDocument();
+    await user.type(dateInput, futureDay(25));
+    expect(await screen.findByText('تاريخ نهاية الخدمة')).toBeInTheDocument();
     await next();
 
     // ٤) نوع المهمة

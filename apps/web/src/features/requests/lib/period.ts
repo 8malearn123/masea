@@ -4,7 +4,6 @@
  * التواريخ بصيغة yyyy-mm-dd وتُعالَج بالتوقيت العالمي لتجنّب انزلاق اليوم.
  */
 import type { PeriodUnit, RequestPeriod } from '@/features/requests/types';
-import { PERIOD_UNIT_LABEL } from '@/features/requests/types';
 
 const DAY_MS = 86_400_000;
 
@@ -59,8 +58,9 @@ export function daysBetween(fromIso: string, toIso: string): number {
 }
 
 /**
- * تاريخ نهاية المدة. اليوم الأول محسوب داخل المدة، فطلب يوم واحد يبدأ وينتهي
- * في نفس التاريخ، وطلب ٣ أيام يبدأ الأحد وينتهي الثلاثاء.
+ * تاريخ نهاية المدة — الدالة الوحيدة لحساب النهاية (الطلبات والعقود وجدول التوفّر).
+ * اليوم الأول محسوب داخل المدة، فطلب يوم واحد يبدأ وينتهي في نفس التاريخ، وطلب
+ * ٣ أيام يبدأ الأحد وينتهي الثلاثاء، والأسبوع = ٧ أيام (يبدأ الأحد وينتهي السبت).
  * المدة بالأشهر تنتهي في اليوم السابق لنفس التاريخ بعد N شهر؛ فإن لم يوجد ذلك
  * التاريخ في الشهر الأقصر (٣١ يناير + شهر، ٢٩ فبراير + سنة) تنتهي المدة في آخر
  * يوم من ذلك الشهر، فلا يسقط يوم من المدة.
@@ -70,6 +70,7 @@ export function computeEndDate(startDate: string, unit: PeriodUnit, count: numbe
   const start = parseDay(startDate);
   if (!start) return '';
   if (unit === 'day') return addDays(startDate, n - 1);
+  if (unit === 'week') return addDays(startDate, n * 7 - 1);
   const anniversary = addMonths(startDate, n);
   const clamped = parseDay(anniversary)?.getUTCDate() !== start.getUTCDate();
   return clamped ? anniversary : addDays(anniversary, -1);
@@ -86,14 +87,20 @@ export function periodDays(period: RequestPeriod): number {
   return daysBetween(period.startDate, period.endDate) + 1;
 }
 
-/** «٣ أشهر» / «٥ أيام» — صياغة عربية سليمة للعدد. */
+/** صيغ العدد لكل وحدة: واحد، مثنى، جمع (٣–١٠)، تمييز (١١ فأكثر). */
+const COUNT_FORMS: Record<PeriodUnit, [string, string, string, string]> = {
+  day: ['يوم واحد', 'يومان', 'أيام', 'يومًا'],
+  week: ['أسبوع واحد', 'أسبوعان', 'أسابيع', 'أسبوعًا'],
+  month: ['شهر واحد', 'شهران', 'أشهر', 'شهرًا'],
+};
+
+/** «٣ أشهر» / «٥ أيام» / «أسبوعان» — صياغة عربية سليمة للعدد. */
 export function periodLabel(period: RequestPeriod): string {
   const n = period.count;
-  const unit = PERIOD_UNIT_LABEL[period.unit];
-  if (n === 1) return unit === 'يوم' ? 'يوم واحد' : 'شهر واحد';
-  if (n === 2) return unit === 'يوم' ? 'يومان' : 'شهران';
-  if (n <= 10) return `${n} ${unit === 'يوم' ? 'أيام' : 'أشهر'}`;
-  return `${n} ${unit === 'يوم' ? 'يومًا' : 'شهرًا'}`; // ١١ فأكثر: تمييز مفرد منصوب
+  const [one, two, few, many] = COUNT_FORMS[period.unit];
+  if (n === 1) return one;
+  if (n === 2) return two;
+  return `${n} ${n <= 10 ? few : many}`;
 }
 
 /** تقاطُع مدّتين (لفحص التواريخ المحجوزة). */

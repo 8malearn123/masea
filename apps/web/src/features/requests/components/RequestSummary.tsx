@@ -197,16 +197,22 @@ function RequestBody({ file }: { file: RequestFile }) {
       </Section>
 
       {/* المدة */}
-      {file.period && (
+      {file.period?.startDate && (
         <Section icon={CalendarClock} title="مدة الطلب">
           <div className="grid gap-3 sm:grid-cols-3">
             <Info
               icon={CalendarClock}
-              label="تاريخ البداية"
+              label="تاريخ بداية الخدمة"
               value={dateAr(file.period.startDate)}
             />
-            <Info icon={CalendarClock} label="تاريخ النهاية" value={dateAr(file.period.endDate)} />
-            <Info icon={CalendarClock} label="المدة" value={periodLabel(file.period)} />
+            <Info icon={CalendarClock} label="مدة الخدمة" value={periodLabel(file.period)} />
+            {file.period.endDate && (
+              <Info
+                icon={CalendarClock}
+                label="تاريخ نهاية الخدمة"
+                value={dateAr(file.period.endDate)}
+              />
+            )}
           </div>
         </Section>
       )}
