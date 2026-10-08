@@ -7,6 +7,54 @@ import {
   saveCustomerNote,
 } from '@/features/chatbot/api/chatbot.api';
 import { answerFor } from '@/features/chatbot/lib/reply';
+import { fabPlacement, type FabPlacement, type Rect } from '@/features/chatbot/lib/fabPosition';
+
+/** تحت هذا العرض يصبح الزر أيقونة ويتفادى العناصر المهمة (نفس نقطة lg في Tailwind). */
+const DESKTOP_MIN = 1024;
+const FAB = { base: 16, size: 48, gap: 8 };
+
+/**
+ * موضع الزر العائم على الجوال: يتفادى العناصر المعلَّمة بـ `data-fab-avoid`
+ * (أزرار التنقل والدفع والشريط السفلي) والحقول الظاهرة. null على الشاشات
+ * الكبيرة (موضع CSS الثابت). أثناء ظهوره على الجوال تُحجز مساحة أسفل الصفحة
+ * (`has-chat-fab`) فيجد دائمًا موضعًا حرًا عند نهاية التمرير.
+ */
+function useFabPlacement(enabled: boolean): FabPlacement | null {
+  const [placement, setPlacement] = useState<FabPlacement | null>(null);
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') return;
+    document.body.classList.add('has-chat-fab');
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      if (window.innerWidth >= DESKTOP_MIN) return setPlacement(null);
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-fab-avoid], input, select, textarea'),
+      ).filter((el) => !el.closest('[data-chat-widget]'));
+      const rects: Rect[] = els.map((el) => el.getBoundingClientRect());
+      const next = fabPlacement(rects, { viewportHeight: window.innerHeight, ...FAB });
+      setPlacement((prev) =>
+        prev && prev.bottom === next.bottom && prev.hidden === next.hidden ? prev : next,
+      );
+    };
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    schedule();
+    const events = ['scroll', 'resize', 'focusin', 'focusout'] as const;
+    events.forEach((e) => window.addEventListener(e, schedule, { passive: true }));
+    // تغيّر الصفحة (خطوة جديدة في المعالج، فتح قسم) يغيّر مواضع العناصر
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      document.body.classList.remove('has-chat-fab');
+      events.forEach((e) => window.removeEventListener(e, schedule));
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [enabled]);
+  return placement;
+}
 
 interface ChatMessage {
   id: number;
@@ -32,6 +80,7 @@ export function ChatWidget() {
     { id: nextId(), from: 'bot', text: CHAT_GREETING, followUps: CHAT_SUGGESTIONS },
   ]);
   const endRef = useRef<HTMLDivElement>(null);
+  const fab = useFabPlacement(!open);
 
   useEffect(() => {
     // scrollIntoView غير متاح في كل البيئات (jsdom مثلًا) — التمرير تحسين لا شرط.
@@ -80,10 +129,19 @@ export function ChatWidget() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-24 left-4 z-40 inline-flex items-center gap-2 rounded-full bg-navy px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-navy-700 lg:bottom-6"
+        // الجوال: أيقونة دائرية تتفادى الأزرار والحقول · الشاشات الكبيرة: كما هي
+        style={fab ? { bottom: fab.bottom } : undefined}
+        data-chat-widget
+        data-hidden={fab?.hidden || undefined}
+        tabIndex={fab?.hidden ? -1 : undefined}
+        aria-hidden={fab?.hidden || undefined}
+        className={`fixed bottom-4 left-4 z-40 inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-navy text-sm font-bold text-white shadow-lg transition hover:bg-navy-700 lg:bottom-6 lg:h-auto lg:w-auto lg:px-4 lg:py-3 ${
+          fab?.hidden ? 'pointer-events-none scale-75 opacity-0' : ''
+        }`}
         aria-label="فتح مساعد العملاء"
+        data-testid="chat-fab"
       >
-        <Bot size={18} /> مساعد العملاء
+        <Bot size={20} /> <span className="hidden lg:inline">مساعد العملاء</span>
       </button>
     );
   }
@@ -91,6 +149,7 @@ export function ChatWidget() {
   return (
     <div
       dir="rtl"
+      data-chat-widget
       className="fixed bottom-24 left-4 z-40 flex h-[30rem] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-navy-100 lg:bottom-6"
     >
       <header className="flex items-center justify-between bg-navy px-4 py-3 text-white">

@@ -10,10 +10,12 @@ import {
   UsersRound,
 } from 'lucide-react';
 import { flagFor } from '@/shared/ui';
-import { dateAr, sar } from '@/shared/lib/format';
+import { sar } from '@/shared/lib/format';
 import type { WorkerProfile } from '@/lib/funnel';
 import { ratingOf } from '@/features/catalog/lib/catalog';
 import { AvailabilityCalendar } from '@/features/catalog/components/AvailabilityCalendar';
+import { AvailabilitySummary } from '@/features/catalog/components/AvailabilitySummary';
+import { isWorkerAvailable } from '@/features/catalog/lib/availability';
 import {
   matchLabel,
   rankWorkers,
@@ -70,6 +72,17 @@ export function MatchedWorkerPicker({
     need.period && need.period.startDate && need.period.endDate
       ? { start: need.period.startDate, end: need.period.endDate }
       : undefined;
+  // توفّر كل عاملة لفترة الطلب الحالية — يُعاد حسابه عند تغيّر الفترة
+  const availability = useMemo(
+    () =>
+      new Map(
+        ranked.map(({ worker }) => [
+          worker.id,
+          isWorkerAvailable(worker.id, highlight?.start ?? '', highlight?.end ?? ''),
+        ]),
+      ),
+    [ranked, highlight?.start, highlight?.end],
+  );
 
   if (isLoading) {
     return (
@@ -134,15 +147,22 @@ export function MatchedWorkerPicker({
           {ranked.map(({ worker, match }) => {
             const active = selectedId === worker.id;
             const scheduleOpen = openSchedule === worker.id;
+            const avail = availability.get(worker.id);
+            // غير متاحة للفترة (كليًا أو جزئيًا) → لا تُختار
+            const blocked = avail?.status === 'partial' || avail?.status === 'unavailable';
             return (
               <div
                 key={worker.id}
-                className={`rounded-xl border transition ${active ? 'border-navy bg-navy-50' : 'border-navy-100'}`}
+                className={`rounded-xl border transition ${
+                  active ? 'border-navy bg-navy-50' : blocked ? 'border-red-100' : 'border-navy-100'
+                }`}
               >
                 <button
                   type="button"
                   onClick={() => onSelect(worker, match)}
-                  className="flex w-full items-start gap-3 p-3.5 text-right"
+                  disabled={blocked}
+                  aria-label={`${worker.full_name}${blocked ? ' — غير متاحة خلال الفترة المحددة' : ''}`}
+                  className="flex w-full items-start gap-3 p-3.5 text-right disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white font-bold text-navy ring-1 ring-navy-100">
                     {worker.full_name.charAt(0)}
@@ -181,13 +201,17 @@ export function MatchedWorkerPicker({
                         <TriangleAlert size={11} /> {match.gaps[0]}
                       </span>
                     )}
-                    {!match.available && match.nextFree && (
-                      <span className="num mt-0.5 flex items-center gap-1 text-[11px] text-red-600">
-                        <CalendarClock size={11} /> محجوزة — أقرب توفّر {dateAr(match.nextFree)}
-                      </span>
-                    )}
                   </span>
                 </button>
+
+                {avail && (
+                  <div className="px-3.5 pb-3">
+                    <AvailabilitySummary
+                      result={avail}
+                      nextFree={blocked ? match.nextFree : null}
+                    />
+                  </div>
+                )}
 
                 <button
                   type="button"

@@ -23,6 +23,7 @@ import { BeneficiaryStep } from '@/features/requests/components/BeneficiaryStep'
 import { PlaceStep } from '@/features/requests/components/PlaceStep';
 import { PeriodFields } from '@/features/requests/components/PeriodFields';
 import { MatchedWorkerPicker } from '@/features/catalog/components/MatchedWorkerPicker';
+import { isWorkerAvailable } from '@/features/catalog/lib/availability';
 import type { RequestNeed } from '@/features/catalog/lib/matching';
 import { isOccasion, type PlaceDetails } from '@/features/requests/types';
 import { periodLabel } from '@/features/requests/lib/period';
@@ -201,9 +202,15 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
         return draft.monthlySalary > 0 && draft.contractMonths > 0 && draft.startDate
           ? null
           : 'حدّد الراتب ومدة العقد وتاريخ المباشرة المتوقّع.';
-      case 'select_worker':
+      case 'select_worker': {
+        // العاملة المختارة يجب أن تكون متاحة للفترة الحالية (تتغيّر بتغيّر المدة)
+        if (draft.workerProfileId && period) {
+          const avail = isWorkerAvailable(draft.workerProfileId, period.startDate, period.endDate);
+          if (!avail.available) return `${avail.message} اختر عاملة أخرى أو غيّر التواريخ.`;
+        }
         if (service === 'daily_rental') return null; // يجوز ترك الاختيار للشركة
         return draft.workerProfileId ? null : 'اختر العاملة المطلوبة.';
+      }
       case 'duration':
       case 'dates':
         return durationIssue(draft, durationLimits);
@@ -613,6 +620,7 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             )}
             {result && (
               <Link
+                data-fab-avoid
                 to={`/order/track?no=${result.requestNo}`}
                 className="me-2 mt-4 inline-flex items-center gap-2 rounded-xl border border-brand px-5 py-2.5 text-sm font-bold text-brand transition hover:bg-brand-50"
               >
@@ -621,6 +629,7 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             )}
             {result && supportsRequestFile && (
               <Link
+                data-fab-avoid
                 to={`/order/request/${result.requestNo}`}
                 className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white transition hover:bg-brand-dark"
               >
@@ -687,7 +696,7 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
 
       {/* nav */}
       {step.key !== 'confirm' && (
-        <div className="mt-8 flex items-center justify-between gap-3">
+        <div data-fab-avoid className="mt-8 flex items-center justify-between gap-3">
           <button type="button" onClick={back} className="btn-outline-brand">
             السابق
           </button>

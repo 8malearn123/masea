@@ -217,7 +217,10 @@ export default function WorkerProfile() {
       </div>
 
       {/* sticky order bar (mobile) */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-navy-100 bg-white p-3 lg:hidden">
+      <div
+        data-fab-avoid
+        className="fixed inset-x-0 bottom-0 z-20 border-t border-navy-100 bg-white p-3 lg:hidden"
+      >
         <OrderPanel
           prices={prices}
           service={service}

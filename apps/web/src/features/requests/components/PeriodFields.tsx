@@ -158,7 +158,7 @@ export function PeriodFields({
           <span>
             {conflict ? (
               <>
-                جدول {workerName ?? 'العاملة'} محجوز ({conflict.reason}) من{' '}
+                {workerName ?? 'العاملة'} غير متاحة خلال الفترة المحددة — مشغولة من{' '}
                 <span className="num">{dateAr(conflict.start)}</span> إلى{' '}
                 <span className="num">{dateAr(conflict.end)}</span>.
                 {nextFree && (

@@ -5,7 +5,8 @@
  */
 import { addLocalOrder } from '@/features/orders/api/orders.api';
 import { captureLead } from '@/features/crm/api/crm.api';
-import { addBooking } from '@/features/catalog/lib/availability';
+import { addBooking, AVAILABILITY_MESSAGE } from '@/features/catalog/lib/availability';
+import { dateAr } from '@/shared/lib/format';
 import {
   blankRequestFile,
   getRequestFile,
@@ -53,6 +54,26 @@ export function createMockRequestService(): RequestService {
     const requestNo = await uniqueRequestNo();
     const period = draftPeriod(draft);
 
+    // حجز المدة كاملة على جدول العاملة أولًا (بلا await بعده حتى الحفظ، فلا
+    // يتسابق طلبان على نفس الأيام): التعارض يرفض الطلب كله قبل حفظ أي شيء.
+    if (worker && period) {
+      const booking = addBooking(worker.id, {
+        start: period.startDate,
+        end: period.endDate,
+        reason: `طلب ${serviceName}`,
+        request_no: requestNo,
+      });
+      if (!booking.ok) {
+        const c = booking.conflict;
+        throw new RequestServiceError(
+          c
+            ? `${AVAILABILITY_MESSAGE.unavailable} (مشغولة من ${dateAr(c.start)} إلى ${dateAr(c.end)}) — اختر عاملة أخرى أو غيّر التواريخ.`
+            : 'فترة الطلب غير صالحة — راجع تاريخ البداية والمدة.',
+          'validation',
+        );
+      }
+    }
+
     saveRequestFile({
       ...blankRequestFile(requestNo),
       service_code: draft.service,
@@ -86,16 +107,6 @@ export function createMockRequestService(): RequestService {
       branch: draft.branch || null,
       total_amount: price.total,
     });
-
-    // حجز المدة على جدول العاملة حتى تظهر محجوزة للعملاء الآخرين
-    if (worker && period) {
-      addBooking(worker.id, {
-        start: period.startDate,
-        end: period.endDate,
-        reason: `طلب ${serviceName}`,
-        request_no: requestNo,
-      });
-    }
 
     // التقاط الصفقة في مسار المبيعات (مصدر: الموقع)
     captureLead({
