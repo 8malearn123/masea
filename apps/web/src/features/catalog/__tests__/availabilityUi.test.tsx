@@ -100,6 +100,9 @@ async function renderPicker(period: ReturnType<typeof buildPeriod> | null) {
   const view = render(wrap(ui(period)));
   const showAll = screen.queryByRole('button', { name: /عرض الباقي|عرض كل العاملات/ });
   if (showAll) await user.click(showAll);
+  // غير المتاحات للفترة في قسم منفصل مطويّ
+  const blocked = screen.queryByRole('button', { name: /غير متاحة خلال الفترة المحددة \(/ });
+  if (blocked) await user.click(blocked);
   return { user, rerender: (p: typeof period) => view.rerender(wrap(ui(p))) };
 }
 

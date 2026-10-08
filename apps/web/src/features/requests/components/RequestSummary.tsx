@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Baby,
   Building2,
+  CalendarCheck,
   CalendarClock,
   CreditCard,
   FileText,
@@ -27,6 +28,7 @@ import { refName } from '@/features/settings/api/settings.api';
 import { useRequestBackend, useRequestFile } from '@/features/requests/hooks/useRequestFiles';
 import { periodLabel } from '@/features/requests/lib/period';
 import { serviceDetailRows } from '@/features/requests/lib/serviceDetails';
+import { bookedRangesOf } from '@/features/catalog/lib/availability';
 import type { RequestFile } from '@/features/requests/types';
 
 /**
@@ -230,6 +232,7 @@ function RequestBody({ file }: { file: RequestFile }) {
                 <span className="text-sm leading-none">{flagFor(file.worker.nationality)}</span>
                 {file.worker.profession} · {file.worker.nationality}
               </p>
+              <WorkerAvailabilityLine file={file} workerId={file.worker.id} />
             </div>
             {file.match_score !== null && (
               <span className="num rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-bold text-teal">
@@ -280,6 +283,30 @@ function RequestBody({ file }: { file: RequestFile }) {
         </ol>
       </Section>
     </>
+  );
+}
+
+/**
+ * حالة توفّر العاملة لهذا الطلب: الحجز يُسجَّل عند إنشاء الطلب للفترة كاملة
+ * (ويُرفض الطلب إن تعارض)، فوجوده يعني أنها محجوزة لهذا الطلب طوال المدة.
+ */
+function WorkerAvailabilityLine({ file, workerId }: { file: RequestFile; workerId: string }) {
+  if (!file.period?.startDate) {
+    return (
+      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-purple">
+        <CalendarClock size={11} /> يُحدَّد التوفّر عند تحديد مدة الخدمة
+      </p>
+    );
+  }
+  const reserved = bookedRangesOf(workerId).some((r) => r.request_no === file.request_no);
+  return reserved ? (
+    <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-teal">
+      <CalendarCheck size={11} /> متاحة ومحجوزة لطلبك طوال فترة الخدمة
+    </p>
+  ) : (
+    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gold-600">
+      <CalendarClock size={11} /> بانتظار تأكيد توفّر العاملة للفترة
+    </p>
   );
 }
 

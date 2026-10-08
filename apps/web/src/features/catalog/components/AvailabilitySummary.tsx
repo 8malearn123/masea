@@ -63,13 +63,15 @@ export function AvailabilitySummary({
         <p className="pt-0.5 font-semibold">
           {result.message}
           {result.status === 'partial' && (
-            <span className="num font-normal">
-              {' '}
-              ({result.busyDays} من {result.totalDays} يوم مشغولة)
+            <span className="block font-normal">
+              أيام مشغولة: <span className="num">{result.busyDays}</span> من{' '}
+              <span className="num">{result.totalDays}</span>
             </span>
           )}
           {nextFree && (
-            <span className="num block font-normal">أقرب توفّر للمدة نفسها {dateAr(nextFree)}</span>
+            <span className="block font-normal">
+              أقرب توفّر للمدة نفسها <span className="num">{dateAr(nextFree)}</span>
+            </span>
           )}
         </p>
       )}
