@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight,
@@ -5,6 +6,8 @@ import {
   Building2,
   CalendarCheck,
   CalendarClock,
+  CheckCircle2,
+  Clock,
   CreditCard,
   FileText,
   Hash,
@@ -14,13 +17,15 @@ import {
   MapPin,
   Phone,
   Sparkles,
+  Star,
   Store,
   UserRound,
   UsersRound,
   FlaskConical,
+  SearchX,
 } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
-import { EmptyState, ErrorState, Skeleton, flagFor } from '@/shared/ui';
+import { EmptyState, ErrorState, Skeleton } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { PAYMENT_METHODS, TRACKING_STAGES } from '@/lib/orderTypes';
 import { useRefList } from '@/features/settings/hooks/useSettings';
@@ -29,6 +34,13 @@ import { useRequestBackend, useRequestFile } from '@/features/requests/hooks/use
 import { periodLabel } from '@/features/requests/lib/period';
 import { serviceDetailRows } from '@/features/requests/lib/serviceDetails';
 import { bookedRangesOf } from '@/features/catalog/lib/availability';
+import { RatingBadge, StarRow } from '@/features/rating/components/RatingParts';
+import { ReviewForm } from '@/features/rating/components/ReviewForm';
+import { useReviewEligibility } from '@/features/rating/hooks/useRatings';
+import {
+  DUPLICATE_REVIEW_MESSAGE,
+  REVIEW_NOT_READY_MESSAGE,
+} from '@/features/rating/services/reviewService';
 import type { RequestFile } from '@/features/requests/types';
 
 /**
@@ -65,7 +77,7 @@ export default function RequestSummary() {
           <ErrorState description="تعذّر تحميل ملف الطلب." onRetry={() => void refetch()} />
         ) : !data ? (
           <EmptyState
-            icon="🔍"
+            icon={SearchX}
             title="لا يوجد طلب بهذا الرقم"
             description={`لم نجد ملفًا للطلب ${requestNo}. تأكّد من رقم الطلب أو ابدأ طلبًا جديدًا.`}
             action={
@@ -222,21 +234,29 @@ function RequestBody({ file }: { file: RequestFile }) {
       {/* العاملة */}
       <Section icon={UserRound} title="العاملة المخصّصة">
         {file.worker ? (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-navy-50 font-bold text-navy">
               {file.worker.full_name.charAt(0)}
             </span>
-            <div className="flex-1">
+            <div className="min-w-[11rem] flex-1">
               <p className="text-sm font-bold text-navy">{file.worker.full_name}</p>
               <p className="flex items-center gap-1 text-[11px] text-purple">
-                <span className="text-sm leading-none">{flagFor(file.worker.nationality)}</span>
                 {file.worker.profession} · {file.worker.nationality}
               </p>
               <WorkerAvailabilityLine file={file} workerId={file.worker.id} />
+              <p className="mt-0.5 flex flex-wrap items-center gap-2">
+                <RatingBadge workerId={file.worker.id} />
+                <Link
+                  to={`/order/workers/${file.worker.id}#reviews`}
+                  className="text-[11px] font-semibold text-navy hover:underline"
+                >
+                  عرض التقييمات
+                </Link>
+              </p>
             </div>
             {file.match_score !== null && (
-              <span className="num rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-bold text-teal">
-                مطابقة {file.match_score}٪
+              <span className="rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-bold text-teal">
+                مطابقة <span className="num">{file.match_score}٪</span>
               </span>
             )}
             <Link
@@ -250,6 +270,13 @@ function RequestBody({ file }: { file: RequestFile }) {
           <p className="text-sm text-purple">
             لم تُحدَّد عاملة بعد — سيرشّح الفريق الأنسب لاحتياجك ويتواصل معك.
           </p>
+        )}
+        {file.worker && (
+          <RequestReviewBlock
+            requestNo={file.request_no}
+            workerId={file.worker.id}
+            workerName={file.worker.full_name}
+          />
         )}
       </Section>
 
@@ -283,6 +310,78 @@ function RequestBody({ file }: { file: RequestFile }) {
         </ol>
       </Section>
     </>
+  );
+}
+
+/**
+ * تقييم العاملة من ملف الطلب: يظهر التقييم السابق إن وُجد (تقييم واحد لكل طلب
+ * وعاملة)، وإلا «أضف تقييمك» فقط إذا كانت الخدمة مكتملة في طلب التشغيل المرتبط؛
+ * غير ذلك تظهر «يتاح التقييم بعد اكتمال الخدمة». يرتبط التقييم برقم الطلب والعاملة.
+ */
+function RequestReviewBlock({
+  requestNo,
+  workerId,
+  workerName,
+}: {
+  requestNo: string;
+  workerId: string;
+  workerName: string;
+}) {
+  const { data: eligibility, isLoading } = useReviewEligibility(requestNo, workerId);
+  const [open, setOpen] = useState(false);
+  const [duplicate, setDuplicate] = useState(false);
+  if (isLoading || !eligibility) return null;
+  if (eligibility.status === 'reviewed') {
+    const existing = eligibility.review;
+    return (
+      <div className="mt-3 rounded-xl bg-navy-50 p-3 text-sm" aria-label="تقييمك لهذا الطلب">
+        {duplicate && (
+          <p role="alert" className="mb-1.5 text-xs font-semibold text-gold-600">
+            {DUPLICATE_REVIEW_MESSAGE}
+          </p>
+        )}
+        <p className="flex flex-wrap items-center gap-2 font-semibold text-navy">
+          <CheckCircle2 size={14} className="text-teal" /> قيّمت هذه العاملة لهذا الطلب
+          <StarRow value={existing.stars} />
+        </p>
+        {existing.comment && (
+          <p className="mt-1 break-words text-xs text-navy-900 [overflow-wrap:anywhere]">
+            {existing.comment}
+          </p>
+        )}
+      </div>
+    );
+  }
+  if (eligibility.status === 'not_completed') {
+    return (
+      <p
+        role="status"
+        className="mt-3 flex items-center gap-1.5 rounded-xl bg-navy-50 p-3 text-sm font-semibold text-navy"
+      >
+        <Clock size={15} aria-hidden className="shrink-0 text-purple" /> {REVIEW_NOT_READY_MESSAGE}
+      </p>
+    );
+  }
+  if (eligibility.status !== 'eligible') return null;
+  return (
+    <div className="mt-3">
+      {open ? (
+        <ReviewForm
+          requestNo={requestNo}
+          workerId={workerId}
+          workerName={workerName}
+          onDuplicate={() => setDuplicate(true)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-gold px-4 py-2 text-sm font-bold text-gold-600 transition hover:bg-gold-100"
+        >
+          <Star size={15} /> أضف تقييمك
+        </button>
+      )}
+    </div>
   );
 }
 

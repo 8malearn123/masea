@@ -176,6 +176,76 @@ const RATINGS: Rating[] = [
     comment: 'خبرتها مع حديثي الولادة أراحتنا كثيرًا.',
     created_at: '2026-09-11T07:40:00Z',
   },
+  {
+    id: 'rt19',
+    customer_name: 'عبدالرحمن الزهراني',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'منظّمة جدًا، والبيت صار مرتّبًا من أول أسبوع.',
+    created_at: '2026-08-14T13:00:00Z',
+  },
+  {
+    id: 'rt20',
+    customer_name: 'وعد السلمي',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'تتعامل مع الأطفال بلطف وتلتزم بتعليمات الأم.',
+    created_at: '2026-08-28T18:20:00Z',
+  },
+  {
+    id: 'rt21',
+    customer_name: 'فيصل القرني',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 4,
+    comment: '',
+    created_at: '2026-09-05T09:00:00Z',
+  },
+  {
+    id: 'rt22',
+    customer_name: 'جواهر العتيبي',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'ممتازة في التنظيف والكي، وأمينة.',
+    created_at: '2026-09-15T16:45:00Z',
+  },
+  {
+    id: 'rt23',
+    customer_name: 'مشعل آل منصور',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'تجربة ثانية معها وكانت أفضل من الأولى.',
+    created_at: '2026-09-22T11:10:00Z',
+  },
+  {
+    id: 'rt24',
+    customer_name: 'أروى الغامدي',
+    target_type: 'worker',
+    target_name: 'ديوي أنغرايني',
+    worker_id: 'w4',
+    stars: 4,
+    comment: 'أكلها لذيذ، تحتاج وقتًا إضافيًا في الولائم الكبيرة.',
+    created_at: '2026-09-18T20:30:00Z',
+  },
+  {
+    id: 'rt25',
+    customer_name: 'سعود اليامي',
+    target_type: 'worker',
+    target_name: 'سيتي نورهاليزا',
+    worker_id: 'w3',
+    stars: 3,
+    comment: 'تحتاج متابعة في التفاصيل، لكنها متعاونة.',
+    created_at: '2026-09-20T10:00:00Z',
+  },
 ];
 
 const newest = (a: Rating, b: Rating) => (a.created_at < b.created_at ? 1 : -1);
@@ -189,7 +259,7 @@ export async function listWorkerReviews(workerId: string): Promise<Rating[]> {
   return RATINGS.filter((r) => r.worker_id === workerId).sort(newest);
 }
 
-/** ملخّص تقييمات عاملة (متوسّط + توزيع) — يُحسب من نفس القائمة، بلا تخزين مكرّر. */
+/** ملخّص تقييمات عاملة (متوسّط + عدد + توزيع) — يُحسب من السجلات نفسها، بلا تخزين مكرّر. */
 export function ratingSummaryOf(workerId: string): RatingSummary {
   const rows = RATINGS.filter((r) => r.worker_id === workerId);
   const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -198,30 +268,40 @@ export function ratingSummaryOf(workerId: string): RatingSummary {
   });
   const average =
     rows.length === 0
-      ? 0
+      ? null
       : Math.round((rows.reduce((sum, r) => sum + r.stars, 0) / rows.length) * 10) / 10;
   return { count: rows.length, average, distribution };
 }
 
+/** تقييم سابق لنفس (الطلب + العاملة) إن وُجد. */
+export function findRequestReview(requestNo: string, workerId: string): Rating | null {
+  return RATINGS.find((r) => r.request_no === requestNo && r.worker_id === workerId) ?? null;
+}
+
 let reviewSeq = 1;
 
-/** إضافة تقييم/تعليق جديد على عاملة (Prototype — يُحفظ في نفس المخزن). */
-export async function addWorkerReview(input: {
+/**
+ * حفظ تقييم عاملة في المخزن (Prototype). التحقق ومنع التكرار في خدمة التقييمات
+ * (`services/reviewService.ts`) — لا يُستدعى هذا مباشرة من الواجهة.
+ */
+export function insertWorkerReview(input: {
   workerId: string;
   workerName: string;
   customerName: string;
   stars: number;
   comment: string;
-}): Promise<Rating> {
+  requestNo: string;
+}): Rating {
   const row: Rating = {
     id: `rt-new-${reviewSeq++}`,
-    customer_name: input.customerName.trim() || 'عميل',
+    customer_name: input.customerName,
     target_type: 'worker',
     target_name: input.workerName,
     worker_id: input.workerId,
-    stars: Math.min(5, Math.max(1, Math.round(input.stars))),
-    comment: input.comment.trim(),
+    stars: input.stars,
+    comment: input.comment,
     created_at: new Date().toISOString(),
+    request_no: input.requestNo,
   };
   RATINGS.unshift(row);
   return row;

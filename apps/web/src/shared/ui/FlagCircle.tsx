@@ -1,28 +1,29 @@
 /**
- * Small circular country flag — identity-friendly (soft ring + light field).
- * Flags are content (country emoji), framed to match the system's rounded look.
+ * شارة دائرية صغيرة للدولة — رمز الدولة (ISO) بنص محايد بدل إيموجي العلم
+ * (CLAUDE.md: لا إيموجي). اسم الجنسية الكامل في `title` للقارئ.
  */
-const FLAG: Record<string, string> = {
-  إندونيسيا: '🇮🇩',
-  الفلبين: '🇵🇭',
-  كينيا: '🇰🇪',
-  إثيوبيا: '🇪🇹',
-  سريلانكا: '🇱🇰',
-  بنغلاديش: '🇧🇩',
-  الهند: '🇮🇳',
-  نيبال: '🇳🇵',
-  أوغندا: '🇺🇬',
-  السعودية: '🇸🇦',
+const COUNTRY_CODE: Record<string, string> = {
+  إندونيسيا: 'ID',
+  الفلبين: 'PH',
+  كينيا: 'KE',
+  إثيوبيا: 'ET',
+  سريلانكا: 'LK',
+  بنغلاديش: 'BD',
+  الهند: 'IN',
+  نيبال: 'NP',
+  أوغندا: 'UG',
+  السعودية: 'SA',
 };
 
+/** رمز الدولة (ISO) للجنسية، أو «—» إن لم يُعرف. */
 export function flagFor(nationality: string | null | undefined): string {
-  return (nationality && FLAG[nationality.trim()]) || '🌐';
+  return (nationality && COUNTRY_CODE[nationality.trim()]) || '—';
 }
 
 const SIZES = {
-  sm: 'h-6 w-6 text-[13px]',
-  md: 'h-8 w-8 text-base',
-  lg: 'h-10 w-10 text-lg',
+  sm: 'h-6 w-6 text-[9px]',
+  md: 'h-8 w-8 text-[10px]',
+  lg: 'h-10 w-10 text-xs',
 } as const;
 
 export function FlagCircle({
@@ -37,9 +38,10 @@ export function FlagCircle({
   return (
     <span
       title={nationality ?? ''}
-      className={`grid shrink-0 place-items-center rounded-full bg-navy-50 ring-1 ring-navy-100 ${SIZES[size]} ${className}`}
+      aria-label={nationality ?? undefined}
+      className={`grid shrink-0 place-items-center rounded-full bg-navy-50 font-bold tracking-wide text-navy ring-1 ring-navy-100 ${SIZES[size]} ${className}`}
     >
-      <span className="leading-none">{flagFor(nationality)}</span>
+      <span className="num leading-none">{flagFor(nationality)}</span>
     </span>
   );
 }

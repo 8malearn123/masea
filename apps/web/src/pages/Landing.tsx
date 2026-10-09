@@ -2,12 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BRAND, BRANCHES } from '@masiat/shared';
 import { NAV } from '@/nav';
+import {
+  CreditCard,
+  FileText,
+  HardHat,
+  LayoutDashboard,
+  MapPin,
+  Sparkles,
+  Star,
+  Users,
+  Zap,
+} from 'lucide-react';
 
 /* ---------- helpers ---------- */
 const toArabic = (s: number | string) =>
   String(s).replace(/[0-9]/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)] ?? d);
 
-function CountUp({ to, suffix = '', duration = 1500 }: { to: number; suffix?: string; duration?: number }) {
+function CountUp({
+  to,
+  suffix = '',
+  duration = 1500,
+}: {
+  to: number;
+  suffix?: string;
+  duration?: number;
+}) {
   const [n, setN] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const started = useRef(false);
@@ -52,10 +71,30 @@ const STATS = [
 ];
 
 const PILLARS = [
-  { icon: '⚡', title: 'إدارة العمليات', text: 'تتبّع العمالة والعقود والعملاء ورحلات السائقين لحظيًا من لوحة موحّدة.', cls: 'sm:col-span-2' },
-  { icon: '💳', title: 'المالية والمدفوعات', text: 'فوترة وضريبة قيمة مضافة ومدفوعات إلكترونية وغرامات بشكل آلي.', cls: '' },
-  { icon: '🧑‍💼', title: 'الموارد البشرية', text: 'رواتب وحضور واحتساب GOSI ومتابعة الأداء والأهداف.', cls: '' },
-  { icon: '⭐', title: 'التسويق والولاء', text: 'حملات ونقاط ولاء وعروض ذكية لرفع تكرار الطلبات.', cls: 'sm:col-span-2' },
+  {
+    icon: Zap,
+    title: 'إدارة العمليات',
+    text: 'تتبّع العمالة والعقود والعملاء ورحلات السائقين لحظيًا من لوحة موحّدة.',
+    cls: 'sm:col-span-2',
+  },
+  {
+    icon: CreditCard,
+    title: 'المالية والمدفوعات',
+    text: 'فوترة وضريبة قيمة مضافة ومدفوعات إلكترونية وغرامات بشكل آلي.',
+    cls: '',
+  },
+  {
+    icon: Users,
+    title: 'الموارد البشرية',
+    text: 'رواتب وحضور واحتساب GOSI ومتابعة الأداء والأهداف.',
+    cls: '',
+  },
+  {
+    icon: Star,
+    title: 'التسويق والولاء',
+    text: 'حملات ونقاط ولاء وعروض ذكية لرفع تكرار الطلبات.',
+    cls: 'sm:col-span-2',
+  },
 ];
 
 const STEPS = [
@@ -79,12 +118,17 @@ function DashboardMock() {
         {/* sidebar */}
         <div className="hidden w-28 shrink-0 rounded-xl bg-navy p-3 sm:block">
           <div className="mb-3 flex items-center gap-2">
-            <div className="grid h-6 w-6 place-items-center rounded-md bg-gold text-[10px] font-bold text-white">م</div>
+            <div className="grid h-6 w-6 place-items-center rounded-md bg-gold text-[10px] font-bold text-white">
+              م
+            </div>
             <span className="h-2 w-12 rounded bg-white/30" />
           </div>
-          {['📊', '👷', '📄', '💳', '⭐'].map((e, i) => (
-            <div key={i} className={`mb-1.5 flex items-center gap-2 rounded-lg px-2 py-1.5 ${i === 0 ? 'bg-white/15' : ''}`}>
-              <span className="text-[11px]">{e}</span>
+          {[LayoutDashboard, HardHat, FileText, CreditCard, Star].map((E, i) => (
+            <div
+              key={i}
+              className={`mb-1.5 flex items-center gap-2 rounded-lg px-2 py-1.5 ${i === 0 ? 'bg-white/15' : ''}`}
+            >
+              <E size={11} aria-hidden />
               <span className="h-1.5 w-10 rounded bg-white/25" />
             </div>
           ))}
@@ -133,7 +177,9 @@ export default function Landing() {
       <header className="sticky top-0 z-30 border-b border-navy-100/60 bg-white/75 backdrop-blur-lg">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-navy text-lg font-bold text-white">م</div>
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-navy text-lg font-bold text-white">
+              م
+            </div>
             <div className="leading-tight">
               <p className="text-sm font-bold">{BRAND.client.nameAr}</p>
               <p className="text-[11px] text-purple">نظام إدارة الموارد</p>
@@ -154,7 +200,7 @@ export default function Landing() {
 
       {/* Hero */}
       <section className="relative overflow-hidden bg-navy text-white">
-        <div className="absolute inset-0 bg-grid opacity-50" />
+        <div className="bg-grid absolute inset-0 opacity-50" />
         <div
           className="animate-gradient pointer-events-none absolute inset-0 opacity-40"
           style={{
@@ -170,7 +216,10 @@ export default function Landing() {
             <h1 className="text-4xl font-extrabold leading-[1.15] md:text-5xl lg:text-6xl">
               أدِر منظومة الاستقدام
               <br />
-              من <span className="bg-gradient-to-l from-gold to-teal bg-clip-text text-transparent">مكان واحد</span>
+              من{' '}
+              <span className="bg-gradient-to-l from-gold to-teal bg-clip-text text-transparent">
+                مكان واحد
+              </span>
             </h1>
             <p className="mx-auto mt-6 max-w-md text-sm text-navy-100 md:text-base lg:mx-0">
               نظام ERP متكامل لـ{BRAND.client.nameAr} — عمالة وعقود ومالية وموارد بشرية وولاء،
@@ -180,12 +229,16 @@ export default function Landing() {
               <Link to="/login" className="btn-gold px-7 py-3 text-base shadow-lg shadow-gold/20">
                 ابدأ الآن مجانًا
               </Link>
-              <a href="#features" className="btn px-7 py-3 text-base text-white ring-1 ring-white/30 hover:bg-white/10">
+              <a
+                href="#features"
+                className="btn px-7 py-3 text-base text-white ring-1 ring-white/30 hover:bg-white/10"
+              >
                 استكشف الوحدات
               </a>
             </div>
             <p className="mt-5 text-xs text-navy-100/80">
-              ✦ جرّب فورًا بحساب تجريبي — بدون تسجيل
+              <Sparkles size={12} aria-hidden className="me-1 inline align-[-1px]" /> جرّب فورًا
+              بحساب تجريبي — بدون تسجيل
             </p>
           </div>
 
@@ -214,7 +267,9 @@ export default function Landing() {
         <div className="mx-auto max-w-xl text-center">
           <span className="text-sm font-semibold text-gold">قدرات متكاملة</span>
           <h2 className="mt-2 text-3xl font-bold md:text-4xl">كل ما تحتاجه إدارة الاستقدام</h2>
-          <p className="mt-3 text-sm text-purple">أربع ركائز تجمع العمليات والمالية والموارد البشرية والتسويق في تجربة واحدة.</p>
+          <p className="mt-3 text-sm text-purple">
+            أربع ركائز تجمع العمليات والمالية والموارد البشرية والتسويق في تجربة واحدة.
+          </p>
         </div>
         <div className="mt-12 grid gap-4 sm:grid-cols-3">
           {PILLARS.map((p) => (
@@ -222,7 +277,9 @@ export default function Landing() {
               key={p.title}
               className={`card transition duration-300 hover:-translate-y-1 hover:shadow-xl ${p.cls}`}
             >
-              <div className="grid h-12 w-12 place-items-center rounded-xl bg-navy text-2xl text-white">{p.icon}</div>
+              <div className="grid h-12 w-12 place-items-center rounded-xl bg-navy text-white">
+                <p.icon size={22} aria-hidden />
+              </div>
               <h3 className="mt-4 text-lg font-bold">{p.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-purple">{p.text}</p>
             </div>
@@ -246,7 +303,10 @@ export default function Landing() {
                 <h3 className="mt-4 font-bold">{s.title}</h3>
                 <p className="mx-auto mt-2 max-w-xs text-sm text-purple">{s.text}</p>
                 {i < STEPS.length - 1 && (
-                  <span className="absolute top-7 hidden h-px w-full -translate-x-1/2 bg-navy-100 md:block" style={{ right: '-50%' }} />
+                  <span
+                    className="absolute top-7 hidden h-px w-full -translate-x-1/2 bg-navy-100 md:block"
+                    style={{ right: '-50%' }}
+                  />
                 )}
               </div>
             ))}
@@ -259,7 +319,9 @@ export default function Landing() {
         <div className="mx-auto max-w-xl text-center">
           <span className="text-sm font-semibold text-gold">+٢٠ وحدة</span>
           <h2 className="mt-2 text-3xl font-bold md:text-4xl">نظام واحد لكل أقسامك</h2>
-          <p className="mt-3 text-sm text-purple">وحدات متكاملة منظّمة حسب مجالات العمل، بصلاحيات دقيقة لكل دور.</p>
+          <p className="mt-3 text-sm text-purple">
+            وحدات متكاملة منظّمة حسب مجالات العمل، بصلاحيات دقيقة لكل دور.
+          </p>
         </div>
         <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {NAV.map((group) => (
@@ -271,7 +333,9 @@ export default function Landing() {
               <ul className="space-y-2.5">
                 {group.items.map((item) => (
                   <li key={item.to} className="flex items-center gap-3 text-sm">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-navy-50 text-base">{item.icon}</span>
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-navy-50 text-navy">
+                      <item.icon size={16} aria-hidden />
+                    </span>
                     {item.label}
                   </li>
                 ))}
@@ -295,14 +359,19 @@ export default function Landing() {
       {/* Branches */}
       <section id="branches" className="mx-auto max-w-6xl px-4 py-20">
         <div className="relative overflow-hidden rounded-3xl bg-navy p-10 text-center text-white md:p-16">
-          <div className="absolute inset-0 bg-grid opacity-40" />
+          <div className="bg-grid absolute inset-0 opacity-40" />
           <div className="relative">
             <h2 className="text-3xl font-bold md:text-4xl">حضور تشغيلي عبر فروعنا</h2>
-            <p className="mt-3 text-sm text-navy-100">شبكة فروع متكاملة لخدمة عملائنا أينما كانوا.</p>
+            <p className="mt-3 text-sm text-navy-100">
+              شبكة فروع متكاملة لخدمة عملائنا أينما كانوا.
+            </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               {BRANCHES.map((b) => (
-                <span key={b} className="rounded-xl bg-white/10 px-6 py-3 text-sm font-semibold ring-1 ring-white/20 transition hover:bg-white/20">
-                  📍 {b}
+                <span
+                  key={b}
+                  className="rounded-xl bg-white/10 px-6 py-3 text-sm font-semibold ring-1 ring-white/20 transition hover:bg-white/20"
+                >
+                  <MapPin size={14} aria-hidden className="me-1 inline align-[-2px]" /> {b}
                 </span>
               ))}
             </div>
@@ -314,8 +383,13 @@ export default function Landing() {
       <section className="mx-auto max-w-6xl px-4 pb-20">
         <div className="flex flex-col items-center gap-5 rounded-3xl bg-gradient-to-l from-gold to-gold-600 px-6 py-14 text-center text-white">
           <h2 className="text-3xl font-extrabold md:text-4xl">جاهز لتطوير إدارتك؟</h2>
-          <p className="max-w-md text-sm text-white/90">سجّل دخولك الآن وابدأ بإدارة عمليات الاستقدام بكفاءة واحترافية.</p>
-          <Link to="/login" className="btn bg-navy px-8 py-3 text-base text-white hover:bg-navy-900">
+          <p className="max-w-md text-sm text-white/90">
+            سجّل دخولك الآن وابدأ بإدارة عمليات الاستقدام بكفاءة واحترافية.
+          </p>
+          <Link
+            to="/login"
+            className="btn bg-navy px-8 py-3 text-base text-white hover:bg-navy-900"
+          >
             دخول النظام
           </Link>
         </div>
@@ -326,21 +400,29 @@ export default function Landing() {
         <div className="mx-auto grid max-w-6xl gap-6 px-4 sm:grid-cols-3">
           <div>
             <div className="flex items-center gap-2">
-              <div className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-sm font-bold text-white">م</div>
+              <div className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-sm font-bold text-white">
+                م
+              </div>
               <p className="text-sm font-bold text-navy">{BRAND.client.nameAr}</p>
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-purple">نظام ERP متكامل لإدارة الاستقدام والموارد البشرية والمالية.</p>
+            <p className="mt-3 text-xs leading-relaxed text-purple">
+              نظام ERP متكامل لإدارة الاستقدام والموارد البشرية والمالية.
+            </p>
           </div>
           <div className="text-sm">
             <p className="mb-3 font-semibold text-navy">روابط</p>
             <ul className="space-y-2 text-purple">
               {NAVLINKS.map((l) => (
                 <li key={l.href}>
-                  <a href={l.href} className="transition hover:text-gold">{l.label}</a>
+                  <a href={l.href} className="transition hover:text-gold">
+                    {l.label}
+                  </a>
                 </li>
               ))}
               <li>
-                <Link to="/login" className="transition hover:text-gold">دخول النظام</Link>
+                <Link to="/login" className="transition hover:text-gold">
+                  دخول النظام
+                </Link>
               </li>
             </ul>
           </div>

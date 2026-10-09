@@ -1,7 +1,6 @@
 import { Modal } from '@/shared/ui';
 import { BarcodeScanner } from '@/features/gps/components/BarcodeScanner';
-import { useLogTripScan } from '@/features/gps/hooks/useGps';
-import { useAdvanceTrip } from '@/features/orders/hooks/useOrders';
+import { useTripScan } from '@/features/orders/hooks/useOrders';
 import { nextStep } from '@/features/orders/lib/trip';
 import type { Order } from '@/features/orders/types';
 import type { Resident } from '@/features/housing/types';
@@ -19,21 +18,26 @@ function getPosition(): Promise<{ lat: number | null; lng: number | null }> {
 
 /** Scan the worker's barcode to advance the trip to its next leg. */
 export function TripScanModal({ order, onClose }: { order: Order | null; onClose: () => void }) {
-  const log = useLogTripScan();
-  const advance = useAdvanceTrip();
+  const scan = useTripScan();
   const step = order ? nextStep(order.trip_stage) : null;
 
   async function handleResolved(worker: Resident) {
     if (!order || !step) return;
     const pos = await getPosition();
-    await log.mutateAsync({
-      barcode: worker.barcode,
-      scanType: step.scan,
-      lat: pos.lat,
-      lng: pos.lng,
-    });
-    await advance.mutateAsync({ orderId: order.id, scanType: step.scan, doneLabel: step.done });
-    onClose();
+    try {
+      await scan.mutateAsync({
+        orderId: order.id,
+        requestNo: order.request_no,
+        barcode: worker.barcode,
+        scanType: step.scan,
+        lat: pos.lat,
+        lng: pos.lng,
+        doneLabel: step.done,
+      });
+      onClose();
+    } catch {
+      // الرفض معروض برسالة الخطأ، والمحاولة مسجّلة «مرفوض» — النافذة تبقى للمحاولة مجددًا
+    }
   }
 
   return (

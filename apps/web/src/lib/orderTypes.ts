@@ -1,4 +1,5 @@
 /** Order draft model + shared option lists for the customer wizard. */
+import { CalendarClock, CreditCard, Smartphone, type LucideIcon } from 'lucide-react';
 import type { ServiceCode } from '@/lib/funnel';
 import { buildPeriod } from '@/features/requests/lib/period';
 import { emptyPlaceDetails } from '@/features/requests/types';
@@ -57,13 +58,14 @@ export const TASK_TYPES = ['تنظيف', 'طبخ', 'رعاية'] as const;
 export interface PaymentMethodOpt {
   key: string;
   label: string;
-  icon: string;
+  /** أيقونة lucide (لا إيموجي — CLAUDE.md). */
+  icon: LucideIcon;
 }
 export const PAYMENT_METHODS: PaymentMethodOpt[] = [
-  { key: 'mada', label: 'مدى / Moyasar', icon: '💳' },
-  { key: 'apple_pay', label: 'Apple Pay', icon: '' },
-  { key: 'stc_pay', label: 'STC Pay', icon: '📱' },
-  { key: 'tamara', label: 'تابي / تمارا (تقسيط)', icon: '🟣' },
+  { key: 'mada', label: 'مدى / Moyasar', icon: CreditCard },
+  { key: 'apple_pay', label: 'Apple Pay', icon: Smartphone },
+  { key: 'stc_pay', label: 'STC Pay', icon: Smartphone },
+  { key: 'tamara', label: 'تابي / تمارا (تقسيط)', icon: CalendarClock },
 ];
 
 /** Post-order tracking stages, per service. */

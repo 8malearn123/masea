@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import {
   BookOpenText,
+  Check,
   Building2,
   Coins,
   Landmark,
@@ -82,7 +83,7 @@ export function AccountantDashboard() {
           <p className="text-xs text-purple">سلامة الدفتر</p>
           {snap.balanced ? (
             <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
-              متوازن ✓
+              <Check size={13} aria-hidden /> متوازن
             </span>
           ) : (
             <Badge tone="danger">غير متوازن</Badge>

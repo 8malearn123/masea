@@ -1,0 +1,40 @@
+import {
+  BarChart3,
+  Building2,
+  Calculator,
+  CreditCard,
+  FileText,
+  Gift,
+  Headphones,
+  KanbanSquare,
+  MapPin,
+  Settings2,
+  ShieldCheck,
+  Star,
+  Tag,
+  Target,
+  Truck,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
+import type { ModuleCode } from '@/lib/permissions';
+
+/** أيقونة lucide لكل وحدة — مصدر واحد للقائمة الجانبية وشاشة الصلاحيات (لا إيموجي). */
+export const MODULE_ICON: Record<ModuleCode, LucideIcon> = {
+  contracts: FileText,
+  leads: KanbanSquare,
+  orders: Truck,
+  gps: MapPin,
+  pricing: Tag,
+  payments: CreditCard,
+  call_center: Headphones,
+  loyalty: Gift,
+  rating: Star,
+  hr: Users,
+  housing: Building2,
+  targets: Target,
+  accounting: Calculator,
+  reports: BarChart3,
+  settings: Settings2,
+  rbac: ShieldCheck,
+};

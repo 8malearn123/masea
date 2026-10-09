@@ -121,7 +121,7 @@ export function DriverTrips() {
         </div>
       ) : sorted.length === 0 ? (
         <EmptyState
-          icon="🚚"
+          icon={Truck}
           title="لا توجد رحلات مُسندة"
           description="ستظهر هنا الطلبات عندما يُسندها لك مدير الفرع أو العمليات."
         />
@@ -178,7 +178,7 @@ function TripCard({ order, onScan }: { order: Order; onScan: () => void }) {
               href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(order.customer_address)}`}
               target="_blank"
               rel="noreferrer"
-              className="border-navy-200 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold text-navy transition hover:bg-navy-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-navy-200 px-3 py-1.5 text-xs font-semibold text-navy transition hover:bg-navy-50"
             >
               <Navigation size={14} className="text-gold-600" /> الاتجاهات للعميل
             </a>

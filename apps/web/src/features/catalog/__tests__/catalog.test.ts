@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkerProfile } from '@/lib/funnel';
 import { availabilityOf, ratingOf, servicePrices, skillsOf } from '@/features/catalog/lib/catalog';
+import { dayState } from '@/features/catalog/lib/availability';
+import { today } from '@/features/requests/lib/period';
 
 const worker: WorkerProfile = {
   id: 'w1',
@@ -36,5 +38,13 @@ describe('catalog enrichment', () => {
 
   it('maps a non-available status to reserved', () => {
     expect(availabilityOf({ ...worker, status: 'reserved' })).toBe('reserved');
+  });
+
+  it('reads today from the availability calendar (no contradiction with the schedule)', () => {
+    expect(availabilityOf(worker)).toBe(
+      dayState('w1', today()) === 'available' ? 'available' : 'reserved',
+    );
+    // w6 محجوزة من اليوم في الجدول التجريبي المقصود
+    expect(availabilityOf({ ...worker, id: 'w6' })).toBe('reserved');
   });
 });

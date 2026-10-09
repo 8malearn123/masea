@@ -289,7 +289,7 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
                         تحويل لعقد
                       </Button>
                     )}
-                    {q.contract_id && <Badge tone="success">عقد ✓</Badge>}
+                    {q.contract_id && <Badge tone="success">تم التعاقد</Badge>}
                   </div>
                 </li>
               ))}

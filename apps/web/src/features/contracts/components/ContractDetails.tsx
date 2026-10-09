@@ -10,6 +10,7 @@ import {
   History,
   ScrollText,
   Signature,
+  FileX,
 } from 'lucide-react';
 import { Badge, Card, Skeleton, EmptyState, ErrorState, Button, Input, Select } from '@/shared/ui';
 import { isDemoMode } from '@/shared/lib/demoBackend';
@@ -93,7 +94,7 @@ export default function ContractDetails() {
     );
   }
   if (isError) return <ErrorState onRetry={() => void refetch()} />;
-  if (!contract) return <EmptyState icon="📄" title="العقد غير موجود" />;
+  if (!contract) return <EmptyState icon={FileX} title="العقد غير موجود" />;
 
   const musaned = isMusaned(origins, contract.service_code);
 

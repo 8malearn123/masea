@@ -3,7 +3,7 @@
  *
  * لا بيانات جديدة: المطابقة تُحسب من نفس ملف العاملة القائم (`worker_profiles`:
  * المهنة، سنوات الخبرة، اللغات، الجنسية، النبذة) ومن مهاراتها المعروضة في
- * الكتالوج (`skillsOf`)، ومن تقييمات العملاء الفعلية فقط (`ratingSummaryOf`)،
+ * الكتالوج (`skillsOf`)، ومن تقييمات العملاء الفعلية فقط (خدمة التقييمات `getWorkerRatingSummary`)،
  * مقابل احتياج الطلب الذي يدخله العميل في النموذج.
  *
  * كل معيار يُقيَّم بحالة صريحة:
@@ -21,7 +21,8 @@
  */
 import type { WorkerProfile } from '@/lib/funnel';
 import { skillsOf } from '@/features/catalog/lib/catalog';
-import { ratingSummaryOf } from '@/features/rating/api/rating.api';
+import { getReviewService } from '@/features/rating/services/reviewService';
+import { reviewsLabel } from '@/features/rating/types';
 import {
   isWorkerAvailable,
   nextFreeDay,
@@ -365,8 +366,8 @@ export function matchCriteria(w: WorkerProfile, need: RequestNeed): MatchCriteri
   }
 
   // ٩) تقييم العملاء — فقط من تقييمات فعلية (لا تقدير افتراضي)
-  const rating = ratingSummaryOf(w.id);
-  if (rating.count > 0) {
+  const rating = getReviewService().getWorkerRatingSummary(w.id);
+  if (rating.average !== null) {
     const status: CriterionStatus =
       rating.average >= 4.5 ? 'matched' : rating.average >= 3.5 ? 'partial' : 'missing';
     out.push(
@@ -375,7 +376,7 @@ export function matchCriteria(w: WorkerProfile, need: RequestNeed): MatchCriteri
         'تقييم العملاء',
         MATCH_WEIGHTS.rating,
         status,
-        `تقييم العملاء ${rating.average.toFixed(1)} من ٥ (${rating.count})`,
+        `تقييم العملاء ${rating.average.toFixed(1)} من ٥ (${reviewsLabel(rating.count)})`,
       ),
     );
   }

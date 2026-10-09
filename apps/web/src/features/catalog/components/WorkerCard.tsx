@@ -1,14 +1,15 @@
 import { Link } from 'react-router-dom';
-import { Star, UserRound } from 'lucide-react';
-import { FlagCircle, flagFor } from '@/shared/ui';
+import { UserRound } from 'lucide-react';
+import { FlagCircle } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import type { WorkerProfile } from '@/lib/funnel';
 import {
   availabilityOf,
   AVAILABILITY_LABEL,
-  ratingOf,
   type Availability,
+  yearsLabel,
 } from '@/features/catalog/lib/catalog';
+import { RatingBadge } from '@/features/rating/components/RatingParts';
 
 const AV_TONE: Record<Availability, string> = {
   available: 'bg-green-100 text-green-600',
@@ -18,7 +19,6 @@ const AV_TONE: Record<Availability, string> = {
 
 export function WorkerCard({ worker }: { worker: WorkerProfile }) {
   const av = availabilityOf(worker);
-  const rating = ratingOf(worker);
   return (
     <div className="overflow-hidden rounded-2xl border border-navy-100 bg-white shadow-sm transition hover:shadow-md">
       <div className="relative grid h-40 place-items-center bg-navy-50 text-navy-200">
@@ -45,16 +45,14 @@ export function WorkerCard({ worker }: { worker: WorkerProfile }) {
       <div className="p-3.5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-bold text-navy">{worker.full_name}</h3>
-          <span className="num inline-flex items-center gap-0.5 text-xs font-semibold text-gold-600">
-            <Star size={12} className="fill-current" /> {rating.toFixed(1)}
-          </span>
+          <RatingBadge workerId={worker.id} />
         </div>
         <p className="mt-0.5 flex items-center gap-1 text-[11px] text-purple">
-          <span className="text-sm leading-none">{flagFor(worker.nationality)}</span>{' '}
           {worker.profession} · {worker.nationality}
         </p>
-        <p className="num mt-1 text-[11px] text-purple">
-          {worker.age ?? '—'} سنة · {worker.experience_years} سنوات خبرة
+        <p className="mt-1 text-[11px] text-purple">
+          العمر {worker.age !== null ? <span className="num">{worker.age}</span> : 'غير متوفر'}
+          {worker.age !== null && ' سنة'} · خبرة {yearsLabel(worker.experience_years)}
         </p>
         <div className="mt-2.5 flex items-center justify-between">
           <span className="text-xs text-purple">

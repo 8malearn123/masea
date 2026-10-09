@@ -1,7 +1,8 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { DEMO_DRIVER_ID } from '@/features/orders/api/orders.api';
+import { DEMO_DRIVER_ID, advanceTripStage } from '@/features/orders/api/orders.api';
+import type { Order, OrderStatus } from '@/features/orders/types';
 import { resolveWorkerByBarcode } from '@/features/housing/api/housing.api';
 import { SCAN_TYPE_LABEL, type DriverLocation, type ScanEvent } from '@/features/gps/types';
 
@@ -120,7 +121,8 @@ export async function logTripScan(
   scanType: string,
   lat: number | null = null,
   lng: number | null = null,
-): Promise<{ worker_name: string; scan_label: string }> {
+  requestNo: string | null = null,
+): Promise<{ id: string; worker_name: string; scan_label: string }> {
   const worker = resolveWorkerByBarcode(barcode);
   if (!worker) throw new Error('لا توجد عاملة بهذا الباركود');
 
@@ -133,15 +135,58 @@ export async function logTripScan(
     });
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   }
+  const id = `trip-${++tripSeq}`;
   MY_TRIP_SCANS.unshift({
-    id: `trip-${++tripSeq}`,
+    id,
     scan_type: scanType,
     subject: `العاملة ${worker.full_name}`,
     lat: lat ?? 0,
     lng: lng ?? 0,
     scanned_at: new Date().toISOString(),
+    ...(requestNo ? { request_no: requestNo } : {}),
   });
-  return { worker_name: worker.full_name, scan_label: SCAN_TYPE_LABEL[scanType] ?? scanType };
+  return { id, worker_name: worker.full_name, scan_label: SCAN_TYPE_LABEL[scanType] ?? scanType };
+}
+
+/**
+ * مسح خطوة رحلة من شاشة السائق: يُسجَّل المسح أولًا (يتحقق من الباركود، ويبقى
+ * دليل المحاولة في السجل دائمًا)، ثم تُطبَّق الخطوة على الطلب عبر
+ * `advanceTripStage` بقواعده المركزية. النتيجة تُوسم على سجل المسح نفسه:
+ * «مقبول»، أو «مرفوض» مع السبب — والطلب والرحلة بلا تغيير عند الرفض.
+ */
+export async function recordTripScan(input: {
+  orderId: string;
+  requestNo: string;
+  barcode: string;
+  scanType: string;
+  lat?: number | null;
+  lng?: number | null;
+}): Promise<{
+  id: string;
+  worker_name: string;
+  scan_label: string;
+  stage: Order['trip_stage'];
+  status: OrderStatus;
+}> {
+  const logged = await logTripScan(
+    input.barcode,
+    input.scanType,
+    input.lat ?? null,
+    input.lng ?? null,
+    input.requestNo,
+  );
+  const entry = MY_TRIP_SCANS.find((e) => e.id === logged.id);
+  try {
+    const result = await advanceTripStage(input.orderId, input.scanType);
+    if (entry) entry.outcome = 'accepted';
+    return { ...logged, ...result };
+  } catch (e) {
+    if (entry) {
+      entry.outcome = 'rejected';
+      entry.reason = e instanceof Error ? e.message : 'تعذّر تطبيق المسح';
+    }
+    throw e;
+  }
 }
 
 interface RawScan {

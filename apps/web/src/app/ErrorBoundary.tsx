@@ -1,3 +1,4 @@
+import { AlertOctagon } from 'lucide-react';
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 
@@ -29,7 +30,12 @@ export class ErrorBoundary extends Component<Props, State> {
       return (
         <div className="grid min-h-screen place-items-center bg-navy-50 p-6 text-center">
           <div className="rounded-2xl bg-white p-8 shadow-card">
-            <div className="text-4xl">😵</div>
+            <AlertOctagon
+              size={36}
+              aria-hidden
+              className="mx-auto text-red-400"
+              strokeWidth={1.6}
+            />
             <h1 className="mt-3 text-lg font-bold text-navy">حدث خطأ غير متوقع</h1>
             <p className="mt-1 text-sm text-purple">نعتذر، حدث خلل في التطبيق.</p>
             <button

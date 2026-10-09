@@ -76,7 +76,7 @@ export function useConvertQuoteToContract() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
       void qc.invalidateQueries({ queryKey: LEADS_KEY });
-      toast.success('تم تحويل العرض إلى عقد 🎉');
+      toast.success('تم تحويل العرض إلى عقد');
     },
     onError: (e) => toast.error(e.message || 'تعذّر التحويل'),
   });

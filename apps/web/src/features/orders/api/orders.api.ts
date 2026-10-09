@@ -2,7 +2,22 @@ import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { tripScanResult } from '@/features/orders/lib/trip';
+import {
+  isTerminalOrderStatus,
+  orderTransitionError,
+  tripScanError,
+} from '@/features/orders/lib/orderStatus';
 import type { Driver, Order, OrderFilters, OrderStatus } from '@/features/orders/types';
+
+/** رفض تغيير حالة غير صالح — لا يُعدَّل الطلب المخزّن. */
+export class OrderTransitionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OrderTransitionError';
+  }
+}
+
+const ORDER_NOT_FOUND = 'الطلب غير موجود.';
 
 /** The demo driver account id (mirrors demoProfile id for that role). */
 export const DEMO_DRIVER_ID = 'demo-driver';
@@ -178,6 +193,46 @@ const FALLBACK_ORDERS: Order[] = [
     dropoff_at: '2026-06-16T08:00:00Z',
     pickup_at: '2026-06-16T14:30:00Z',
   },
+  // طلبات التشغيل لملفات الطلبات الجاهزة في `requests.api.ts` (نفس رقم الطلب)
+  {
+    id: 'o10',
+    request_no: 'REQ-2A7F41C9',
+    customer_name: 'نورة الشهري',
+    service_code: 'monthly_rental',
+    branch: 'نجران',
+    status: 'paid',
+    driver_id: null,
+    driver_name: null,
+    total_amount: 7590,
+    created_at: '2026-09-14T08:20:00Z',
+    trip_stage: 'none',
+  },
+  {
+    id: 'o11',
+    request_no: 'REQ-93BD5E08',
+    customer_name: 'عبدالعزيز اليامي',
+    service_code: 'daily_rental',
+    branch: 'شرورة',
+    status: 'paid',
+    driver_id: null,
+    driver_name: null,
+    total_amount: 506,
+    created_at: '2026-09-17T13:05:00Z',
+    trip_stage: 'none',
+  },
+  {
+    id: 'o12',
+    request_no: 'REQ-5D2C8A17',
+    customer_name: 'سارة القحطاني',
+    service_code: 'monthly_rental',
+    branch: 'جازان',
+    status: 'completed',
+    driver_id: 'd2',
+    driver_name: 'سلطان آل سعيد',
+    total_amount: 5520,
+    created_at: '2026-05-28T10:40:00Z',
+    trip_stage: 'returned',
+  },
 ];
 
 /**
@@ -185,6 +240,8 @@ const FALLBACK_ORDERS: Order[] = [
  * deal-close) into the demo orders store so it appears on the dispatch board.
  * In production these come from the service_requests table via Supabase.
  */
+let localOrderSeq = 0;
+
 export function addLocalOrder(input: {
   request_no: string;
   customer_name: string | null;
@@ -193,7 +250,8 @@ export function addLocalOrder(input: {
   total_amount: number;
 }): void {
   FALLBACK_ORDERS.unshift({
-    id: `o-${Date.now()}`,
+    // تسلسل إضافي: طلبان في نفس الملّي ثانية لا يتشاركان المعرّف
+    id: `o-${Date.now()}-${++localOrderSeq}`,
     request_no: input.request_no,
     customer_name: input.customer_name,
     service_code: input.service_code,
@@ -213,6 +271,20 @@ export function demoMutateOrder(id: string, patch: Partial<Order>): boolean {
   if (!row) return false;
   Object.assign(row, patch);
   return true;
+}
+
+/**
+ * حالة طلب التشغيل المرتبط برقم الطلب في مخزن العرض المشترك — نفس السجل الذي
+ * يغيّره الموظفون من لوحة الطلبات ومسح الرحلات. `null` = لا يوجد طلب تشغيل لهذا
+ * الرقم (الحالة غير معروفة؛ لا تُستنتج من التواريخ أو الدفع).
+ */
+export function demoOrderStatusOf(requestNo: string): OrderStatus | null {
+  return FALLBACK_ORDERS.find((o) => o.request_no === requestNo)?.status ?? null;
+}
+
+/** طلب التشغيل التجريبي لرقم الطلب (للاختبارات وربط الشاشات). */
+export function findDemoOrderByRequestNo(requestNo: string): Order | null {
+  return FALLBACK_ORDERS.find((o) => o.request_no === requestNo) ?? null;
 }
 
 /**
@@ -312,8 +384,28 @@ export async function listDrivers(): Promise<Driver[]> {
 
 /* ------------------------------ mutations -------------------------------- */
 export async function assignDriver(orderId: string, driverId: string): Promise<void> {
-  // Demo order/driver → keep the optimistic update; no real row to write.
-  if (isDemoId(orderId) || isDemoId(driverId)) return;
+  // Demo order/driver → no real row to write; mirror the optimistic update in the
+  // shared demo store so other screens read the same assignment.
+  if (isDemoId(orderId) || isDemoId(driverId)) {
+    const row = FALLBACK_ORDERS.find((o) => o.id === orderId);
+    // نفس شرط زر «إسناد» في اللوحة: لا إسناد لطلب مكتمل أو ملغى
+    if (row && isTerminalOrderStatus(row.status)) {
+      throw new OrderTransitionError(
+        orderTransitionError(row, 'assigned') ?? 'لا يمكن إسناد هذا الطلب.',
+      );
+    }
+    const driver = FALLBACK_DRIVERS.find((d) => d.id === driverId);
+    // سائق صالح فقط: من قائمة السائقين أو حساب السائق التجريبي
+    if (!driver && driverId !== DEMO_DRIVER_ID) {
+      throw new OrderTransitionError('السائق غير موجود: اختر سائقًا من القائمة.');
+    }
+    demoMutateOrder(orderId, {
+      driver_id: driverId,
+      ...(driver ? { driver_name: driver.full_name } : {}),
+      status: 'assigned',
+    });
+    return;
+  }
   const { error } = await supabase.rpc('assign_order_driver', {
     p_order_id: orderId,
     p_driver_id: driverId,
@@ -322,7 +414,16 @@ export async function assignDriver(orderId: string, driverId: string): Promise<v
 }
 
 export async function setOrderStatus(orderId: string, status: OrderStatus): Promise<void> {
-  if (isDemoId(orderId)) return; // demo order — optimistic update is the truth
+  if (isDemoId(orderId)) {
+    // demo order — validate centrally, then persist in the shared demo store
+    // (read by the review service). A rejected change leaves the row untouched.
+    const row = FALLBACK_ORDERS.find((o) => o.id === orderId);
+    if (!row) throw new OrderTransitionError(ORDER_NOT_FOUND);
+    const invalid = orderTransitionError(row, status);
+    if (invalid) throw new OrderTransitionError(invalid);
+    demoMutateOrder(orderId, { status });
+    return;
+  }
   const { error } = await supabase.rpc('set_order_status', {
     p_order_id: orderId,
     p_status: status,
@@ -340,6 +441,14 @@ export async function advanceTripStage(
 ): Promise<{ stage: Order['trip_stage']; status: OrderStatus }> {
   const result = tripScanResult(scanType);
   if (!result) throw new Error('نوع مسح غير صحيح');
+  const row = FALLBACK_ORDERS.find((o) => o.id === orderId);
+  if (row) {
+    // الحالة + تسلسل الرحلة؛ الرفض لا يغيّر الطلب ولا مرحلة الرحلة
+    const invalid = tripScanError(row, scanType);
+    if (invalid) throw new OrderTransitionError(invalid);
+  } else if (isDemoId(orderId)) {
+    throw new OrderTransitionError(ORDER_NOT_FOUND);
+  }
   if (!isDemoId(orderId)) {
     const { error } = await supabase.rpc('advance_trip_stage', {
       p_order_id: orderId,

@@ -83,6 +83,46 @@ const SEED: RequestFile[] = [
     amounts: { base: 440, vat: 66, total: 506 },
     payment_method: 'stc_pay',
   },
+  {
+    // خدمة مكتملة: حالتها «مكتملة» في طلب التشغيل المرتبط (`orders.api.ts`)
+    request_no: 'REQ-5D2C8A17',
+    created_at: '2026-05-28T10:40:00Z',
+    service_code: 'monthly_rental',
+    service_name: SERVICE_LABEL.monthly_rental,
+    status: 'مدفوع',
+    customer_name: 'سارة القحطاني',
+    phone: '0533419087',
+    national_id: '1065238874',
+    city: 'جازان',
+    address: 'حي الروضة، شارع الملك فهد',
+    branch: 'جازان',
+    worker: {
+      id: 'w2',
+      full_name: 'غريس ريّس',
+      nationality: 'الفلبين',
+      profession: 'مربية أطفال',
+    },
+    match_score: 81,
+    details: {
+      beneficiaryType: 'home',
+      occasionType: null,
+      customOccasionType: null,
+      locationDetails: {
+        kind: 'home',
+        floors: 1,
+        rooms: 4,
+        hasChildren: true,
+        childrenCount: 2,
+        hasElderly: false,
+        elderlyNeedCare: null,
+      },
+      careNeeds: ['children'],
+      notes: '',
+    },
+    period: buildPeriod('2026-06-01', 'month', 2),
+    amounts: { base: 4800, vat: 720, total: 5520 },
+    payment_method: 'mada',
+  },
 ];
 
 const FILES: RequestFile[] = [...SEED];

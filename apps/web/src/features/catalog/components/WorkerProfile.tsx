@@ -9,32 +9,29 @@ import {
   Languages,
   MessageCircle,
   MessageSquare,
-  PlayCircle,
   RefreshCw,
   ShieldCheck,
   Sparkles,
-  Star,
-  Stethoscope,
   UserRound,
 } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
-import { flagFor } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import type { ServiceCode } from '@/lib/funnel';
 import { AvailabilityCalendar } from '@/features/catalog/components/AvailabilityCalendar';
 import { WorkerReviews } from '@/features/catalog/components/WorkerReviews';
+import { RatingBadge } from '@/features/rating/components/RatingParts';
+import { useConfig } from '@/features/settings/hooks/useSettings';
+import { configValue } from '@/features/settings/api/settings.api';
 import {
   availabilityOf,
   AVAILABILITY_LABEL,
   maritalOf,
   motherTongueOf,
-  priorExperienceOf,
-  ratingOf,
   religionOf,
-  reviewsOf,
   servicePrices,
   skillsOf,
+  yearsLabel,
 } from '@/features/catalog/lib/catalog';
 
 const WA_NUMBER = '966920000000';
@@ -42,6 +39,7 @@ const WA_NUMBER = '966920000000';
 export default function WorkerProfile() {
   const { id = '' } = useParams();
   const { data: workers = [], isLoading } = useWorkerProfiles();
+  const { data: config = [] } = useConfig();
   const worker = workers.find((w) => w.id === id) ?? null;
 
   const prices = useMemo(() => (worker ? servicePrices(worker) : []), [worker]);
@@ -72,9 +70,8 @@ export default function WorkerProfile() {
   }
 
   const av = availabilityOf(worker);
-  const rating = ratingOf(worker);
   const skills = skillsOf(worker);
-  const prior = priorExperienceOf(worker);
+  const guaranteeDays = configValue(config, 'replacement_guarantee_days', 0) || null;
   const waText = `مرحباً، مهتم بالعاملة ${worker.full_name} (${worker.profession}) — خدمة ${selected?.label ?? ''}.`;
 
   return (
@@ -118,50 +115,40 @@ export default function WorkerProfile() {
                   </span>
                 </div>
                 <p className="mt-0.5 flex items-center gap-1.5 text-sm text-purple">
-                  <span className="text-base leading-none">{flagFor(worker.nationality)}</span>
                   {worker.profession} · {worker.nationality}
                 </p>
-                <p className="num mt-1 inline-flex items-center gap-1 text-xs font-semibold text-gold-600">
-                  <Star size={13} className="fill-current" /> {rating.toFixed(1)} (
-                  {reviewsOf(worker)} تقييم)
+                <p className="mt-1 flex flex-wrap items-center gap-2">
+                  <RatingBadge workerId={worker.id} className="text-xs" />
+                  <a
+                    href="#reviews"
+                    className="text-[11px] font-semibold text-navy hover:underline"
+                  >
+                    عرض التقييمات
+                  </a>
                 </p>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Attr label="العمر" value={`${worker.age ?? '—'} سنة`} />
-              <Attr label="الخبرة" value={`${worker.experience_years} سنوات`} />
-              <Attr label="الديانة" value={religionOf(worker)} />
-              <Attr label="الحالة الاجتماعية" value={maritalOf(worker)} />
-              <Attr label="اللغة الأم" value={motherTongueOf(worker)} />
+              <Attr label="العمر" value={worker.age !== null ? `${worker.age} سنة` : 'غير متوفر'} />
+              <Attr label="الخبرة" value={yearsLabel(worker.experience_years)} />
+              <Attr label="الديانة" value={religionOf(worker) ?? 'غير متوفر'} />
+              <Attr label="الحالة الاجتماعية" value={maritalOf(worker) ?? 'غير متوفر'} />
+              <Attr label="اللغة الأم" value={motherTongueOf(worker) ?? 'غير متوفر'} />
               <Attr label="اللغات" value={worker.languages.join('، ')} />
               <Attr label="الراتب" value={`${sar(worker.monthly_salary)} ر.س`} />
             </div>
           </div>
 
-          {/* intro video */}
-          <Section icon={PlayCircle} title="فيديو تعريفي">
-            <div className="grid aspect-video place-items-center rounded-xl bg-navy-900/90 text-navy-100/70">
-              <PlayCircle size={40} />
-            </div>
-            <p className="mt-2 text-[11px] text-purple">٠:٤٨ · تعريف بالعاملة</p>
-          </Section>
-
-          {/* prior experience */}
-          <Section icon={CalendarCheck} title={`الخبرة السابقة · ${worker.experience_years} سنوات`}>
-            <ul className="space-y-2">
-              {prior.map((p, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between rounded-xl bg-navy-50 px-3 py-2.5 text-sm"
-                >
-                  <span className="text-navy-900">
-                    {p.country} — {p.detail}
-                  </span>
-                  <span className="num text-xs text-purple">{p.years} سنوات</span>
-                </li>
-              ))}
-            </ul>
+          {/* الخبرة — من الملف فقط؛ لا سجل جهات عمل مولّد */}
+          <Section icon={CalendarCheck} title="الخبرة">
+            <p className="text-sm text-navy-900">
+              إجمالي الخبرة المسجّلة:{' '}
+              <span className="font-bold">{yearsLabel(worker.experience_years)}</span>
+            </p>
+            <p className="mt-1 text-[11px] text-purple">
+              تفاصيل جهات العمل السابقة غير متوفرة في بيانات العرض.
+            </p>
           </Section>
 
           {/* skills */}
@@ -182,16 +169,25 @@ export default function WorkerProfile() {
           </Section>
 
           {/* التقييمات والتعليقات */}
-          <Section icon={MessageSquare} title="تقييمات وتعليقات العملاء">
-            <WorkerReviews workerId={worker.id} workerName={worker.full_name} />
-          </Section>
+          <div id="reviews" className="scroll-mt-20">
+            <Section icon={MessageSquare} title="تقييمات وتعليقات العملاء">
+              <WorkerReviews workerId={worker.id} />
+            </Section>
+          </div>
 
           {/* trust */}
           <Section icon={ShieldCheck} title="عناصر الثقة">
             <div className="grid gap-2 sm:grid-cols-3">
-              <Trust icon={BadgeCheck} title="الوثائق موثّقة" sub="جواز سفر وعقد ساري" />
-              <Trust icon={Stethoscope} title="الفحص الطبي مكتمل" sub="لائقة صحياً · ٢٠٢٤" />
-              <Trust icon={RefreshCw} title="ضمان الاستبدال" sub="استبدال مجاني خلال ٩٠ يوم" />
+              <Trust
+                icon={RefreshCw}
+                title="ضمان الاستبدال"
+                sub={guaranteeDays ? `${guaranteeDays} يومًا حسب إعدادات النظام` : 'حسب شروط العقد'}
+              />
+              <Trust
+                icon={BadgeCheck}
+                title="الوثائق والفحص الطبي"
+                sub="غير متوفرة في بيانات العرض — تُراجع عند التعاقد"
+              />
             </div>
           </Section>
 
@@ -292,7 +288,7 @@ function OrderPanel({
       </div>
       {!compact && (
         <p className="mt-2 flex items-center justify-center gap-1 text-[11px] text-purple">
-          <CheckCircle2 size={12} className="text-green-600" /> دفع آمن · ضمان استبدال ٩٠ يوم
+          <CheckCircle2 size={12} className="text-green-600" /> سعر شفّاف قبل الدفع
         </p>
       )}
       {compact && selected && (
@@ -308,7 +304,8 @@ function Attr({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-navy-50 p-2.5">
       <p className="text-[11px] text-purple">{label}</p>
-      <p className="num mt-0.5 text-sm font-semibold text-navy-900">{value}</p>
+      {/* الأرقام داخل النص العربي تُعرض باتجاهها الصحيح دون خط الأرقام على الجملة كلها */}
+      <p className="mt-0.5 text-sm font-semibold text-navy-900 [unicode-bidi:plaintext]">{value}</p>
     </div>
   );
 }

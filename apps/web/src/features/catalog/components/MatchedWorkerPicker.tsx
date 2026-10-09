@@ -7,17 +7,15 @@ import {
   ChevronDown,
   CircleHelp,
   Sparkles,
-  Star,
   TriangleAlert,
   UserRound,
   UsersRound,
 } from 'lucide-react';
-import { flagFor } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import type { WorkerProfile } from '@/lib/funnel';
-import { ratingOf } from '@/features/catalog/lib/catalog';
 import { AvailabilityCalendar } from '@/features/catalog/components/AvailabilityCalendar';
 import { AvailabilitySummary } from '@/features/catalog/components/AvailabilitySummary';
+import { RatingBadge } from '@/features/rating/components/RatingParts';
 import {
   matchLabel,
   rankWorkers,
@@ -252,14 +250,10 @@ function WorkerMatchCard({
             </span>
           </div>
           <p className="mt-0.5 flex items-center gap-1 text-[11px] text-purple">
-            <span className="text-sm leading-none">{flagFor(worker.nationality)}</span>
             {worker.profession} · {worker.nationality}
           </p>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[11px]">
-            <span className="flex items-center gap-1 text-gold-600">
-              <Star size={11} className="fill-current" />
-              <span className="num">{ratingOf(worker).toFixed(1)}</span>
-            </span>
+            <RatingBadge workerId={worker.id} />
             <span className="text-purple">
               <span className="num">{sar(worker.monthly_salary)}</span> ر.س / شهر
             </span>

@@ -1,6 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, FlaskConical, PackageSearch } from 'lucide-react';
+import {
+  FileText,
+  FlaskConical,
+  PackageSearch,
+  type LucideIcon,
+  Paperclip,
+  Check,
+} from 'lucide-react';
 import { sar } from '@/lib/format';
 import type { ServiceCode } from '@/lib/funnel';
 import { BRANCHES_AR } from '@/lib/funnel';
@@ -87,7 +94,7 @@ function RadioCards({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { key: string; label: string; icon?: string }[];
+  options: { key: string; label: string; icon?: LucideIcon }[];
 }) {
   return (
     <div className="grid gap-2.5 sm:grid-cols-2">
@@ -101,7 +108,7 @@ function RadioCards({
             (value === o.key ? 'border-brand bg-brand-50' : 'border-brand-100 hover:border-brand')
           }
         >
-          {o.icon ? <span className="text-xl">{o.icon}</span> : null}
+          {o.icon ? <o.icon size={20} aria-hidden className="shrink-0 text-brand" /> : null}
           <span className="text-sm font-medium text-brand-dark">{o.label}</span>
         </button>
       ))}
@@ -532,7 +539,9 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             {draft.documents.length > 0 && (
               <ul className="mt-3 space-y-1 text-sm text-brand-dark/70">
                 {draft.documents.map((d) => (
-                  <li key={d}>📎 {d}</li>
+                  <li key={d} className="flex items-center gap-1.5">
+                    <Paperclip size={14} aria-hidden className="shrink-0" /> {d}
+                  </li>
                 ))}
               </ul>
             )}
@@ -605,8 +614,8 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
       case 'confirm':
         return (
           <div className="text-center">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand text-3xl text-white">
-              ✓
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand text-white">
+              <Check size={32} aria-hidden strokeWidth={2.5} />
             </div>
             <h2 className="mt-4 text-xl font-bold text-brand">تم استلام طلبك بنجاح</h2>
             <p className="mt-1 text-sm text-brand-dark/60">رقم الطلب</p>

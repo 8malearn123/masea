@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ShieldCheck, Users, Grid3x3 } from 'lucide-react';
 import { Badge, Card, Table, type Column } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
+import { MODULE_ICON } from '@/lib/moduleIcons';
 import { MODULES, ROLE_META, roleCan, type ModuleCode, type RoleCode } from '@/lib/permissions';
 import { useSystemUsers } from '@/features/rbac/hooks/useSystemUsers';
 import { type SystemUser } from '@/features/rbac/types';
@@ -135,7 +136,7 @@ export default function RbacBoard() {
               {MODULES.map((m) => (
                 <tr key={m.module} className="border-t border-navy-50">
                   <td className="sticky right-0 bg-white p-2 text-right font-semibold text-navy">
-                    {m.icon} {m.label}
+                    <ModuleLabel module={m.module} label={m.label} />
                   </td>
                   {ROLE_ORDER.map((r) => {
                     const a = accessFor(r, m.module);
@@ -156,5 +157,15 @@ export default function RbacBoard() {
         </Card>
       )}
     </div>
+  );
+}
+
+/** اسم الوحدة مع أيقونتها (lucide — لا إيموجي). */
+function ModuleLabel({ module, label }: { module: ModuleCode; label: string }) {
+  const Icon = MODULE_ICON[module];
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon size={14} aria-hidden className="shrink-0 text-navy" /> {label}
+    </span>
   );
 }
