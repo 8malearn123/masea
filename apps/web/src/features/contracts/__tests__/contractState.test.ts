@@ -96,14 +96,14 @@ describe('contract transition guards (transition_contract mirror)', () => {
     expect(transitionBlocker(c, 'pending_approval', 'internal')).toBeNull();
   });
 
-  it('asks for confirmation on cancel / complete and renews live or finished contracts only', () => {
+  it('asks for confirmation on cancel / complete and renews live, finished or cancelled contracts', () => {
     expect(needsConfirmation('cancelled')).toBe(true);
     expect(needsConfirmation('completed')).toBe(true);
     expect(needsConfirmation('approved')).toBe(false);
     expect(isRenewable('active')).toBe(true);
     expect(isRenewable('completed')).toBe(true);
     expect(isRenewable('draft')).toBe(false);
-    expect(isRenewable('cancelled')).toBe(false);
+    expect(isRenewable('cancelled')).toBe(true); // cancelled → renew as a new contract
   });
 });
 

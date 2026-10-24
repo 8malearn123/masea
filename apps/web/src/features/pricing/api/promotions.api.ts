@@ -31,10 +31,15 @@ export const promotionInputSchema = z
     ends_at: z.string().nullable(),
     usage_limit: z.number().int().positive({ message: 'الحد عدد صحيح موجب' }).nullable(),
     is_active: z.boolean(),
+    requires_code: z.boolean(),
   })
   .refine((v) => v.kind === 'amount' || v.value <= 100, {
     message: 'النسبة لا تتجاوز 100٪',
     path: ['value'],
+  })
+  .refine((v) => !v.requires_code || Boolean(v.code), {
+    message: 'الكوبون يحتاج رمزاً',
+    path: ['code'],
   })
   .refine((v) => !v.starts_at || !v.ends_at || v.starts_at <= v.ends_at, {
     message: 'تاريخ الانتهاء قبل تاريخ البدء',
@@ -61,6 +66,7 @@ export function toPromotionRow(
     ends_at: input.ends_at,
     usage_limit: input.usage_limit,
     is_active: input.is_active,
+    requires_code: input.requires_code,
   };
 }
 
@@ -81,6 +87,7 @@ const STORE: Promotion[] = [
     usage_limit: null,
     usage_count: 14,
     is_active: true,
+    requires_code: false,
   },
   {
     id: 'pm-2',
@@ -97,6 +104,7 @@ const STORE: Promotion[] = [
     usage_limit: 200,
     usage_count: 37,
     is_active: true,
+    requires_code: false,
   },
   {
     id: 'pm-3',
@@ -113,6 +121,7 @@ const STORE: Promotion[] = [
     usage_limit: null,
     usage_count: 9,
     is_active: true,
+    requires_code: false,
   },
   {
     id: 'pm-4',
@@ -129,11 +138,29 @@ const STORE: Promotion[] = [
     usage_limit: null,
     usage_count: 22,
     is_active: false,
+    requires_code: false,
+  },
+  {
+    id: 'pm-5',
+    name: 'كوبون عملاء نجران المميزين',
+    code: 'NJR-VIP',
+    description: 'كوبون يُمنح لعملاء فرع نجران المميزين — يُطبَّق بإدخال الرمز فقط.',
+    discount_pct: 8,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: 1200,
+    starts_at: null,
+    ends_at: null,
+    usage_limit: null,
+    usage_count: 3,
+    is_active: true,
+    requires_code: true,
   },
 ];
 
 const COLUMNS =
-  'id, name, code, description, discount_pct, discount_amount, service_codes, min_base_amount, max_discount_amount, starts_at, ends_at, usage_limit, usage_count, is_active';
+  'id, name, code, description, discount_pct, discount_amount, service_codes, min_base_amount, max_discount_amount, starts_at, ends_at, usage_limit, usage_count, is_active, requires_code';
 
 function normalize(r: Record<string, unknown>): Promotion {
   const num = (v: unknown) => (v == null ? null : Number(v));
@@ -152,6 +179,7 @@ function normalize(r: Record<string, unknown>): Promotion {
     usage_limit: num(r.usage_limit),
     usage_count: Number(r.usage_count ?? 0),
     is_active: Boolean(r.is_active),
+    requires_code: Boolean(r.requires_code),
   };
 }
 

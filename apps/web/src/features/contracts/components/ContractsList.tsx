@@ -77,7 +77,7 @@ const ACTION_LABEL: Record<ContractStatus, string> = {
   signed: 'تفعيل',
   active: 'متابعة',
   completed: 'تجديد',
-  cancelled: 'عرض',
+  cancelled: 'تجديد',
 };
 
 /** Lifecycle progress 0–100 for the stage mini-bar. */

@@ -289,7 +289,10 @@ export default function ContractDetails() {
                 })}
                 {canRenew && (
                   <Button variant="outline" loading={renew.isPending} onClick={doRenew}>
-                    <RefreshCw size={15} /> تجديد العقد (نسخة جديدة)
+                    <RefreshCw size={15} />{' '}
+                    {contract.status === 'cancelled'
+                      ? 'تجديد العقد الملغى (عقد جديد)'
+                      : 'تجديد العقد (نسخة جديدة)'}
                   </Button>
                 )}
               </div>
@@ -378,7 +381,7 @@ export default function ContractDetails() {
         <div className="space-y-4">
           <p className="text-sm leading-relaxed text-navy-900">
             {confirmTo === 'cancelled'
-              ? 'سيُلغى العقد نهائياً ولا يمكن إعادة تفعيله — يمكن إنشاء عقد جديد عند الحاجة.'
+              ? 'سيُلغى العقد ولا يمكن إعادة تفعيله، ويمكنك تجديده لاحقاً كعقد جديد (نسخة جديدة) من صفحته.'
               : 'سيُغلق العقد كمنتهٍ. يمكن تجديده لاحقاً كنسخة جديدة.'}
           </p>
           {remaining > 0 && (

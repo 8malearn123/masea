@@ -8,10 +8,10 @@ import { BRANCHES_AR, type WorkerProfile } from '@/lib/funnel';
 import { usePrice } from '@/hooks/usePricing';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { useContractTemplates, useCreateContract } from '@/features/contracts/hooks/useContracts';
-import { usePricingConfig } from '@/features/pricing/hooks/usePricingRules';
+import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import { PromotionPicker } from '@/features/pricing/components/PromotionPicker';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
-import { evaluatePromotion, priceFromBase, type Promotion } from '@/shared/lib/pricing';
+import { evaluatePromotion, priceFromBase, ruleFloor, type Promotion } from '@/shared/lib/pricing';
 import { contractEndDate } from '@/features/contracts/lib/contractDates';
 import { createContractInputSchema } from '@/features/contracts/schemas/contract.schema';
 import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins';
@@ -35,6 +35,8 @@ interface Draft {
   templateId: string;
   musanedNo: string;
   promotion: Promotion | null;
+  /** Coupon code the discount was applied with (null = picked from the list). */
+  promotionCode: string | null;
 }
 
 const EMPTY: Draft = {
@@ -51,6 +53,7 @@ const EMPTY: Draft = {
   templateId: '',
   musanedNo: '',
   promotion: null,
+  promotionCode: null,
 };
 
 const STEP_LABEL: Record<string, string> = {
@@ -68,6 +71,7 @@ export default function ContractWizard() {
   const toast = useToast();
   const create = useCreateContract();
   const { data: pricingCfg } = usePricingConfig();
+  const { data: rules = [] } = usePricingRules();
   const { data: templates = [] } = useContractTemplates();
   const { data: origins } = useServiceOrigins();
   const { data: workers = [] } = useWorkerProfiles();
@@ -117,12 +121,18 @@ export default function ContractWizard() {
   // الخصم من الخصومات المعتمدة فقط — يُتحقّق منه هنا للعرض ثم يُعاد التحقق في الـ backend.
   const promotion = d.promotion;
   const promoCheck =
-    promotion && listPrice ? evaluatePromotion(promotion, service, listPrice.base) : null;
+    promotion && listPrice
+      ? evaluatePromotion(promotion, service, listPrice.base, new Date(), d.promotionCode)
+      : null;
   const detail = listPrice
     ? priceFromBase(
         service,
         listPrice.base,
-        { promotion: promoCheck?.ok ? promotion : null },
+        {
+          promotion: promoCheck?.ok ? promotion : null,
+          promotionCode: d.promotionCode,
+          floor: ruleFloor(rules, service, priceArgs),
+        },
         pricingCfg,
       )
     : null;
@@ -207,6 +217,7 @@ export default function ContractWizard() {
       profession: priceArgs.profession,
       template_id: musaned ? null : (template?.id ?? null),
       promotion_id: promotion?.id ?? null,
+      promotion_code: d.promotionCode,
       // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
       clauses: musaned ? [] : clausePreview,
       musaned_contract_no: musaned ? d.musanedNo.trim() || undefined : undefined,
@@ -267,7 +278,13 @@ export default function ContractWizard() {
                 key={code}
                 type="button"
                 onClick={() =>
-                  set({ service: code, worker: null, templateId: '', promotion: null })
+                  set({
+                    service: code,
+                    worker: null,
+                    templateId: '',
+                    promotion: null,
+                    promotionCode: null,
+                  })
                 }
                 className={`rounded-xl border p-4 text-right transition ${d.service === code ? 'border-navy bg-navy-50' : 'border-navy-100 hover:border-navy'}`}
               >
@@ -419,8 +436,10 @@ export default function ContractWizard() {
               <PromotionPicker
                 service={service}
                 base={listPrice?.base ?? 0}
+                floor={ruleFloor(rules, service, priceArgs)}
                 value={d.promotion}
-                onChange={(p) => set({ promotion: p })}
+                code={d.promotionCode}
+                onChange={(p, code) => set({ promotion: p, promotionCode: code })}
                 disabled={!listPrice}
               />
               <p className="mt-3 text-[11px] text-purple">

@@ -1,11 +1,19 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { DEFAULT_PRICING_CONFIG, fallbackBase, priceFromBase } from '@/shared/lib/pricing';
+import {
+  DEFAULT_PRICING_CONFIG,
+  evaluatePromotion,
+  fallbackBase,
+  findByCode,
+  priceFromBase,
+  ruleFloor,
+} from '@/shared/lib/pricing';
 import { listPromotions } from '@/features/pricing/api/promotions.api';
+import { listPricingRules } from '@/features/pricing/api/pricing.api';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
 import { DEFAULT_SERVICE_ORIGIN } from '@/features/contracts/lib/contractOrigin';
-import { transitionBlocker } from '@/features/contracts/lib/contractState';
+import { isRenewable, transitionBlocker } from '@/features/contracts/lib/contractState';
 import type {
   Contract,
   ContractClause,
@@ -531,6 +539,13 @@ function rpcError(message: string): Error {
   return new Error(message.replace(/^.*?\bERROR:\s*/, '').trim() || 'تعذّر تنفيذ العملية');
 }
 
+let localSeq = 0;
+/** Unique demo id (two drafts in the same millisecond must not collide). */
+function localId(): string {
+  localSeq += 1;
+  return `local-${Date.now()}-${localSeq}`;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -558,18 +573,38 @@ function pushDemoHistory(c: ContractListItem, to: ContractStatus): void {
  * so the list, detail, clauses and history all stay consistent after refetch.
  */
 async function localDraft(input: CreateContractInput): Promise<ContractListItem> {
-  const promotions = input.promotion_id ? await listPromotions() : [];
-  const promotion = promotions.find((p) => p.id === input.promotion_id) ?? null;
+  const code = input.promotion_code?.trim() || null;
+  const wantsDiscount = Boolean(input.promotion_id || code);
+  const promotions = wantsDiscount ? await listPromotions() : [];
+  // same resolution as calc_price: by id, else the coupon code
+  const promotion =
+    promotions.find((p) => p.id === input.promotion_id) ??
+    (code ? findByCode(promotions, code) : null);
   const base = fallbackBase(input.service_code, {
     nationality: input.nationality,
     profession: input.profession,
     quantity: input.quantity ?? 1,
   });
-  const price = priceFromBase(input.service_code, base, { promotion }, DEFAULT_PRICING_CONFIG);
-  if (input.promotion_id && promotion && price.discounts === 0) {
-    throw new Error('لا يمكن تطبيق الخصم المختار على هذا العقد');
+  if (wantsDiscount) {
+    if (!promotion) throw new Error('لا يمكن تطبيق الخصم: رمز الكوبون غير صحيح');
+    const check = evaluatePromotion(promotion, input.service_code, base, new Date(), code);
+    if (!check.ok) throw new Error(`لا يمكن تطبيق الخصم: ${check.reason ?? 'غير مؤهل'}`);
   }
-  const id = `local-${Date.now()}`;
+  const price = priceFromBase(
+    input.service_code,
+    base,
+    {
+      promotion,
+      promotionCode: code,
+      floor: ruleFloor(await listPricingRules(), input.service_code, {
+        nationality: input.nationality,
+        profession: input.profession,
+        quantity: input.quantity ?? 1,
+      }),
+    },
+    DEFAULT_PRICING_CONFIG,
+  );
+  const id = localId();
   const item: ContractListItem = {
     id,
     contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
@@ -676,8 +711,8 @@ export async function renewContract(id: string): Promise<ContractListItem> {
   }
   const old = FALLBACK.find((c) => c.id === id);
   if (!old) throw new Error('العقد غير موجود');
-  if (old.status !== 'active' && old.status !== 'completed') {
-    throw new Error('يُجدَّد العقد النشط أو المنتهي فقط');
+  if (!isRenewable(old.status)) {
+    throw new Error('يُجدَّد العقد النشط أو المنتهي أو الملغى فقط');
   }
   if (FALLBACK.some((c) => c.parent_contract_id === id && c.status !== 'cancelled')) {
     throw new Error('يوجد تجديد قائم لهذا العقد');
@@ -688,7 +723,11 @@ export async function renewContract(id: string): Promise<ContractListItem> {
     x.setUTCDate(x.getUTCDate() + 1);
     return x.toISOString().slice(0, 10);
   };
-  const start = old.end_date && dayAfter(old.end_date) > today ? dayAfter(old.end_date) : today;
+  // a cancelled contract restarts today; a live/finished one continues after its end
+  const start =
+    old.status !== 'cancelled' && old.end_date && dayAfter(old.end_date) > today
+      ? dayAfter(old.end_date)
+      : today;
   let end: string | null = null;
   if (old.start_date && old.end_date) {
     const span = Date.parse(old.end_date) - Date.parse(old.start_date);
@@ -696,7 +735,7 @@ export async function renewContract(id: string): Promise<ContractListItem> {
   }
   const gross = old.gross_amount ?? old.base_amount;
   const price = priceFromBase(old.service_code ?? 'monthly_rental', gross);
-  const nid = `local-${Date.now()}`;
+  const nid = localId();
   const item: ContractListItem = {
     ...old,
     id: nid,

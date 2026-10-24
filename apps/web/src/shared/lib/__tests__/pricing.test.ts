@@ -5,8 +5,10 @@ import {
   DEFAULT_PRICING_CONFIG,
   evaluatePromotion,
   fallbackBase,
+  findByCode,
   fallbackPrice,
   priceFromBase,
+  ruleFloor,
   VAT_RATE,
   type Promotion,
 } from '@/shared/lib/pricing';
@@ -27,6 +29,7 @@ function promo(p: Partial<Promotion> = {}): Promotion {
     usage_limit: null,
     usage_count: 0,
     is_active: true,
+    requires_code: false,
     ...p,
   };
 }
@@ -202,5 +205,69 @@ describe('predefined discounts (evaluate_promotion mirror)', () => {
     });
     expect(d.discounts).toBe(1000);
     expect(d.net).toBe(15000);
+  });
+});
+
+describe('discount coupons', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+  const coupon = promo({
+    code: 'NJR-VIP',
+    requires_code: true,
+    discount_pct: 8,
+    max_discount_amount: 1200,
+  });
+
+  it('applies a coupon only with its code (case-insensitive)', () => {
+    expect(evaluatePromotion(coupon, 'recruitment', 16000, now).ok).toBe(false);
+    expect(evaluatePromotion(coupon, 'recruitment', 16000, now, 'WRONG').reason).toBe(
+      'الخصم يتطلب رمز كوبون صحيح',
+    );
+    expect(evaluatePromotion(coupon, 'recruitment', 16000, now, ' njr-vip ').amount).toBe(1200);
+  });
+
+  it('finds a promotion by its code', () => {
+    expect(findByCode([coupon], 'njr-vip')?.id).toBe('pm-test');
+    expect(findByCode([coupon], 'nope')).toBeNull();
+    expect(findByCode([promo({ code: null })], '')).toBeNull();
+  });
+
+  it('prices with a coupon through priceFromBase', () => {
+    const d = priceFromBase('monthly_rental', 7500, {
+      promotion: coupon,
+      promotionCode: 'NJR-VIP',
+    });
+    expect(d.discounts).toBe(600);
+    expect(priceFromBase('monthly_rental', 7500, { promotion: coupon }).discounts).toBe(0);
+  });
+});
+
+describe('managed price floor', () => {
+  const rules = [
+    {
+      service_code: 'recruitment',
+      nationality: null,
+      profession: null,
+      min_price: 10000,
+      is_active: true,
+    },
+    {
+      service_code: 'recruitment',
+      nationality: 'الفلبين',
+      profession: null,
+      min_price: 15000,
+      is_active: true,
+    },
+    {
+      service_code: 'monthly_rental',
+      nationality: 'كينيا',
+      profession: null,
+      min_price: 1850,
+      is_active: false,
+    },
+  ];
+  it('uses the most specific active rule × quantity', () => {
+    expect(ruleFloor(rules, 'recruitment', { nationality: 'الفلبين', quantity: 1 })).toBe(15000);
+    expect(ruleFloor(rules, 'recruitment', { nationality: 'كينيا', quantity: 2 })).toBe(20000);
+    expect(ruleFloor(rules, 'monthly_rental', { nationality: 'كينيا', quantity: 3 })).toBe(0);
   });
 });

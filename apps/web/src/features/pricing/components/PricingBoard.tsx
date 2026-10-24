@@ -32,6 +32,7 @@ import {
   calcPriceDetail,
   DEFAULT_PRICING_CONFIG,
   fallbackBase,
+  ruleFloor,
   type PricingConfig,
   type Promotion,
 } from '@/shared/lib/pricing';
@@ -63,12 +64,13 @@ const SERVICE_OPTIONS = Object.entries(PRICING_SERVICE_LABEL).map(([value, label
 }));
 
 /* ----------------------------- calculator ------------------------------- */
-function Calc({ cfg }: { cfg: PricingConfig }) {
+function Calc({ cfg, rules }: { cfg: PricingConfig; rules: PricingRule[] }) {
   const [service, setService] = useState<ServiceCode>('recruitment');
   const [nationality, setNationality] = useState('الفلبين');
   const [task, setTask] = useState('تنظيف');
   const [quantity, setQuantity] = useState(1);
   const [promotion, setPromotion] = useState<Promotion | null>(null);
+  const [couponCode, setCouponCode] = useState<string | null>(null);
   const [lateDays, setLateDays] = useState(0);
   const [absenceDays, setAbsenceDays] = useState(0);
   const [cancelled, setCancelled] = useState(false);
@@ -82,7 +84,14 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
   const detail = calcPriceDetail(
     service,
     priceArgs,
-    { promotion, lateDays, absenceDays, cancelled },
+    {
+      promotion,
+      promotionCode: couponCode,
+      lateDays,
+      absenceDays,
+      cancelled,
+      floor: ruleFloor(rules, service, priceArgs),
+    },
     cfg,
   );
 
@@ -103,6 +112,7 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
           onChange={(e) => {
             setService(e.target.value as ServiceCode);
             setPromotion(null);
+            setCouponCode(null);
           }}
           options={SERVICE_OPTIONS}
         />
@@ -147,8 +157,13 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
         <PromotionPicker
           service={service}
           base={fallbackBase(service, priceArgs)}
+          floor={ruleFloor(rules, service, priceArgs)}
           value={promotion}
-          onChange={setPromotion}
+          code={couponCode}
+          onChange={(p, code) => {
+            setPromotion(p);
+            setCouponCode(code);
+          }}
         />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-navy">
@@ -182,6 +197,7 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
                 profession: task,
                 quantity,
                 promotion_id: promotion?.id ?? null,
+                promotion_code: couponCode,
                 lateDays,
                 absenceDays,
                 cancelled,
@@ -680,7 +696,7 @@ export default function PricingBoard() {
       {tab === 'calc' && (
         <div className="grid gap-5 lg:grid-cols-3">
           <div className="lg:col-span-1">
-            <Calc cfg={cfg} />
+            <Calc cfg={cfg} rules={rules} />
             <CalcOrderCard cfg={cfg} />
           </div>
           <div className="lg:col-span-2">

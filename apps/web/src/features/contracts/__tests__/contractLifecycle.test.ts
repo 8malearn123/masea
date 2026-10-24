@@ -124,4 +124,43 @@ describe('contract lifecycle (create → approve → sign → activate → compl
     // only one open renewal per contract
     await expect(renewContract(c.id)).rejects.toThrow('يوجد تجديد قائم');
   });
+
+  it('renews a cancelled contract as a new draft starting today', async () => {
+    const c = await createDraft({
+      service_code: 'monthly_rental',
+      customer_id: 'cust-4',
+      customer_name: 'نورة الشهري',
+      branch: 'نجران',
+      start_date: '2026-12-01',
+      end_date: '2027-02-28',
+      quantity: 3,
+      nationality: 'كينيا',
+    });
+    await transitionContract(c.id, 'cancelled');
+    const renewal = await renewContract(c.id);
+    const today = new Date().toISOString().slice(0, 10);
+    expect(renewal.status).toBe('draft');
+    expect(renewal.parent_contract_id).toBe(c.id);
+    expect(renewal.version).toBe(2);
+    expect(renewal.start_date).toBe(today);
+    expect((await getContract(c.id))?.status).toBe('cancelled'); // original untouched
+  });
+
+  it('applies a coupon only with its code', async () => {
+    const base = {
+      service_code: 'recruitment' as const,
+      customer_id: 'cust-1',
+      branch: 'نجران',
+      start_date: '2026-11-01',
+      nationality: 'الفلبين',
+    };
+    const ok = await createDraft({ ...base, promotion_code: 'njr-vip' });
+    expect(ok.discount_amount).toBe(1000); // 8% of 16,000 = 1,280 → floor 15,000 caps it at 1,000
+    expect(ok.promotion_id).toBe('pm-5');
+    await expect(createDraft({ ...base, promotion_code: 'WRONG' })).rejects.toThrow(
+      'رمز الكوبون غير صحيح',
+    );
+    // picking the coupon by id without its code is refused
+    await expect(createDraft({ ...base, promotion_id: 'pm-5' })).rejects.toThrow('رمز كوبون');
+  });
 });
