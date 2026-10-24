@@ -1,25 +1,34 @@
-import { Baby, HeartHandshake, Layers, Minus, Plus, UsersRound } from 'lucide-react';
-import { ErrorState, Skeleton } from '@/shared/ui';
+import {
+  Baby,
+  Building2,
+  HeartHandshake,
+  Layers,
+  Minus,
+  Plus,
+  Store,
+  UsersRound,
+} from 'lucide-react';
+import { ErrorState, Input, Skeleton } from '@/shared/ui';
 import { useRefList } from '@/features/settings/hooks/useSettings';
 import { activeOnly } from '@/features/settings/api/settings.api';
+import { today } from '@/features/requests/lib/period';
 import type { PlaceDetails } from '@/features/requests/types';
-import { asksForGuests, asksForHouseholdCare, isOccasion } from '@/features/requests/types';
+import {
+  COMMERCIAL_CODE,
+  FACILITY_CODE,
+  HOME_CODE,
+  OCCASION_BENEFICIARY_CODE,
+} from '@/features/requests/types';
+
+type Patch = (patch: Partial<PlaceDetails>) => void;
 
 /**
- * بيانات المنزل / مكان الخدمة: الأدوار والغرف والأطفال وكبار السن واحتياج
- * الرعاية — وهي نفسها مدخلات ترشيح العاملة في الخطوة التالية.
- * الحقول تتبدّل بحسب نوع المستفيد المختار في الخطوة السابقة.
+ * تفاصيل مكان الخدمة — الحقول تتبدّل بحسب نوع المستفيد المختار في الخطوة
+ * السابقة (منزل، منشأة، مقهى / نشاط تجاري، مناسبة / فعالية)، فلا يظهر إلا ما
+ * ينطبق. التحقق في `placeDetailsSchema`، والحقول نفسها مدخلات ترشيح العاملة.
  */
-export function PlaceStep({
-  place,
-  onChange,
-}: {
-  place: PlaceDetails;
-  onChange: (patch: Partial<PlaceDetails>) => void;
-}) {
+export function PlaceStep({ place, onChange }: { place: PlaceDetails; onChange: Patch }) {
   const careList = useRefList('care_needs');
-  const household = asksForHouseholdCare(place.beneficiaryType);
-  const guests = asksForGuests(place.beneficiaryType);
 
   const toggleCare = (code: string) =>
     onChange({
@@ -30,71 +39,73 @@ export function PlaceStep({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Counter
-          icon={Layers}
-          label={isOccasion(place.beneficiaryType) ? 'عدد الأدوار في مكان المناسبة' : 'عدد الأدوار'}
-          value={place.floors}
-          min={1}
-          max={8}
-          onChange={(floors) => onChange({ floors })}
-        />
-        <Counter
-          icon={Layers}
-          label={guests ? 'عدد الصالات / الأقسام' : 'عدد الغرف'}
-          value={place.rooms}
-          min={1}
-          max={30}
-          onChange={(rooms) => onChange({ rooms })}
-        />
-        {household && (
-          <>
-            <Counter
-              icon={Baby}
-              label="عدد الأطفال"
-              value={place.children}
-              min={0}
-              max={12}
-              onChange={(children) => onChange({ children })}
-            />
-            <Counter
-              icon={UsersRound}
-              label="عدد كبار السن"
-              value={place.elderly}
-              min={0}
-              max={8}
-              onChange={(elderly) =>
-                onChange({
-                  elderly,
-                  elderlyCareNeeded: elderly === 0 ? false : place.elderlyCareNeeded,
-                })
-              }
-            />
-          </>
-        )}
-        {guests && (
-          <Counter
-            icon={UsersRound}
-            label="عدد الحضور المتوقّع"
+      {place.beneficiaryType === HOME_CODE && <HomeFields place={place} onChange={onChange} />}
+      {place.beneficiaryType === FACILITY_CODE && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input
+            label="نوع المنشأة"
+            value={place.facilityType}
+            maxLength={60}
+            onChange={(e) => onChange({ facilityType: e.target.value })}
+            placeholder="مثال: مستشفى، مدرسة، مجمّع سكني"
+          />
+          <PeopleInput
+            label="عدد المستفيدين / الموظفين"
             value={place.guests}
-            min={0}
-            max={600}
-            step={10}
-            onChange={(g) => onChange({ guests: g })}
+            max={1000}
+            onChange={(guests) => onChange({ guests })}
           />
-        )}
-      </div>
-
-      {household && place.elderly > 0 && (
-        <label className="flex items-center gap-2.5 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3 text-sm text-brand-dark">
-          <input
-            type="checkbox"
-            checked={place.elderlyCareNeeded}
-            onChange={(e) => onChange({ elderlyCareNeeded: e.target.checked })}
-            className="h-4 w-4 accent-[#1f58a8]"
+          <Counter
+            icon={Building2}
+            label="عدد الأقسام"
+            value={place.sections}
+            min={1}
+            max={50}
+            onChange={(sections) => onChange({ sections })}
           />
-          يحتاج كبار السن رعاية مباشرة (مرافقة، دواء، حركة)
-        </label>
+        </div>
+      )}
+      {place.beneficiaryType === COMMERCIAL_CODE && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input
+            label="نوع النشاط"
+            value={place.businessType}
+            maxLength={60}
+            onChange={(e) => onChange({ businessType: e.target.value })}
+            placeholder="مثال: مقهى، مطعم، محل حلويات"
+          />
+          <PeopleInput
+            label="عدد الأشخاص المطلوب خدمتهم يوميًا"
+            value={place.guests}
+            max={1000}
+            onChange={(guests) => onChange({ guests })}
+          />
+          <Counter
+            icon={Store}
+            label="عدد الفروع"
+            value={place.branchesCount}
+            min={1}
+            max={50}
+            onChange={(branchesCount) => onChange({ branchesCount })}
+          />
+        </div>
+      )}
+      {place.beneficiaryType === OCCASION_BENEFICIARY_CODE && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Input
+            label="تاريخ المناسبة (اختياري)"
+            type="date"
+            min={today()}
+            value={place.eventDate}
+            onChange={(e) => onChange({ eventDate: e.target.value })}
+          />
+          <PeopleInput
+            label="عدد الحضور التقريبي"
+            value={place.guests}
+            max={2000}
+            onChange={(guests) => onChange({ guests })}
+          />
+        </div>
       )}
 
       <div>
@@ -139,7 +150,9 @@ export function PlaceStep({
       </div>
 
       <label className="block">
-        <span className="mb-1 block text-sm font-medium text-brand-dark">ملاحظات إضافية</span>
+        <span className="mb-1 block text-sm font-medium text-brand-dark">
+          ملاحظات عن المكان أو احتياجات الخدمة
+        </span>
         <textarea
           rows={3}
           value={place.notes}
@@ -149,6 +162,146 @@ export function PlaceStep({
         />
       </label>
     </div>
+  );
+}
+
+/** بيانات المنزل: الأدوار والغرف، والأطفال وكبار السن بأسئلة نعم/لا. */
+function HomeFields({ place, onChange }: { place: PlaceDetails; onChange: Patch }) {
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Counter
+          icon={Layers}
+          label="عدد الأدوار"
+          value={place.floors}
+          min={1}
+          max={8}
+          onChange={(floors) => onChange({ floors })}
+        />
+        <Counter
+          icon={Layers}
+          label="عدد الغرف"
+          value={place.rooms}
+          min={1}
+          max={30}
+          onChange={(rooms) => onChange({ rooms })}
+        />
+      </div>
+
+      <YesNo
+        icon={Baby}
+        label="هل يوجد أطفال؟"
+        value={place.hasChildren}
+        onChange={(yes) =>
+          onChange({ hasChildren: yes, children: yes ? Math.max(1, place.children) : 0 })
+        }
+      />
+      {place.hasChildren && (
+        <Counter
+          icon={Baby}
+          label="عدد الأطفال"
+          value={place.children}
+          min={1}
+          max={12}
+          onChange={(children) => onChange({ children })}
+        />
+      )}
+
+      <YesNo
+        icon={UsersRound}
+        label="هل يوجد كبار سن؟"
+        value={place.hasElderly}
+        onChange={(yes) =>
+          onChange(
+            yes
+              ? { hasElderly: true, elderly: 1 }
+              : { hasElderly: false, elderly: 0, elderlyCareNeeded: null },
+          )
+        }
+      />
+      {place.hasElderly && (
+        <YesNo
+          icon={HeartHandshake}
+          label="هل يحتاجون إلى رعاية؟"
+          value={place.elderlyCareNeeded}
+          onChange={(yes) => onChange({ elderlyCareNeeded: yes })}
+        />
+      )}
+    </div>
+  );
+}
+
+/** سؤال نعم/لا بزرين — null يعني لم يُجب بعد. */
+function YesNo({
+  icon: Icon,
+  label,
+  value,
+  onChange,
+}: {
+  icon: typeof Layers;
+  label: string;
+  value: boolean | null;
+  onChange: (yes: boolean) => void;
+}) {
+  const option = (yes: boolean, text: string) => {
+    const active = value === yes;
+    return (
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={() => onChange(yes)}
+        className={`min-w-14 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+          active ? 'bg-brand text-white' : 'bg-brand-50 text-brand-dark hover:bg-brand-100'
+        }`}
+      >
+        {text}
+      </button>
+    );
+  };
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand-100 px-3.5 py-2.5"
+    >
+      <span className="flex items-center gap-2 text-sm text-brand-dark">
+        <Icon size={15} className="text-brand" /> {label}
+      </span>
+      <span className="flex items-center gap-2">
+        {option(true, 'نعم')}
+        {option(false, 'لا')}
+      </span>
+    </div>
+  );
+}
+
+/** عدد أشخاص (حضور/مستفيدين) — رقم صحيح غير سالب، و0 يعني لم يُدخل بعد. */
+function PeopleInput({
+  label,
+  value,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <Input
+      label={label}
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={max}
+      className="num"
+      value={value > 0 ? value : ''}
+      onChange={(e) => {
+        const n = Math.trunc(Number(e.target.value));
+        onChange(Number.isFinite(n) ? Math.min(max, Math.max(0, n)) : 0);
+      }}
+      placeholder="مثال: 50"
+    />
   );
 }
 

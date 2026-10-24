@@ -120,7 +120,7 @@ export function CallCenterDashboard() {
             </Link>
           </div>
           {queue.length === 0 ? (
-            <p className="py-6 text-center text-sm text-purple">لا توجد مكالمات قيد المعالجة. 🎧</p>
+            <p className="py-6 text-center text-sm text-purple">لا توجد مكالمات قيد المعالجة.</p>
           ) : (
             <ul className="divide-y divide-navy-50">
               {queue.map((c) => (

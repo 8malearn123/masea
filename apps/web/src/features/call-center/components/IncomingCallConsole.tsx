@@ -24,7 +24,7 @@ import {
   MapPin,
   Package,
 } from 'lucide-react';
-import { Badge, Button, Input, Select } from '@/shared/ui';
+import { Badge, Button, Input, Select, useToast } from '@/shared/ui';
 import type { BadgeTone } from '@/shared/ui/Badge';
 import { dateAr, sar } from '@/shared/lib/format';
 import { calcPriceDetail } from '@/shared/lib/pricing';
@@ -113,6 +113,7 @@ export function IncomingCallConsole({
   const add = useAddCall();
   const createTicket = useCreateTicket();
   const createRequest = useCreateRequest();
+  const toast = useToast();
   const { data: tickets = [] } = useTickets();
   const { data: allCalls = [] } = useCalls();
   const [phone, setPhone] = useState('');
@@ -402,6 +403,8 @@ export function IncomingCallConsole({
             done,
           );
         },
+        // الطلب لم يُنشأ (مثلًا جوال غير صالح) — رسالة واضحة بدل الفشل الصامت
+        onError: (e) => toast.error(e.message || 'تعذّر إنشاء الطلب'),
       },
     );
   }

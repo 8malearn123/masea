@@ -156,7 +156,7 @@ export function HrDashboard() {
           </div>
           {expiring.length === 0 ? (
             <p className="py-6 text-center text-sm text-purple">
-              لا توجد وثائق قاربت على الانتهاء. ✓
+              لا توجد وثائق قاربت على الانتهاء.
             </p>
           ) : (
             <ul className="divide-y divide-navy-50">

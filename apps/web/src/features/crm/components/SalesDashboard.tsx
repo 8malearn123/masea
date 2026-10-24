@@ -163,7 +163,7 @@ export function SalesDashboard() {
             <BellRing size={16} /> متابعات اليوم
           </h2>
           {dueFollowUps.length === 0 ? (
-            <p className="text-sm text-purple">لا توجد متابعات مستحقّة اليوم. 🎯</p>
+            <p className="text-sm text-purple">لا توجد متابعات مستحقّة اليوم.</p>
           ) : (
             <ol className="space-y-2.5">
               {dueFollowUps.map((a) => (

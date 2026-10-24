@@ -63,18 +63,23 @@ describe('ترشيح العاملة حسب احتياج الطلب', () => {
     const elderly = need({ elderly: 1, elderlyCareNeeded: true, careNeeds: ['elderly'] });
     const good = matchWorker(base, elderly);
     expect(good.reasons.length).toBeGreaterThan(0);
-    expect(matchWorker(cook, elderly).gaps.length).toBeGreaterThan(0);
+    // لا دليل في ملف الطباخة على رعاية كبار السن → «لا توجد بيانات» لا «لا تتوافق»
+    const c = matchWorker(cook, elderly);
+    expect(c.unknowns).toContain('لا توجد بيانات عن خبرتها في رعاية كبار السن');
+    expect(c.gaps).not.toContain('لا توجد بيانات عن خبرتها في رعاية كبار السن');
+    expect(c.score).toBeLessThan(good.score);
   });
 
-  it('يخفض درجة العاملة المحجوزة في المدة المطلوبة ويقترح بديلًا زمنيًا', () => {
+  it('التوفّر شرط مستقل لا يغيّر نسبة المطابقة (لا تبدو المحجوزة متاحة)', () => {
     const period = buildPeriod('2026-10-05', 'day', 3);
     const free = matchWorker(base, need({ careNeeds: ['cleaning'] }, null));
     const busy = matchWorker(base, need({ careNeeds: ['cleaning'] }, period));
+    expect(busy.score).toBe(free.score);
     if (!busy.available) {
-      expect(busy.score).toBeLessThan(free.score);
+      expect(busy.reasons).not.toContain('متاحة طوال فترة الخدمة');
       expect(busy.nextFree).not.toBeNull();
     } else {
-      expect(busy.reasons).toContain('متاحة في المدة المطلوبة بالكامل');
+      expect(busy.reasons).toContain('متاحة طوال فترة الخدمة');
     }
   });
 

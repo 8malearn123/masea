@@ -6,20 +6,28 @@ export function sar(value: number | null | undefined): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Gregorian date in Arabic. */
+/**
+ * Arabic locale pinned to the Gregorian calendar: plain `ar-SA` defaults to
+ * Umm al-Qura in browsers (Hijri lives in `hijri()` below).
+ */
+const AR_GREGORIAN = 'ar-SA-u-ca-gregory';
+
+/** Gregorian date in Arabic. A bare yyyy-mm-dd is a calendar day (no timezone shift). */
 export function dateAr(value: string | null | undefined): string {
   if (!value) return '—';
-  return new Date(value).toLocaleDateString('ar-SA', {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return new Date(value).toLocaleDateString(AR_GREGORIAN, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    ...(dateOnly ? { timeZone: 'UTC' } : {}),
   });
 }
 
 /** Gregorian date + time in Arabic (for appointments). */
 export function dateTimeAr(value: string | null | undefined): string {
   if (!value) return '—';
-  return new Date(value).toLocaleString('ar-SA', {
+  return new Date(value).toLocaleString(AR_GREGORIAN, {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',

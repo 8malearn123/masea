@@ -1,5 +1,5 @@
 import { supabase } from '@/shared/lib/supabase';
-import { isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 
 export interface RefItem {
   code: string;
@@ -37,18 +37,18 @@ const STAGES: RefItem[] = [
 const BENEFICIARY_TYPES: RefItem[] = [
   { code: 'home', name_ar: 'منزل', is_active: true, sort_order: 1 },
   { code: 'facility', name_ar: 'منشأة', is_active: true, sort_order: 2 },
-  { code: 'commercial', name_ar: 'مقهى / محل تجاري', is_active: true, sort_order: 3 },
-  { code: 'occasion', name_ar: 'مناسبة', is_active: true, sort_order: 4 },
+  { code: 'commercial', name_ar: 'مقهى / نشاط تجاري', is_active: true, sort_order: 3 },
+  { code: 'occasion', name_ar: 'مناسبة / فعالية', is_active: true, sort_order: 4 },
 ];
-/** أنواع المناسبات — تظهر عند اختيار «مناسبة» كنوع للمستفيد. */
+/** أنواع المناسبات — تظهر عند اختيار «مناسبة / فعالية» كنوع للمستفيد. */
 const OCCASION_TYPES: RefItem[] = [
-  { code: 'wedding', name_ar: 'حفل زواج', is_active: true, sort_order: 1 },
-  { code: 'marriage_contract', name_ar: 'عقد قران', is_active: true, sort_order: 2 },
-  { code: 'banquet', name_ar: 'عزيمة / وليمة', is_active: true, sort_order: 3 },
-  { code: 'graduation', name_ar: 'حفل تخرّج', is_active: true, sort_order: 4 },
-  { code: 'condolence', name_ar: 'عزاء', is_active: true, sort_order: 5 },
-  { code: 'eid', name_ar: 'استقبال العيد', is_active: true, sort_order: 6 },
-  { code: 'conference', name_ar: 'مؤتمر / اجتماع', is_active: true, sort_order: 7 },
+  { code: 'wedding', name_ar: 'زفاف', is_active: true, sort_order: 1 },
+  { code: 'opening', name_ar: 'افتتاح', is_active: true, sort_order: 2 },
+  { code: 'event', name_ar: 'فعالية', is_active: true, sort_order: 3 },
+  { code: 'conference', name_ar: 'مؤتمر', is_active: true, sort_order: 4 },
+  { code: 'exhibition', name_ar: 'معرض', is_active: true, sort_order: 5 },
+  // «أخرى» يفتح حقلًا لكتابة نوع المناسبة (الكود ثابت: OTHER_OCCASION_CODE)
+  { code: 'other', name_ar: 'أخرى', is_active: true, sort_order: 6 },
 ];
 /** احتياجات الرعاية داخل مكان الخدمة (أطفال، كبار سن، حالات خاصة…). */
 const CARE_NEEDS: RefItem[] = [
@@ -135,6 +135,22 @@ const CONFIG: ConfigItem[] = [
     unit: '٪',
     sort_order: 9,
   },
+  {
+    key: 'request_max_days',
+    label_ar: 'أقصى مدة لطلب التأجير اليومي',
+    grp: 'الطلبات',
+    value: 30,
+    unit: 'يوم',
+    sort_order: 10,
+  },
+  {
+    key: 'request_max_months',
+    label_ar: 'أقصى مدة لطلب التأجير الشهري',
+    grp: 'الطلبات',
+    value: 24,
+    unit: 'شهر',
+    sort_order: 11,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;
@@ -200,16 +216,26 @@ export async function listConfig(): Promise<ConfigItem[]> {
   }
   return [...CONFIG].sort((a, b) => a.sort_order - b.sort_order);
 }
+/**
+ * تعديل قيمة نظام. الوضع التجريبي: المخزن المحلي. مع قاعدة بيانات فعلية: يُرمى
+ * أي خطأ، وإن لم يتأثّر أي صف (RLS cfg_admin للمدير العام فقط، أو مفتاح غير
+ * موجود) يُرمى خطأ بدل نجاح وهمي.
+ */
 export async function updateConfig(key: string, value: number): Promise<void> {
-  try {
-    const { error } = await supabase.from('app_config').update({ value }).eq('key', key);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
-  } catch {
-    /* demo */
+  if (isDemoMode()) {
+    const row = CONFIG.find((c) => c.key === key);
+    if (row) row.value = value;
+    return;
   }
-  const row = CONFIG.find((c) => c.key === key);
-  if (row) row.value = value;
+  const { data, error } = await supabase
+    .from('app_config')
+    .update({ value, updated_at: new Date().toISOString() })
+    .eq('key', key)
+    .select('key');
+  if (error) throw new Error(`تعذّر حفظ القيمة: ${error.message}`);
+  if (!data || (data as unknown[]).length === 0) {
+    throw new Error('لم تُحفظ القيمة — تعديل قيم النظام للمدير العام فقط، أو أن المفتاح غير موجود');
+  }
 }
 
 /* ------------------- prototype reference lists (mock) --------------------- */

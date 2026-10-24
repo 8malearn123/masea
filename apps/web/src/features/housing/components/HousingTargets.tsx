@@ -35,7 +35,7 @@ function Gauge({ label, actual, target }: { label: string; actual: number; targe
         />
       </div>
       <p className={`mt-1 text-[11px] ${met ? 'text-green-600' : 'text-purple'}`}>
-        {met ? 'تم تحقيق المستهدف ✓' : `إنجاز ${pct}٪ من المستهدف`}
+        {met ? 'تم تحقيق المستهدف' : `إنجاز ${pct}٪ من المستهدف`}
       </p>
     </div>
   );
@@ -48,7 +48,7 @@ export function HousingTargets() {
   if (targets.length === 0) {
     return (
       <EmptyState
-        icon="🎯"
+        icon={Target}
         title="لا توجد مستهدفات معيّنة"
         description="تظهر هنا مستهدفات السكن التي تُسندها الإدارة لك (نسبة الإشغال والحضور)."
       />

@@ -186,7 +186,6 @@ export const ROLE_META: Record<RoleCode, RoleMeta> = {
 export interface ModuleNav {
   module: ModuleCode;
   label: string;
-  icon: string;
   to: string;
 }
 
@@ -214,20 +213,20 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 
 /** Sidebar source — filtered by `view` permission at render time. */
 export const MODULES: ModuleNav[] = [
-  { module: 'contracts', label: 'العقود', icon: '📄', to: '/contracts' },
-  { module: 'leads', label: 'العملاء المحتملون', icon: '🧲', to: '/leads' },
-  { module: 'orders', label: 'الطلبات والسائقون', icon: '🚚', to: '/orders' },
-  { module: 'gps', label: 'التتبّع GPS', icon: '🛰️', to: '/gps' },
-  { module: 'pricing', label: 'التسعير', icon: '🏷️', to: '/pricing' },
-  { module: 'payments', label: 'المدفوعات', icon: '💳', to: '/payments' },
-  { module: 'call_center', label: 'مركز الاتصال', icon: '📞', to: '/call-center' },
-  { module: 'loyalty', label: 'الولاء والتسويق', icon: '⭐', to: '/loyalty' },
-  { module: 'rating', label: 'التقييم', icon: '🌟', to: '/rating' },
-  { module: 'hr', label: 'الموارد البشرية', icon: '🧑‍💼', to: '/hr' },
-  { module: 'housing', label: 'السكن', icon: '🏠', to: '/housing' },
-  { module: 'targets', label: 'الأهداف ولوحة الشرف', icon: '🎯', to: '/targets' },
-  { module: 'accounting', label: 'المحاسبة', icon: '🧮', to: '/accounting' },
-  { module: 'reports', label: 'التقارير', icon: '📊', to: '/reports' },
-  { module: 'settings', label: 'الإعدادات', icon: '⚙️', to: '/settings' },
-  { module: 'rbac', label: 'الحسابات والصلاحيات', icon: '🔐', to: '/rbac' },
+  { module: 'contracts', label: 'العقود', to: '/contracts' },
+  { module: 'leads', label: 'العملاء المحتملون', to: '/leads' },
+  { module: 'orders', label: 'الطلبات والسائقون', to: '/orders' },
+  { module: 'gps', label: 'التتبّع GPS', to: '/gps' },
+  { module: 'pricing', label: 'التسعير', to: '/pricing' },
+  { module: 'payments', label: 'المدفوعات', to: '/payments' },
+  { module: 'call_center', label: 'مركز الاتصال', to: '/call-center' },
+  { module: 'loyalty', label: 'الولاء والتسويق', to: '/loyalty' },
+  { module: 'rating', label: 'التقييم', to: '/rating' },
+  { module: 'hr', label: 'الموارد البشرية', to: '/hr' },
+  { module: 'housing', label: 'السكن', to: '/housing' },
+  { module: 'targets', label: 'الأهداف ولوحة الشرف', to: '/targets' },
+  { module: 'accounting', label: 'المحاسبة', to: '/accounting' },
+  { module: 'reports', label: 'التقارير', to: '/reports' },
+  { module: 'settings', label: 'الإعدادات', to: '/settings' },
+  { module: 'rbac', label: 'الحسابات والصلاحيات', to: '/rbac' },
 ];

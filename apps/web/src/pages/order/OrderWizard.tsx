@@ -1,3 +1,4 @@
+import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BRAND } from '@masiat/shared';
@@ -7,6 +8,7 @@ import { isServiceCode } from '@/lib/wizardConfig';
 import { emptyDraft } from '@/lib/orderTypes';
 import { useOrderIntent } from '@/store/orderIntent';
 import StepWizard from '@/components/order/StepWizard';
+import { SERVICE_ICON } from '@/lib/serviceIcons';
 import type { ServiceCode } from '@/lib/funnel';
 
 export default function OrderWizard() {
@@ -73,8 +75,8 @@ export default function OrderWizard() {
                   onClick={() => chooseService(s.code)}
                   className="flex items-start gap-3 rounded-xl border border-brand-100 p-4 text-right transition hover:border-brand hover:bg-brand-50"
                 >
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-50 text-2xl">
-                    {s.icon}
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand">
+                    <ServiceIcon code={s.code} />
                   </span>
                   <span>
                     <span className="block font-bold text-brand">{s.name_ar}</span>
@@ -95,4 +97,9 @@ export default function OrderWizard() {
       </main>
     </div>
   );
+}
+
+function ServiceIcon({ code }: { code: string }) {
+  const Icon = SERVICE_ICON[code as ServiceCode] ?? Sparkles;
+  return <Icon size={22} aria-hidden strokeWidth={1.8} />;
 }

@@ -1,26 +1,24 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, Check, FileText, UserPlus, UserRound } from 'lucide-react';
+import { ArrowRight, CalendarRange, Check, FileText, UserPlus, UserRound } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
-import { sar } from '@/shared/lib/format';
+import { dateAr, sar } from '@/shared/lib/format';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
 import { BRANCHES_AR, type WorkerProfile } from '@/lib/funnel';
 import { usePrice } from '@/hooks/usePricing';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
-import { useContractTemplates } from '@/features/contracts/hooks/useContracts';
+import { useContractTemplates, useCreateContract } from '@/features/contracts/hooks/useContracts';
 import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins';
 import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { useCreateCustomer, useCustomerSearch } from '@/features/contracts/hooks/useCustomers';
 import { renderClauses } from '@/features/contracts/lib/clauses';
-import { formatContractNo } from '@/features/contracts/lib/contractNo';
-import { contractKeys } from '@/features/contracts/api/keys';
 import {
-  SERVICE_LABEL,
-  type ContractClause,
-  type ContractListItem,
-  type ContractServiceCode,
-} from '@/features/contracts/types';
+  RECRUITMENT_TERM_MONTHS,
+  contractEndDate,
+  contractTermLabel,
+  validateContractTerm,
+} from '@/features/contracts/lib/contractTerm';
+import { SERVICE_LABEL, type ContractServiceCode } from '@/features/contracts/types';
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
 
 interface Draft {
@@ -65,8 +63,8 @@ const STEP_LABEL: Record<string, string> = {
 export default function ContractWizard() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const toast = useToast();
+  const createContract = useCreateContract();
   const { data: templates = [] } = useContractTemplates();
   const { data: origins } = useServiceOrigins();
   const { data: workers = [] } = useWorkerProfiles();
@@ -97,6 +95,14 @@ export default function ContractWizard() {
   const current = stepKeys[step] ?? 'service';
 
   const service = d.service || 'recruitment';
+  // مدة العقد: أشهر عقد الاستقدام، أو العدد (أشهر/أيام) للتأجير؛ نقل الكفالة بلا مدة.
+  const termCount = d.service === 'recruitment' ? d.contractMonths : d.quantity;
+  const endDate = contractEndDate(d.service || null, d.start_date, termCount);
+  const termLabel = contractTermLabel({
+    service_code: d.service || null,
+    start_date: d.start_date,
+    end_date: endDate,
+  });
   const priceArgs = useMemo(
     () => ({
       nationality: d.nationality || undefined,
@@ -134,7 +140,8 @@ export default function ContractWizard() {
     if (current === 'service') return d.service ? null : 'اختر نوع الخدمة';
     if (current === 'worker') return d.worker ? null : 'اختر العاملة';
     if (current === 'details') {
-      if (!d.start_date) return 'حدّد تاريخ البداية';
+      const termError = validateContractTerm(d.service || null, d.start_date, termCount);
+      if (termError) return termError;
       if (!d.branch) return 'اختر الفرع';
       if (d.service === 'daily_rental' && !d.task) return 'اختر نوع المهمة';
       return null;
@@ -149,73 +156,44 @@ export default function ContractWizard() {
   }
 
   function save() {
-    if (!d.service || !d.customer || !price) return;
-    const id = `c-${Date.now()}`;
-    const item: ContractListItem = {
-      id,
-      contract_no: formatContractNo(
-        new Date().getFullYear(),
-        Math.floor(Math.random() * 99999) + 1,
-      ),
-      service_code: d.service,
-      template_id: template?.id ?? null,
-      customer_id: d.customer.id,
-      worker_id: null,
-      branch_id: d.branch,
-      created_by: null,
-      start_date: d.start_date,
-      end_date: null,
-      base_amount: price.base,
-      vat_amount: price.vat,
-      total_amount: price.total,
-      amount_paid: 0,
-      status: 'draft',
-      version: 1,
-      parent_contract_id: null,
-      signed_at: null,
-      musaned_contract_no: musaned ? d.musanedNo.trim() || null : null,
-      created_at: new Date().toISOString(),
-      assigned_office_id: null,
-      assigned_at: null,
-      recruitment_stage: null,
-      visa_number: null,
-      expected_arrival_date: null,
-      flight_no: null,
-      customer_name: d.customer.full_name,
-      worker_name: d.worker?.full_name ?? null,
-    };
-    // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
-    const clauses: ContractClause[] = musaned
-      ? []
-      : clausePreview.map((body, i) => ({
-          id: `cl-${id}-${i}`,
-          contract_id: id,
-          sort_order: i,
-          body,
-        }));
-
-    qc.setQueryData(contractKeys.detail(id), item);
-    qc.setQueryData(contractKeys.clauses(id), clauses);
-    qc.setQueryData(contractKeys.history(id), [
+    if (!d.service || !d.customer) return;
+    if (!price) {
+      toast.error('تعذّر احتساب السعر — لا يمكن حفظ العقد');
+      return;
+    }
+    const termError = validateContractTerm(d.service, d.start_date, termCount);
+    if (termError) {
+      toast.error(termError);
+      return;
+    }
+    createContract.mutate(
       {
-        id: `h-${id}`,
-        contract_id: id,
-        from_status: null,
-        to_status: 'draft',
-        changed_by: null,
-        created_at: new Date().toISOString(),
+        service_code: d.service,
+        customer_id: d.customer.id,
+        customer_name: d.customer.full_name,
+        worker_name: d.worker?.full_name ?? null,
+        branch_id: d.branch,
+        start_date: d.start_date,
+        end_date: endDate,
+        quantity: priceArgs.quantity,
+        ...(priceArgs.nationality ? { nationality: priceArgs.nationality } : {}),
+        ...(priceArgs.profession ? { profession: priceArgs.profession } : {}),
+        ...(musaned && d.musanedNo.trim() ? { musaned_contract_no: d.musanedNo.trim() } : {}),
+        template_id: musaned ? null : (template?.id ?? null),
+        // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
+        clauses: musaned ? [] : clausePreview,
       },
-    ]);
-    qc.setQueriesData<ContractListItem[]>({ queryKey: ['contracts', 'list'] }, (old) =>
-      old ? [item, ...old] : old,
+      {
+        onSuccess: (created) => {
+          toast.success(
+            musaned
+              ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'
+              : 'تم إنشاء العقد — جاهز للاعتماد والتوقيع',
+          );
+          navigate(`/contracts/${created.id}`);
+        },
+      },
     );
-
-    toast.success(
-      musaned
-        ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'
-        : 'تم إنشاء العقد — جاهز للاعتماد والتوقيع',
-    );
-    navigate(`/contracts/${id}`);
   }
 
   return (
@@ -352,10 +330,10 @@ export default function ContractWizard() {
                 label="مدة العقد (أشهر)"
                 value={String(d.contractMonths)}
                 onChange={(e) => set({ contractMonths: Number(e.target.value) })}
-                options={[
-                  { value: '12', label: '١٢ شهرًا' },
-                  { value: '24', label: '٢٤ شهرًا' },
-                ]}
+                options={RECRUITMENT_TERM_MONTHS.map((n) => ({
+                  value: String(n),
+                  label: `${n.toLocaleString('ar-SA')} شهرًا`,
+                }))}
               />
             )}
             {(d.service === 'monthly_rental' || d.service === 'daily_rental') && (
@@ -363,6 +341,7 @@ export default function ContractWizard() {
                 label={d.service === 'monthly_rental' ? 'عدد الأشهر' : 'عدد الأيام'}
                 type="number"
                 min={1}
+                step={1}
                 value={d.quantity}
                 onChange={(e) => set({ quantity: Number(e.target.value) })}
               />
@@ -372,6 +351,12 @@ export default function ContractWizard() {
               type="date"
               value={d.start_date}
               onChange={(e) => set({ start_date: e.target.value })}
+            />
+            <TermSummary
+              service={d.service || null}
+              start={d.start_date}
+              end={endDate}
+              label={termLabel}
             />
             <Select
               label="الفرع"
@@ -441,6 +426,14 @@ export default function ContractWizard() {
                   الإجمالي {sar(price?.total ?? 0)} ر.س
                 </p>
               </Card>
+              <div className="sm:col-span-2">
+                <TermSummary
+                  service={d.service || null}
+                  start={d.start_date}
+                  end={endDate}
+                  label={termLabel}
+                />
+              </div>
             </div>
             {musaned ? (
               <div className="border-gold-200 bg-gold-50/60 rounded-xl border p-4">
@@ -496,13 +489,55 @@ export default function ContractWizard() {
               التالي
             </Button>
           ) : (
-            <Button onClick={save}>
+            <Button onClick={save} loading={createContract.isPending}>
               <Check size={16} />{' '}
               {musaned ? 'تسجيل العقد ومتابعة مساند' : 'إنشاء العقد ومتابعة التوقيع'}
             </Button>
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** ملخّص مدة العقد: البداية · النهاية المحسوبة · المدة (للقراءة فقط). */
+function TermSummary({
+  service,
+  start,
+  end,
+  label,
+}: {
+  service: ContractServiceCode | null;
+  start: string;
+  end: string | null;
+  label: string | null;
+}) {
+  if (service === 'sponsorship_transfer') {
+    return (
+      <p className="self-end rounded-xl bg-navy-50 p-3 text-xs text-purple">
+        نقل الكفالة إجراء لمرة واحدة — بلا مدة ولا تاريخ نهاية.
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-xl bg-navy-50 p-3 text-sm sm:col-span-2">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-navy">
+        <CalendarRange size={14} /> مدة العقد
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        <TermCell title="تاريخ البداية" value={start ? dateAr(start) : '—'} />
+        <TermCell title="تاريخ النهاية" value={end ? dateAr(end) : '—'} />
+        <TermCell title="المدة" value={label ?? '—'} />
+      </div>
+    </div>
+  );
+}
+
+function TermCell({ title, value }: { title: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] text-purple">{title}</p>
+      <p className="font-semibold text-navy-900">{value}</p>
     </div>
   );
 }

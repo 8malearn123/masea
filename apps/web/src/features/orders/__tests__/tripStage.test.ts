@@ -29,6 +29,9 @@ describe('trip stage advancement from scans', () => {
   it('advancing a demo trip moves its stage + status (worker boarded → in_progress)', async () => {
     const r = await advanceTripStage('o7', 'warehouse_out');
     expect(r).toEqual({ stage: 'picked_up', status: 'in_progress' });
+    // the sequence is enforced: the two middle scans come before the return scan
+    await advanceTripStage('o7', 'customer_arrived');
+    await advanceTripStage('o7', 'service_end');
     const done = await advanceTripStage('o7', 'warehouse_in');
     expect(done.status).toBe('completed');
   });

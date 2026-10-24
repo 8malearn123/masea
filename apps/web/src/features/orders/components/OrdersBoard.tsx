@@ -30,6 +30,7 @@ import {
   DRIVER_STATUS_LABEL,
   DRIVER_STATUS_TONE,
   nextOrderStatuses,
+  orderTransitionError,
   ORDER_SERVICE_LABEL,
   ORDER_STATUS_LABEL,
   ORDER_STATUS_TONE,
@@ -360,7 +361,8 @@ function DispatchBoard() {
 }
 
 function StatusSelect({ order, onChange }: { order: Order; onChange: (s: OrderStatus) => void }) {
-  const next = nextOrderStatuses(order.status);
+  // نفس القواعد المركزية التي تطبّقها الخدمة (مثلًا: لا «مكتمل» قبل انتهاء الرحلة)
+  const next = nextOrderStatuses(order.status).filter((s) => !orderTransitionError(order, s));
   if (next.length === 0) return <span className="text-xs text-purple/40">—</span>;
   return (
     <select

@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { expiryAlerts, expiryTone } from '@/features/contracts/lib/contractInsights';
+import {
+  contractInsight,
+  contractKpis,
+  expiryAlerts,
+  expirySummary,
+  expiryTone,
+  matchesTab,
+  needsRenewal,
+} from '@/features/contracts/lib/contractInsights';
 import type { ContractListItem, ContractStatus } from '@/features/contracts/types';
 
 const NOW = new Date('2026-09-20T09:00:00Z');
@@ -75,5 +83,68 @@ describe('تنبيهات انتهاء العقود', () => {
   it('يعطي لونًا لكل درجة إلحاح', () => {
     expect(expiryTone('expired')).toBe('danger');
     expect(expiryTone('soon')).toBe('gold');
+  });
+});
+
+describe('تصنيف حالة الانتهاء (مصدر واحد)', () => {
+  const state = (c: ContractListItem, window = 30) => contractInsight(c, NOW, window).expiry;
+
+  it('يصنّف المنتهي والحرِج والقريب والسليم', () => {
+    expect(state(contract('a', 'active', -1))).toBe('expired');
+    expect(state(contract('b', 'active', 0))).toBe('critical');
+    expect(state(contract('c', 'active', 10))).toBe('critical');
+    expect(state(contract('d', 'active', 11))).toBe('soon');
+    expect(state(contract('e', 'active', 30))).toBe('soon');
+    expect(state(contract('f', 'active', 31))).toBe('ok');
+  });
+
+  it('لا يصنّف العقد بلا تاريخ نهاية منتهيًا ولا قريبًا', () => {
+    const c = contract('n', 'active', null);
+    expect(state(c)).toBe('no_end_date');
+    expect(needsRenewal(state(c))).toBe(false);
+    expect(expiryAlerts([c], 30, NOW)).toHaveLength(0);
+  });
+
+  it('لا ينطبق على غير الساري ولا على نقل الكفالة بلا مدة', () => {
+    expect(state(contract('d1', 'draft', -10))).toBe('not_applicable');
+    expect(state(contract('c1', 'completed', -10))).toBe('not_applicable');
+    expect(state(contract('x1', 'cancelled', 2))).toBe('not_applicable');
+    expect(state({ ...contract('t1', 'active', null), service_code: 'sponsorship_transfer' })).toBe(
+      'not_applicable',
+    );
+  });
+
+  it('يعدّ الحالات ويتغيّر العدد بتغيّر المهلة', () => {
+    const rows = [
+      contract('A', 'active', 3),
+      contract('B', 'active', 25),
+      contract('C', 'active', -4),
+      contract('D', 'active', 90),
+      contract('F', 'active', null),
+      contract('G', 'draft', 5),
+    ];
+    expect(expirySummary(rows, 30, NOW)).toEqual({
+      expired: 1,
+      critical: 1,
+      soon: 1,
+      noEndDate: 1,
+      needsRenewal: 3,
+    });
+    // مهلة ٧ أيام: «حرِج» = يومان فأقل، فالعقد الذي بقي له ٣ أيام «قريب»
+    expect(expirySummary(rows, 7, NOW)).toMatchObject({ critical: 0, soon: 1, needsRenewal: 2 });
+    // مهلة ١٢٠ يومًا: «حرِج» = ٤٠ يومًا فأقل
+    expect(expirySummary(rows, 120, NOW)).toMatchObject({ critical: 2, soon: 1, needsRenewal: 4 });
+  });
+
+  it('تبويب التجديدات ومؤشّره يشملان المنتهي غير المجدَّد', () => {
+    const rows = [
+      contract('A', 'active', 3),
+      contract('C', 'active', -4),
+      contract('F', 'active', null),
+    ];
+    const inRenewals = rows.filter((c) => matchesTab(c, contractInsight(c, NOW, 30), 'renewals'));
+    expect(inRenewals.map((c) => c.id)).toEqual(['A', 'C']);
+    const k = contractKpis(rows, NOW, 30);
+    expect(k).toMatchObject({ renewals: 2, expired: 1, expiringSoon: 1, noEndDate: 1 });
   });
 });

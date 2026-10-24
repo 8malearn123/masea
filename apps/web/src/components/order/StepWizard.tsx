@@ -1,18 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import {
+  FileText,
+  FlaskConical,
+  PackageSearch,
+  type LucideIcon,
+  Paperclip,
+  Check,
+} from 'lucide-react';
 import { sar } from '@/lib/format';
 import type { ServiceCode } from '@/lib/funnel';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { usePrice } from '@/hooks/usePricing';
-import { useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
+import { newClientToken, useCreateRequest, type CreateResult } from '@/hooks/useCreateRequest';
+import { useRequestBackend } from '@/features/requests/hooks/useRequestFiles';
+import {
+  customerContactSchema,
+  durationIssue,
+  durationLimitsFrom,
+  firstIssue,
+  maxDurationCount,
+  placeStepIssue,
+} from '@/features/requests/schemas/request.schema';
+import { useConfig } from '@/features/settings/hooks/useSettings';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { SERVICE_FLOWS } from '@/lib/wizardConfig';
 import { BeneficiaryStep } from '@/features/requests/components/BeneficiaryStep';
 import { PlaceStep } from '@/features/requests/components/PlaceStep';
 import { PeriodFields } from '@/features/requests/components/PeriodFields';
 import { MatchedWorkerPicker } from '@/features/catalog/components/MatchedWorkerPicker';
+import { isWorkerAvailable } from '@/features/catalog/lib/availability';
 import type { RequestNeed } from '@/features/catalog/lib/matching';
 import { isOccasion, type PlaceDetails } from '@/features/requests/types';
 import { periodLabel } from '@/features/requests/lib/period';
@@ -22,7 +40,9 @@ import {
   TASK_TYPES,
   PAYMENT_METHODS,
   TRACKING_STAGES,
+  DURATION_UNITS,
   draftPeriod,
+  periodUnitOf,
   priceParams,
   type OrderDraft,
 } from '@/lib/orderTypes';
@@ -74,7 +94,7 @@ function RadioCards({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { key: string; label: string; icon?: string }[];
+  options: { key: string; label: string; icon?: LucideIcon }[];
 }) {
   return (
     <div className="grid gap-2.5 sm:grid-cols-2">
@@ -88,7 +108,7 @@ function RadioCards({
             (value === o.key ? 'border-brand bg-brand-50' : 'border-brand-100 hover:border-brand')
           }
         >
-          {o.icon ? <span className="text-xl">{o.icon}</span> : null}
+          {o.icon ? <o.icon size={20} aria-hidden className="shrink-0 text-brand" /> : null}
           <span className="text-sm font-medium text-brand-dark">{o.label}</span>
         </button>
       ))}
@@ -125,6 +145,12 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   const [draft, setDraft] = useState<OrderDraft>(initialDraft);
   const [paying, setPaying] = useState(false);
   const [result, setResult] = useState<CreateResult | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // معرّف إرسال ثابت لهذه الجلسة: الضغط المزدوج أو إعادة المحاولة = نفس الطلب.
+  const clientToken = useRef(newClientToken());
+  // حارس متزامن: «paying» لا يتحدّث قبل إعادة الرسم.
+  const submitting = useRef(false);
+  const { supportsRequestFile } = useRequestBackend();
 
   const { data: workers = [], isLoading: workersLoading } = useWorkerProfiles();
   const params = useMemo(() => priceParams(draft), [draft]);
@@ -137,6 +163,8 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
     setDraft((d) => ({ ...d, place: { ...d.place, ...patch } }));
 
   const period = useMemo(() => draftPeriod(draft), [draft]);
+  const { data: config = [] } = useConfig();
+  const durationLimits = useMemo(() => durationLimitsFrom(config), [config]);
   const selectedWorker = workers.find((w) => w.id === draft.workerProfileId) ?? null;
 
   /** احتياج الطلب كما يُغذّي محرّك الترشيح. */
@@ -169,34 +197,39 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
       case 'nationality_profession':
         return draft.nationality && draft.profession ? null : 'اختر الجنسية والمهنة.';
       case 'beneficiary':
-        if (!draft.place.beneficiaryType) return 'اختر نوع المستفيد من الخدمة.';
-        return isOccasion(draft.place.beneficiaryType) && !draft.place.occasionType
-          ? 'اختر نوع المناسبة.'
-          : null;
+        return placeStepIssue(draft.place, 'beneficiary');
       case 'place':
-        if (draft.place.floors < 1 || draft.place.rooms < 1)
-          return 'حدّد عدد الأدوار والغرف في مكان الخدمة.';
-        return draft.place.careNeeds.length > 0
-          ? null
-          : 'اختر احتياج رعاية واحدًا على الأقل ليُرشَّح لك الأنسب.';
+        return (
+          placeStepIssue(draft.place, 'place') ??
+          (draft.place.careNeeds.length > 0
+            ? null
+            : 'اختر احتياج رعاية واحدًا على الأقل ليُرشَّح لك الأنسب.')
+        );
       case 'package':
         return draft.monthlySalary > 0 && draft.contractMonths > 0 && draft.startDate
           ? null
           : 'حدّد الراتب ومدة العقد وتاريخ المباشرة المتوقّع.';
-      case 'select_worker':
+      case 'select_worker': {
+        // العاملة المختارة يجب أن تكون متاحة للفترة الحالية (تتغيّر بتغيّر المدة)
+        if (draft.workerProfileId && period) {
+          const avail = isWorkerAvailable(draft.workerProfileId, period.startDate, period.endDate);
+          if (!avail.available) return `${avail.message} اختر عاملة أخرى أو غيّر التواريخ.`;
+        }
         if (service === 'daily_rental') return null; // يجوز ترك الاختيار للشركة
         return draft.workerProfileId ? null : 'اختر العاملة المطلوبة.';
+      }
       case 'duration':
-        return draft.startDate && draft.months >= 1 ? null : 'حدّد تاريخ البداية وعدد الأشهر.';
       case 'dates':
-        return draft.startDate && draft.days >= 1 ? null : 'حدّد تاريخ البداية وعدد الأيام.';
+        return durationIssue(draft, durationLimits);
       case 'task':
         return draft.taskType ? null : 'اختر نوع المهمة.';
       case 'employer':
-      case 'customer':
-        return draft.customerName && draft.phone && draft.branch
-          ? null
-          : 'أدخل الاسم والجوال والفرع.';
+      case 'customer': {
+        if (!draft.customerName || !draft.phone || !draft.branch)
+          return 'أدخل الاسم والجوال والفرع.';
+        const contact = customerContactSchema.safeParse(draft);
+        return contact.success ? null : firstIssue(contact.error);
+      }
       case 'worker':
         return draft.currentIqama && draft.currentNationality && draft.currentProfession
           ? null
@@ -226,19 +259,30 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
   }
 
   async function pay() {
-    if (!price) return;
+    if (!price || submitting.current) return;
+    submitting.current = true;
     setPaying(true);
-    // TODO: integrate Moyasar (mada/Apple Pay) + Tamara here. Stubbed success.
-    await new Promise((r) => setTimeout(r, 1200));
-    const res = await createRequest.mutateAsync({
-      draft,
-      price,
-      serviceName,
-      worker: selectedWorker,
-    });
-    setResult(res);
-    setPaying(false);
-    setStepIndex(flow.length - 1); // jump to confirm
+    setSubmitError(null);
+    try {
+      // الدفع محاكاة في العرض التجريبي (Moyasar/Tamara لاحقًا)
+      await new Promise((r) => setTimeout(r, 1200));
+      const res = await createRequest.mutateAsync({
+        clientToken: clientToken.current,
+        draft,
+        price,
+        serviceName,
+        worker: selectedWorker,
+      });
+      setResult(res);
+      setStepIndex(flow.length - 1); // jump to confirm
+    } catch (e) {
+      setSubmitError(
+        e instanceof Error && e.message ? e.message : 'تعذّر إرسال الطلب، حاول مرة أخرى.',
+      );
+    } finally {
+      submitting.current = false;
+      setPaying(false);
+    }
   }
 
   /* ------------------------------ step bodies ------------------------------ */
@@ -339,37 +383,39 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
           />
         );
       case 'duration':
+      case 'dates': {
+        // تأجير شهري: العدد في months · تأجير يومي: العدد في days (أيام أو أسابيع)
+        const countKey = key === 'duration' ? 'months' : 'days';
+        const unit = periodUnitOf(draft);
         return (
           <PeriodFields
             startDate={draft.startDate}
-            unit="month"
-            count={draft.months}
+            unit={unit}
+            units={DURATION_UNITS[service]}
+            count={draft[countKey]}
+            maxCount={maxDurationCount(unit, durationLimits)}
+            eventDate={isOccasion(draft.place.beneficiaryType) ? draft.place.eventDate : null}
             workerId={draft.workerProfileId}
             workerName={selectedWorker?.full_name ?? null}
             onChange={(patch) =>
               update({
                 ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
-                ...(patch.count !== undefined ? { months: patch.count } : {}),
+                ...(patch.count !== undefined ? { [countKey]: patch.count } : {}),
+                // تغيير الوحدة: يُقصّ العدد لأقصى الوحدة الجديدة (٣٠ يومًا ← ٤ أسابيع)
+                ...(patch.unit !== undefined
+                  ? {
+                      durationUnit: patch.unit,
+                      [countKey]: Math.min(
+                        Math.max(draft[countKey], 1),
+                        maxDurationCount(patch.unit, durationLimits),
+                      ),
+                    }
+                  : {}),
               })
             }
           />
         );
-      case 'dates':
-        return (
-          <PeriodFields
-            startDate={draft.startDate}
-            unit="day"
-            count={draft.days}
-            workerId={draft.workerProfileId}
-            workerName={selectedWorker?.full_name ?? null}
-            onChange={(patch) =>
-              update({
-                ...(patch.startDate !== undefined ? { startDate: patch.startDate } : {}),
-                ...(patch.count !== undefined ? { days: patch.count } : {}),
-              })
-            }
-          />
-        );
+      }
       case 'task':
         return (
           <RadioCards
@@ -493,7 +539,9 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             {draft.documents.length > 0 && (
               <ul className="mt-3 space-y-1 text-sm text-brand-dark/70">
                 {draft.documents.map((d) => (
-                  <li key={d}>📎 {d}</li>
+                  <li key={d} className="flex items-center gap-1.5">
+                    <Paperclip size={14} aria-hidden className="shrink-0" /> {d}
+                  </li>
                 ))}
               </ul>
             )}
@@ -566,21 +614,31 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
       case 'confirm':
         return (
           <div className="text-center">
-            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand text-3xl text-white">
-              ✓
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-brand text-white">
+              <Check size={32} aria-hidden strokeWidth={2.5} />
             </div>
             <h2 className="mt-4 text-xl font-bold text-brand">تم استلام طلبك بنجاح</h2>
             <p className="mt-1 text-sm text-brand-dark/60">رقم الطلب</p>
             <p className="num mt-1 text-lg font-bold text-brand-accent">
               {result?.requestNo ?? '—'}
             </p>
-            {result && !result.persisted && (
-              <p className="mx-auto mt-2 max-w-sm text-[11px] text-amber-600">
-                (لم يُحفظ في القاعدة بعد — طبّق الـ migrations لتفعيل الحفظ الفعلي)
+            {result?.backend === 'mock' && (
+              <p className="mx-auto mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
+                <FlaskConical size={13} /> طلب تجريبي — عرض للنظام، لا يُرسل لجهة حقيقية
               </p>
             )}
             {result && (
               <Link
+                data-fab-avoid
+                to={`/order/track?no=${result.requestNo}`}
+                className="me-2 mt-4 inline-flex items-center gap-2 rounded-xl border border-brand px-5 py-2.5 text-sm font-bold text-brand transition hover:bg-brand-50"
+              >
+                <PackageSearch size={16} /> تتبّع الطلب
+              </Link>
+            )}
+            {result && supportsRequestFile && (
+              <Link
+                data-fab-avoid
                 to={`/order/request/${result.requestNo}`}
                 className="mt-4 inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-bold text-white transition hover:bg-brand-dark"
               >
@@ -647,11 +705,15 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
 
       {/* nav */}
       {step.key !== 'confirm' && (
-        <div className="mt-8 flex items-center justify-between gap-3">
+        <div data-fab-avoid className="mt-8 flex items-center justify-between gap-3">
           <button type="button" onClick={back} className="btn-outline-brand">
             السابق
           </button>
-          {err && <span className="flex-1 text-center text-xs text-red-600">{err}</span>}
+          {(err ?? (isPayment ? submitError : null)) && (
+            <span role="alert" className="flex-1 text-center text-xs text-red-600">
+              {err ?? submitError}
+            </span>
+          )}
           {isPayment ? (
             <button type="button" onClick={pay} disabled={paying} className="btn-accent px-6">
               {paying ? 'جارٍ معالجة الدفع…' : `ادفع ${price ? sar(price.total) : ''} ر.س`}
@@ -698,7 +760,8 @@ function contractTerms(
     );
   if (service === 'monthly_rental')
     base.splice(1, 0, `مدة الإيجار: ${d.months} شهرًا، تجدد تلقائيًا.`);
-  if (service === 'daily_rental') base.splice(1, 0, `المهمة: ${d.taskType} لمدة ${d.days} يوم.`);
+  if (service === 'daily_rental' && period)
+    base.splice(1, 0, `المهمة: ${d.taskType} لمدة ${periodLabel(period)}.`);
   if (service === 'sponsorship_transfer') base.splice(1, 0, 'يشمل إجراءات النقل عبر مساند وأبشر.');
   return base;
 }

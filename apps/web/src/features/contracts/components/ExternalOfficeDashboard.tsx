@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, ClipboardList, Loader, PackageCheck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ClipboardList, Loader, PackageCheck, Inbox } from 'lucide-react';
 import { Badge, Card, EmptyState, Skeleton } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
 import { useContracts } from '@/features/contracts/hooks/useContracts';
@@ -93,7 +93,7 @@ export function ExternalOfficeDashboard() {
 
       {stats.total === 0 ? (
         <EmptyState
-          icon="📭"
+          icon={Inbox}
           title="لا توجد طلبات مُسندة"
           description="ستظهر هنا طلبات الاستقدام عندما يُسندها فريق المبيعات أو الإدارة لمكتبك."
         />

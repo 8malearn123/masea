@@ -10,6 +10,7 @@ import {
   listOrders,
   setOrderStatus,
 } from '@/features/orders/api/orders.api';
+import { recordTripScan } from '@/features/gps/api/gps.api';
 import type { Driver, Order, OrderFilters, OrderStatus } from '@/features/orders/types';
 
 const LIST_KEY = ['orders', 'list'] as const;
@@ -84,6 +85,37 @@ export function useAdvanceTrip() {
       toast.success(doneLabel);
     },
     onError: (e) => toast.error(e.message || 'تعذّر تحديث الرحلة'),
+  });
+}
+
+/**
+ * مسح خطوة رحلة من شاشة السائق (تسجيل المحاولة + تطبيق الخطوة في عملية واحدة).
+ * رسالة النجاح فقط عند قبول الخطوة؛ عند الرفض تبقى المحاولة في السجل موسومة
+ * «مرفوض» ويُعاد تحميل الطلبات لتعرض الخطوة الصحيحة.
+ */
+export function useTripScan() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    Awaited<ReturnType<typeof recordTripScan>>,
+    Error,
+    Parameters<typeof recordTripScan>[0] & { doneLabel: string }
+  >({
+    mutationFn: ({ orderId, requestNo, barcode, scanType, lat, lng }) =>
+      recordTripScan({ orderId, requestNo, barcode, scanType, lat: lat ?? null, lng: lng ?? null }),
+    onSuccess: (res, { orderId, doneLabel }) => {
+      qc.setQueriesData<Order[]>({ queryKey: LIST_KEY }, (old) =>
+        old?.map((o) =>
+          o.id === orderId ? { ...o, trip_stage: res.stage, status: res.status } : o,
+        ),
+      );
+      toast.success(`${doneLabel} — ${res.worker_name}`);
+    },
+    onError: (e) => {
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      toast.error(e.message || 'تعذّر تطبيق المسح');
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['gps', 'trip-scans'] }),
   });
 }
 

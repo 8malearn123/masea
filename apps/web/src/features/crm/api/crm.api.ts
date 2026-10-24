@@ -88,7 +88,7 @@ const DEMO_LEADS: Lead[] = [
     service_code: 'recruitment',
     stage_code: 'won',
     est_value: 17000,
-    notes: 'تم التعاقد ✓',
+    notes: 'تم التعاقد',
     customer_id: null,
     created_at: iso(-12),
     updated_at: iso(-4),

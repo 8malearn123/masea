@@ -41,6 +41,15 @@ body {
   @apply bg-navy-50 font-sans text-navy-900 antialiased;
 }
 
+/* الجوال: مساحة حرة أسفل الصفحة لزر المساعد العائم، فلا يغطي آخر الأزرار أو الحقول */
+@media (max-width: 1023px) {
+  body.has-chat-fab #root::after {
+    content: '';
+    display: block;
+    height: 5rem;
+  }
+}
+
 /* Numbers always rendered with JetBrains Mono, even inside Arabic text */
 .num,
 [data-num] {

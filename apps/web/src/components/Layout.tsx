@@ -2,58 +2,26 @@ import { Suspense, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   BarChart3,
-  Building2,
-  Calculator,
   CalendarCheck,
   ChevronDown,
-  CreditCard,
-  FileText,
-  Gift,
   GitCommitHorizontal,
-  Headphones,
-  KanbanSquare,
   LayoutDashboard,
   LogOut,
   MapPin,
   ScanLine,
-  Settings2,
-  ShieldCheck,
   Smartphone,
-  Star,
-  Tag,
   Target,
-  Truck,
-  Users,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
 import { useAuth } from '@/store/auth';
 import { usePermissions } from '@/hooks/usePermissions';
 import { ErrorBoundary } from '@/app/ErrorBoundary';
 import { Spinner } from '@/shared/ui';
 import { MODULE_GROUPS, type ModuleCode, type ModuleNav } from '@/lib/permissions';
+import { MODULE_ICON } from '@/lib/moduleIcons';
 import { HR_SECTIONS } from '@/features/hr/sections';
 
 const COLLAPSED_KEY = 'masea_nav_collapsed';
-
-const MODULE_ICON: Record<ModuleCode, LucideIcon> = {
-  contracts: FileText,
-  leads: KanbanSquare,
-  orders: Truck,
-  gps: MapPin,
-  pricing: Tag,
-  payments: CreditCard,
-  call_center: Headphones,
-  loyalty: Gift,
-  rating: Star,
-  hr: Users,
-  housing: Building2,
-  targets: Target,
-  accounting: Calculator,
-  reports: BarChart3,
-  settings: Settings2,
-  rbac: ShieldCheck,
-};
 
 const navItemCls = (isActive: boolean) =>
   `flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${

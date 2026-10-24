@@ -46,14 +46,15 @@ declare
   v_amount numeric := 50000;
 begin
   v_period := ensure_period('2026-01-01');
-  for b in select id, name_ar from branches loop
+  -- branches has `name` (0002) — not name_ar (that column belongs to chart_of_accounts)
+  for b in select id, name from branches loop
     -- skip if this branch already has an opening entry
     if exists (select 1 from journal_entries
                where reference = 'OPEN-' || b.id and source_type = 'manual') then
       continue;
     end if;
     insert into journal_entries (entry_date, period_id, branch_id, description, reference, source_type)
-    values ('2026-01-01', v_period, b.id, 'رصيد افتتاحي - ' || b.name_ar, 'OPEN-' || b.id, 'manual')
+    values ('2026-01-01', v_period, b.id, 'رصيد افتتاحي - ' || b.name, 'OPEN-' || b.id, 'manual')
     returning id into v_entry;
     insert into journal_entry_lines (entry_id, account_id, debit, credit, branch_id, description) values
       (v_entry, acc_id('1112'), v_amount, 0, b.id, 'رصيد بنكي افتتاحي'),

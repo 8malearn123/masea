@@ -24,7 +24,12 @@ where name in (
   'قالب عقد نقل الكفالة'
 );
 
-insert into contract_templates (service_code, name, clauses, is_active) values
+-- Each row supplies (service_code, name, clauses); is_active takes its default
+-- (true, 0016). contract_templates has no unique key, so `on conflict` could never
+-- skip a duplicate — a row is inserted only when that (service_code, name) is absent.
+insert into contract_templates (service_code, name, clauses)
+select v.service_code, v.name, v.clauses
+from (values
   ('recruitment', 'عقد استقدام — شامل',
     '["أُبرم هذا العقد بين شركة ماسية الشرق للاستقدام (الطرف الأول) والعميل {{customer_name}} (الطرف الثاني)، وكلاهما بكامل الأهلية المعتبرة شرعاً ونظاماً.",
       "يلتزم الطرف الأول باستقدام عاملة منزلية من جنسية {{nationality}} لمهنة {{profession}} لصالح الطرف الثاني وفق أنظمة وزارة الموارد البشرية والتنمية الاجتماعية.",
@@ -79,4 +84,8 @@ insert into contract_templates (service_code, name, clauses, is_active) values
       "يلتزم الطرف الأول باستكمال إجراءات النقل النظامية خلال المدة المحددة وإشعار الطرف الثاني بإتمامها.",
       "بعد إتمام النقل تنتقل كامل التزامات صاحب العمل النظامية تجاه العاملة إلى الطرف الثاني.",
       "تختص الجهات المختصة في المملكة بالنظر في أي نزاع ينشأ عن تنفيذ هذا العقد."]'::jsonb)
-on conflict do nothing;
+) as v(service_code, name, clauses)
+where not exists (
+  select 1 from contract_templates t
+  where t.service_code = v.service_code and t.name = v.name
+);

@@ -1,10 +1,18 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle2, PackageSearch, Search } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  FlaskConical,
+  PackageSearch,
+  Search,
+} from 'lucide-react';
 import { BRAND } from '@masiat/shared';
 import { dateAr } from '@/shared/lib/format';
 import { FALLBACK_SERVICES } from '@/lib/funnel';
 import { TRACKING_STAGES } from '@/lib/orderTypes';
+import { periodLabel } from '@/features/requests/lib/period';
 import { useServiceRequest } from '@/hooks/useServiceRequest';
 import type { ServiceCode } from '@/lib/funnel';
 
@@ -28,24 +36,34 @@ function stageIndex(stages: string[], status: string): number {
 }
 
 export default function OrderTracking() {
-  const [input, setInput] = useState('');
-  const [query, setQuery] = useState('');
-  const { data, isLoading, isFetched } = useServiceRequest(query, query !== '');
+  // ?no=REQ-… — رابط «تتبّع الطلب» من شاشة التأكيد يفتح الطلب مباشرة
+  const [params] = useSearchParams();
+  const initial = (params.get('no') ?? '').trim();
+  const [input, setInput] = useState(initial);
+  const [query, setQuery] = useState(initial);
+  const { data, isLoading, isFetched, isError, refetch } = useServiceRequest(query, query !== '');
 
   const service = data?.service_code as ServiceCode | undefined;
   const stages = service ? TRACKING_STAGES[service] : [];
   const current = data ? stageIndex(stages, data.status) : 0;
-  const serviceName = service ? FALLBACK_SERVICES.find((s) => s.code === service)?.name_ar ?? service : '';
+  const serviceName = service
+    ? (FALLBACK_SERVICES.find((s) => s.code === service)?.name_ar ?? service)
+    : '';
 
   return (
     <div dir="rtl" className="min-h-screen bg-brand-50/60 text-brand-dark">
       <header className="border-b border-brand-100 bg-white">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3.5">
           <Link to="/" className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-brand text-lg font-bold text-white">م</div>
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-brand text-lg font-bold text-white">
+              م
+            </div>
             <span className="text-sm font-bold">{BRAND.client.nameAr}</span>
           </Link>
-          <Link to="/" className="inline-flex items-center gap-1 text-sm text-brand-dark/60 hover:text-brand">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1 text-sm text-brand-dark/60 hover:text-brand"
+          >
             <ArrowRight size={16} /> الرئيسية
           </Link>
         </div>
@@ -90,7 +108,20 @@ export default function OrderTracking() {
           </div>
         )}
 
-        {isFetched && !data && (
+        {isError && (
+          <div
+            role="alert"
+            className="mt-6 rounded-2xl border border-red-100 bg-red-50/60 p-8 text-center shadow-sm"
+          >
+            <AlertTriangle size={28} className="mx-auto text-red-500" />
+            <p className="mt-3 font-bold text-red-700">تعذّر جلب حالة الطلب</p>
+            <p className="mt-1 text-sm text-red-600/80">حدث خطأ أثناء البحث — حاول مرة أخرى.</p>
+            <button type="button" onClick={() => void refetch()} className="btn-outline-brand mt-4">
+              إعادة المحاولة
+            </button>
+          </div>
+        )}
+        {isFetched && !isError && !data && (
           <div className="mt-6 rounded-2xl border border-dashed border-brand-100 bg-white p-10 text-center shadow-sm">
             <PackageSearch size={32} className="mx-auto text-brand-dark/40" />
             <p className="mt-3 font-bold text-brand">لم نعثر على هذا الطلب</p>
@@ -105,19 +136,48 @@ export default function OrderTracking() {
                 <p className="text-xs text-brand-dark/60">رقم الطلب</p>
                 <p className="num text-lg font-bold text-brand-accent">{data.request_no}</p>
               </div>
-              <span className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand">
-                {STATUS_LABEL[data.status] ?? data.status}
-              </span>
+              <div className="flex flex-col items-end gap-1.5">
+                <span className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand">
+                  {STATUS_LABEL[data.status] ?? data.status}
+                </span>
+                {data.backend === 'mock' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                    <FlaskConical size={12} /> طلب تجريبي
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-between py-3 text-sm">
               <span className="text-brand-dark/60">الخدمة</span>
               <span className="font-medium">{serviceName}</span>
             </div>
-            <div className="flex items-center justify-between border-b border-brand-100 pb-3 text-sm">
+            <div
+              className={`flex items-center justify-between pb-3 text-sm ${
+                data.period?.startDate ? '' : 'border-b border-brand-100'
+              }`}
+            >
               <span className="text-brand-dark/60">تاريخ الطلب</span>
               <span className="num">{dateAr(data.created_at)}</span>
             </div>
+            {data.period?.startDate && (
+              <dl className="grid gap-2 border-b border-brand-100 pb-4 text-sm sm:grid-cols-3">
+                <div className="flex items-center justify-between rounded-xl bg-brand-50 p-2.5 sm:block">
+                  <dt className="text-[11px] text-brand-dark/60">تاريخ بداية الخدمة</dt>
+                  <dd className="num font-semibold sm:mt-0.5">{dateAr(data.period.startDate)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-brand-50 p-2.5 sm:block">
+                  <dt className="text-[11px] text-brand-dark/60">مدة الخدمة</dt>
+                  <dd className="num font-semibold sm:mt-0.5">{periodLabel(data.period)}</dd>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-brand-50 p-2.5 sm:block">
+                  <dt className="text-[11px] text-brand-dark/60">تاريخ نهاية الخدمة</dt>
+                  <dd className="num font-semibold sm:mt-0.5">
+                    {data.period.endDate ? dateAr(data.period.endDate) : '—'}
+                  </dd>
+                </div>
+              </dl>
+            )}
 
             <p className="mb-4 mt-5 text-sm font-semibold text-brand-dark">مراحل الطلب</p>
             <ol className="space-y-4">
@@ -131,9 +191,17 @@ export default function OrderTracking() {
                         done || active ? 'bg-brand text-white' : 'bg-gray-100 text-gray-400'
                       }`}
                     >
-                      {done ? <CheckCircle2 size={16} /> : <span className="num text-xs">{i + 1}</span>}
+                      {done ? (
+                        <CheckCircle2 size={16} />
+                      ) : (
+                        <span className="num text-xs">{i + 1}</span>
+                      )}
                     </span>
-                    <span className={`text-sm ${active ? 'font-bold text-brand' : 'text-brand-dark/70'}`}>{s}</span>
+                    <span
+                      className={`text-sm ${active ? 'font-bold text-brand' : 'text-brand-dark/70'}`}
+                    >
+                      {s}
+                    </span>
                   </li>
                 );
               })}

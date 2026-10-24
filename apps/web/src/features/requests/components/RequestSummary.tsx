@@ -1,28 +1,46 @@
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight,
   Baby,
+  Building2,
+  CalendarCheck,
   CalendarClock,
+  CheckCircle2,
+  Clock,
   CreditCard,
   FileText,
   Hash,
   HeartHandshake,
   Home,
+  Layers,
   MapPin,
   Phone,
   Sparkles,
+  Star,
+  Store,
   UserRound,
   UsersRound,
+  FlaskConical,
+  SearchX,
 } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
-import { EmptyState, ErrorState, Skeleton, flagFor } from '@/shared/ui';
+import { EmptyState, ErrorState, Skeleton } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { PAYMENT_METHODS, TRACKING_STAGES } from '@/lib/orderTypes';
 import { useRefList } from '@/features/settings/hooks/useSettings';
 import { refName } from '@/features/settings/api/settings.api';
-import { useRequestFile } from '@/features/requests/hooks/useRequestFiles';
+import { useRequestBackend, useRequestFile } from '@/features/requests/hooks/useRequestFiles';
 import { periodLabel } from '@/features/requests/lib/period';
-import { asksForGuests, asksForHouseholdCare, isOccasion } from '@/features/requests/types';
+import { serviceDetailRows } from '@/features/requests/lib/serviceDetails';
+import { bookedRangesOf } from '@/features/catalog/lib/availability';
+import { RatingBadge, StarRow } from '@/features/rating/components/RatingParts';
+import { ReviewForm } from '@/features/rating/components/ReviewForm';
+import { useReviewEligibility } from '@/features/rating/hooks/useRatings';
+import {
+  DUPLICATE_REVIEW_MESSAGE,
+  REVIEW_NOT_READY_MESSAGE,
+} from '@/features/rating/services/reviewService';
 import type { RequestFile } from '@/features/requests/types';
 
 /**
@@ -59,7 +77,7 @@ export default function RequestSummary() {
           <ErrorState description="تعذّر تحميل ملف الطلب." onRetry={() => void refetch()} />
         ) : !data ? (
           <EmptyState
-            icon="🔍"
+            icon={SearchX}
             title="لا يوجد طلب بهذا الرقم"
             description={`لم نجد ملفًا للطلب ${requestNo}. تأكّد من رقم الطلب أو ابدأ طلبًا جديدًا.`}
             action={
@@ -80,10 +98,15 @@ export default function RequestSummary() {
 }
 
 function RequestBody({ file }: { file: RequestFile }) {
+  const { backend } = useRequestBackend();
   const beneficiaryTypes = useRefList('beneficiary_types');
   const occasionTypes = useRefList('occasion_types');
   const careNeeds = useRefList('care_needs');
-  const { place } = file;
+  const { details } = file;
+  const detailRows = serviceDetailRows(details, {
+    beneficiary: (code) => refName(beneficiaryTypes.data ?? [], code),
+    occasion: (code) => refName(occasionTypes.data ?? [], code),
+  });
   const paymentLabel =
     PAYMENT_METHODS.find((m) => m.key === file.payment_method)?.label ?? file.payment_method;
 
@@ -103,6 +126,11 @@ function RequestBody({ file }: { file: RequestFile }) {
             <span className="inline-flex items-center rounded-full bg-teal-100 px-3 py-1 text-xs font-bold text-teal">
               {file.status}
             </span>
+            {backend === 'mock' && (
+              <span className="mt-1.5 flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                <FlaskConical size={12} /> طلب تجريبي — بيانات عرض
+              </span>
+            )}
             <p className="num mt-2 text-lg font-bold text-gold-600">
               {sar(file.amounts.total)} <span className="text-xs font-normal">ر.س</span>
             </p>
@@ -114,7 +142,11 @@ function RequestBody({ file }: { file: RequestFile }) {
           <Info
             icon={Home}
             label="نوع المستفيد"
-            value={refName(beneficiaryTypes.data ?? [], place.beneficiaryType)}
+            value={
+              details.beneficiaryType
+                ? refName(beneficiaryTypes.data ?? [], details.beneficiaryType)
+                : '—'
+            }
           />
           <Info icon={MapPin} label="الفرع" value={file.branch || '—'} />
         </div>
@@ -136,44 +168,30 @@ function RequestBody({ file }: { file: RequestFile }) {
 
       {/* مكان الخدمة */}
       <Section icon={Home} title="بيانات مكان الخدمة">
-        <div className="grid gap-3 sm:grid-cols-3">
-          {isOccasion(place.beneficiaryType) && (
-            <Info
-              icon={Sparkles}
-              label="نوع المناسبة"
-              value={refName(occasionTypes.data ?? [], place.occasionType)}
-            />
-          )}
-          <Info icon={Home} label="عدد الأدوار" value={String(place.floors)} />
-          <Info icon={Home} label="عدد الغرف" value={String(place.rooms)} />
-          {asksForHouseholdCare(place.beneficiaryType) && (
-            <>
-              <Info icon={Baby} label="عدد الأطفال" value={String(place.children)} />
+        {detailRows.length === 0 ? (
+          <p className="text-xs text-purple">لم يُحدَّد نوع المستفيد لهذا الطلب.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {detailRows.map((row) => (
               <Info
-                icon={UsersRound}
-                label="كبار السن"
-                value={
-                  place.elderly === 0
-                    ? 'لا يوجد'
-                    : `${place.elderly}${place.elderlyCareNeeded ? ' · يحتاجون رعاية' : ''}`
-                }
+                key={row.label}
+                icon={DETAIL_ICON[row.key] ?? Home}
+                label={row.label}
+                value={row.key === 'date' ? dateAr(row.value) : row.value}
               />
-            </>
-          )}
-          {asksForGuests(place.beneficiaryType) && (
-            <Info icon={UsersRound} label="عدد الحضور" value={String(place.guests)} />
-          )}
-        </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-3">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-navy">
             <HeartHandshake size={14} /> احتياجات الرعاية
           </p>
-          {place.careNeeds.length === 0 ? (
+          {details.careNeeds.length === 0 ? (
             <p className="text-xs text-purple">لم تُحدَّد احتياجات رعاية.</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {place.careNeeds.map((code) => (
+              {details.careNeeds.map((code) => (
                 <span
                   key={code}
                   className="rounded-lg bg-navy-50 px-2.5 py-1 text-[11px] font-medium text-navy"
@@ -185,24 +203,30 @@ function RequestBody({ file }: { file: RequestFile }) {
           )}
         </div>
 
-        {place.notes && (
+        {details.notes && (
           <p className="mt-3 rounded-xl bg-navy-50 p-3 text-sm leading-relaxed text-navy-900">
-            {place.notes}
+            {details.notes}
           </p>
         )}
       </Section>
 
       {/* المدة */}
-      {file.period && (
+      {file.period?.startDate && (
         <Section icon={CalendarClock} title="مدة الطلب">
           <div className="grid gap-3 sm:grid-cols-3">
             <Info
               icon={CalendarClock}
-              label="تاريخ البداية"
+              label="تاريخ بداية الخدمة"
               value={dateAr(file.period.startDate)}
             />
-            <Info icon={CalendarClock} label="تاريخ النهاية" value={dateAr(file.period.endDate)} />
-            <Info icon={CalendarClock} label="المدة" value={periodLabel(file.period)} />
+            <Info icon={CalendarClock} label="مدة الخدمة" value={periodLabel(file.period)} />
+            {file.period.endDate && (
+              <Info
+                icon={CalendarClock}
+                label="تاريخ نهاية الخدمة"
+                value={dateAr(file.period.endDate)}
+              />
+            )}
           </div>
         </Section>
       )}
@@ -210,20 +234,29 @@ function RequestBody({ file }: { file: RequestFile }) {
       {/* العاملة */}
       <Section icon={UserRound} title="العاملة المخصّصة">
         {file.worker ? (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-navy-50 font-bold text-navy">
               {file.worker.full_name.charAt(0)}
             </span>
-            <div className="flex-1">
+            <div className="min-w-[11rem] flex-1">
               <p className="text-sm font-bold text-navy">{file.worker.full_name}</p>
               <p className="flex items-center gap-1 text-[11px] text-purple">
-                <span className="text-sm leading-none">{flagFor(file.worker.nationality)}</span>
                 {file.worker.profession} · {file.worker.nationality}
+              </p>
+              <WorkerAvailabilityLine file={file} workerId={file.worker.id} />
+              <p className="mt-0.5 flex flex-wrap items-center gap-2">
+                <RatingBadge workerId={file.worker.id} />
+                <Link
+                  to={`/order/workers/${file.worker.id}#reviews`}
+                  className="text-[11px] font-semibold text-navy hover:underline"
+                >
+                  عرض التقييمات
+                </Link>
               </p>
             </div>
             {file.match_score !== null && (
-              <span className="num rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-bold text-teal">
-                مطابقة {file.match_score}٪
+              <span className="rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-bold text-teal">
+                مطابقة <span className="num">{file.match_score}٪</span>
               </span>
             )}
             <Link
@@ -237,6 +270,13 @@ function RequestBody({ file }: { file: RequestFile }) {
           <p className="text-sm text-purple">
             لم تُحدَّد عاملة بعد — سيرشّح الفريق الأنسب لاحتياجك ويتواصل معك.
           </p>
+        )}
+        {file.worker && (
+          <RequestReviewBlock
+            requestNo={file.request_no}
+            workerId={file.worker.id}
+            workerName={file.worker.full_name}
+          />
         )}
       </Section>
 
@@ -272,6 +312,117 @@ function RequestBody({ file }: { file: RequestFile }) {
     </>
   );
 }
+
+/**
+ * تقييم العاملة من ملف الطلب: يظهر التقييم السابق إن وُجد (تقييم واحد لكل طلب
+ * وعاملة)، وإلا «أضف تقييمك» فقط إذا كانت الخدمة مكتملة في طلب التشغيل المرتبط؛
+ * غير ذلك تظهر «يتاح التقييم بعد اكتمال الخدمة». يرتبط التقييم برقم الطلب والعاملة.
+ */
+function RequestReviewBlock({
+  requestNo,
+  workerId,
+  workerName,
+}: {
+  requestNo: string;
+  workerId: string;
+  workerName: string;
+}) {
+  const { data: eligibility, isLoading } = useReviewEligibility(requestNo, workerId);
+  const [open, setOpen] = useState(false);
+  const [duplicate, setDuplicate] = useState(false);
+  if (isLoading || !eligibility) return null;
+  if (eligibility.status === 'reviewed') {
+    const existing = eligibility.review;
+    return (
+      <div className="mt-3 rounded-xl bg-navy-50 p-3 text-sm" aria-label="تقييمك لهذا الطلب">
+        {duplicate && (
+          <p role="alert" className="mb-1.5 text-xs font-semibold text-gold-600">
+            {DUPLICATE_REVIEW_MESSAGE}
+          </p>
+        )}
+        <p className="flex flex-wrap items-center gap-2 font-semibold text-navy">
+          <CheckCircle2 size={14} className="text-teal" /> قيّمت هذه العاملة لهذا الطلب
+          <StarRow value={existing.stars} />
+        </p>
+        {existing.comment && (
+          <p className="mt-1 break-words text-xs text-navy-900 [overflow-wrap:anywhere]">
+            {existing.comment}
+          </p>
+        )}
+      </div>
+    );
+  }
+  if (eligibility.status === 'not_completed') {
+    return (
+      <p
+        role="status"
+        className="mt-3 flex items-center gap-1.5 rounded-xl bg-navy-50 p-3 text-sm font-semibold text-navy"
+      >
+        <Clock size={15} aria-hidden className="shrink-0 text-purple" /> {REVIEW_NOT_READY_MESSAGE}
+      </p>
+    );
+  }
+  if (eligibility.status !== 'eligible') return null;
+  return (
+    <div className="mt-3">
+      {open ? (
+        <ReviewForm
+          requestNo={requestNo}
+          workerId={workerId}
+          workerName={workerName}
+          onDuplicate={() => setDuplicate(true)}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-gold px-4 py-2 text-sm font-bold text-gold-600 transition hover:bg-gold-100"
+        >
+          <Star size={15} /> أضف تقييمك
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * حالة توفّر العاملة لهذا الطلب: الحجز يُسجَّل عند إنشاء الطلب للفترة كاملة
+ * (ويُرفض الطلب إن تعارض)، فوجوده يعني أنها محجوزة لهذا الطلب طوال المدة.
+ */
+function WorkerAvailabilityLine({ file, workerId }: { file: RequestFile; workerId: string }) {
+  if (!file.period?.startDate) {
+    return (
+      <p className="mt-0.5 flex items-center gap-1 text-[11px] text-purple">
+        <CalendarClock size={11} /> يُحدَّد التوفّر عند تحديد مدة الخدمة
+      </p>
+    );
+  }
+  const reserved = bookedRangesOf(workerId).some((r) => r.request_no === file.request_no);
+  return reserved ? (
+    <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-teal">
+      <CalendarCheck size={11} /> متاحة ومحجوزة لطلبك طوال فترة الخدمة
+    </p>
+  ) : (
+    <p className="mt-0.5 flex items-center gap-1 text-[11px] text-gold-600">
+      <CalendarClock size={11} /> بانتظار تأكيد توفّر العاملة للفترة
+    </p>
+  );
+}
+
+/** أيقونة كل صف من بيانات المكان. */
+const DETAIL_ICON: Record<string, typeof Home> = {
+  beneficiary: Home,
+  occasion: Sparkles,
+  floors: Layers,
+  rooms: Home,
+  children: Baby,
+  elderly: UsersRound,
+  care: HeartHandshake,
+  type: Store,
+  sections: Building2,
+  people: UsersRound,
+  date: CalendarClock,
+};
 
 function Section({
   icon: Icon,

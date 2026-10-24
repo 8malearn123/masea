@@ -15,11 +15,24 @@ export interface ChatIntent {
 }
 
 /** تعليق أو استفسار مكتوب أرسله العميل عبر المساعد. */
+export type FeedbackStatus = 'new' | 'in_review' | 'closed';
+
+export const FEEDBACK_STATUS_LABEL: Record<FeedbackStatus, string> = {
+  new: 'جديدة',
+  in_review: 'قيد المراجعة',
+  closed: 'مغلقة',
+};
+
+/** ملاحظة عميل من المساعد — مرتبطة بطلب عند معرفته، وإلا «ملاحظة عامة». */
 export interface CustomerNote {
+  /** رقم مرجعي ثابت (NOTE-0001…) يتابع به العميل. */
   id: string;
   kind: 'inquiry' | 'comment';
   body: string;
   created_at: string;
+  /** رقم الطلب المرتبط — null = ملاحظة عامة (لا يُختلق رقم). */
+  request_no: string | null;
+  status: FeedbackStatus;
 }
 
 export const CHAT_INTENTS: ChatIntent[] = [
@@ -136,7 +149,7 @@ export const CHAT_INTENTS: ChatIntent[] = [
 
 /** إجابة افتراضية حين لا تُطابَق أي نيّة. */
 export const CHAT_FALLBACK =
-  'ما وصلني سؤالك بوضوح. تقدر تسألني عن الخدمات، الأسعار، توفّر العاملة، مدة الطلب، أو تكتب تعليقك وسأحوّله لفريق خدمة العملاء.';
+  'ما وصلني سؤالك بوضوح. تقدر تسألني عن الخدمات، الأسعار، توفّر العاملة، مدة الطلب، أو تكتب ملاحظتك وأسجّلها برقم مرجعي في صندوق ملاحظات العرض.';
 
 /** رسالة الترحيب واقتراحات البداية. */
 export const CHAT_GREETING =
@@ -150,16 +163,43 @@ export const CHAT_SUGGESTIONS = [
 ];
 
 /* -------------------------- استفسارات وتعليقات العملاء -------------------------- */
-const NOTES: CustomerNote[] = [];
-let noteSeq = 1;
+/**
+ * صندوق ملاحظات العرض (في الذاكرة). ملاحظتان تجريبيتان واضحتان: واحدة مرتبطة
+ * بطلب العرض الجاهز وأخرى عامة — لتظهر الحالتان في صندوق الموظفين.
+ */
+const NOTES: CustomerNote[] = [
+  {
+    id: 'NOTE-0002',
+    kind: 'comment',
+    body: 'هل يمكن تغيير موعد المباشرة يومًا واحدًا؟',
+    created_at: '2026-10-02T09:30:00Z',
+    request_no: 'REQ-2A7F41C9',
+    status: 'in_review',
+  },
+  {
+    id: 'NOTE-0001',
+    kind: 'inquiry',
+    body: 'هل توفّرون عاملات يتحدثن الأوردو؟',
+    created_at: '2026-09-28T17:05:00Z',
+    request_no: null,
+    status: 'new',
+  },
+];
+let noteSeq = NOTES.length + 1;
 
 /** حفظ تعليق/استفسار العميل وإرجاع رقم مرجعي يتابع به. */
-export function saveCustomerNote(kind: CustomerNote['kind'], body: string): CustomerNote {
+export function saveCustomerNote(
+  kind: CustomerNote['kind'],
+  body: string,
+  requestNo: string | null = null,
+): CustomerNote {
   const note: CustomerNote = {
     id: `NOTE-${String(noteSeq++).padStart(4, '0')}`,
     kind,
     body: body.trim(),
     created_at: new Date().toISOString(),
+    request_no: requestNo,
+    status: 'new',
   };
   NOTES.unshift(note);
   return note;
@@ -167,4 +207,12 @@ export function saveCustomerNote(kind: CustomerNote['kind'], body: string): Cust
 
 export function listCustomerNotes(): CustomerNote[] {
   return [...NOTES];
+}
+
+/** تغيير حالة ملاحظة (صندوق الموظفين). */
+export function setCustomerNoteStatus(id: string, status: FeedbackStatus): CustomerNote {
+  const note = NOTES.find((n) => n.id === id);
+  if (!note) throw new Error('الملاحظة غير موجودة');
+  note.status = status;
+  return { ...note };
 }
