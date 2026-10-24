@@ -10,9 +10,11 @@ import {
   getSignatures,
   getTemplates,
   listContracts,
+  renewContract,
   setMusanedNo,
   signContract,
   transitionContract,
+  updateDraft,
   type SignPayload,
 } from '@/features/contracts/api/contracts.api';
 import type {
@@ -22,6 +24,7 @@ import type {
   ContractStatus,
   ContractStatusHistory,
   CreateContractInput,
+  UpdateDraftInput,
 } from '@/features/contracts/types';
 
 const LIST_KEY = ['contracts', 'list'] as const;
@@ -70,22 +73,57 @@ export function useContractTemplates() {
   });
 }
 
+/** Persist a new draft (backend RPC or demo store), seed its caches, refresh the list. */
 export function useCreateContract() {
   const qc = useQueryClient();
-  const toast = useToast();
   return useMutation<ContractListItem, Error, CreateContractInput>({
-    mutationFn: async (input) => ({
-      ...(await createDraft(input)),
-      customer_name: null,
-      worker_name: null,
-    }),
+    mutationFn: (input) => createDraft(input),
     onSuccess: (created) => {
-      qc.setQueriesData<ContractListItem[]>({ queryKey: LIST_KEY }, (old) =>
-        old ? [created, ...old] : old,
-      );
-      toast.success('تم حفظ المسودة');
+      qc.setQueryData(contractKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: contractKeys.clauses(created.id) });
+      void qc.invalidateQueries({ queryKey: contractKeys.history(created.id) });
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
     },
-    onError: (e) => toast.error(e.message || 'تعذّر إنشاء العقد'),
+  });
+}
+
+/** Edit a draft's dates / branch. */
+export function useUpdateDraft(id: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, UpdateDraftInput>({
+    mutationFn: (patch) => updateDraft(id, patch),
+    onSuccess: (_d, patch) => {
+      qc.setQueryData<ContractListItem | null>(contractKeys.detail(id), (old) =>
+        old
+          ? {
+              ...old,
+              start_date: patch.start_date,
+              end_date: patch.end_date,
+              branch_id: patch.branch,
+            }
+          : old,
+      );
+      void qc.invalidateQueries({ queryKey: contractKeys.detail(id) });
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      toast.success('تم حفظ تعديلات المسودة');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ التعديلات'),
+  });
+}
+
+/** Renew → a new draft version linked to the original (signed terms stay immutable). */
+export function useRenewContract(id: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<ContractListItem, Error, void>({
+    mutationFn: () => renewContract(id),
+    onSuccess: (created) => {
+      qc.setQueryData(contractKeys.detail(created.id), created);
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      toast.success(`تم إنشاء مسودة التجديد (نسخة ${created.version})`);
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر تجديد العقد'),
   });
 }
 
@@ -95,19 +133,24 @@ export function useTransitionContract(id: string) {
   return useMutation<void, Error, ContractStatus>({
     mutationFn: (to) => transitionContract(id, to),
     onSuccess: (_data, to) => {
+      const prev = qc.getQueryData<ContractListItem | null>(contractKeys.detail(id));
       qc.setQueryData<ContractListItem | null>(contractKeys.detail(id), (old) =>
         old
           ? {
               ...old,
               status: to,
-              signed_at: to === 'signed' ? new Date().toISOString() : old.signed_at,
+              signed_at:
+                to === 'signed' || to === 'musaned_signed'
+                  ? new Date().toISOString()
+                  : old.signed_at,
             }
           : old,
       );
       qc.setQueryData<ContractStatusHistory[]>(contractKeys.history(id), (old = []) => [
         ...old,
-        historyEntry(id, null, to),
+        historyEntry(id, prev?.status ?? null, to),
       ]);
+      void qc.invalidateQueries({ queryKey: contractKeys.history(id) });
       void qc.invalidateQueries({ queryKey: LIST_KEY });
       toast.success('تم تحديث حالة العقد');
     },
@@ -180,6 +223,7 @@ export function useSignContract(id: string) {
         ),
         signatureRecord(id, 'company', 'ماسية الشرق للاستقدام', null, payload.ipAddress, at),
       ]);
+      void qc.invalidateQueries({ queryKey: contractKeys.signatures(id) });
       void qc.invalidateQueries({ queryKey: LIST_KEY });
       toast.success('تم توقيع العقد');
     },

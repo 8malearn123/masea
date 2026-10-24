@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   Star,
   Megaphone,
@@ -271,7 +271,11 @@ function AdminView() {
           <Star size={16} /> الفئات والمضاعفات
         </h2>
         <div className="space-y-2">
-          {TIERS.map((t) => item(`${t.label} (من ${sar(t.min_spend)} ر.س)`, `×${t.multiplier}`))}
+          {TIERS.map((t) => (
+            <Fragment key={t.tier}>
+              {item(`${t.label} (من ${sar(t.min_spend)} ر.س)`, `×${t.multiplier}`)}
+            </Fragment>
+          ))}
         </div>
         <h2 className="mb-2 mt-4 flex items-center gap-2 text-sm font-bold text-navy">
           <Gift size={16} /> الباقات

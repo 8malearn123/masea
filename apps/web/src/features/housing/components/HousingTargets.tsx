@@ -48,7 +48,7 @@ export function HousingTargets() {
   if (targets.length === 0) {
     return (
       <EmptyState
-        icon="🎯"
+        icon={Target}
         title="لا توجد مستهدفات معيّنة"
         description="تظهر هنا مستهدفات السكن التي تُسندها الإدارة لك (نسبة الإشغال والحضور)."
       />

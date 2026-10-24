@@ -2,6 +2,15 @@ import type { BadgeTone } from '@/shared/ui/Badge';
 
 export type RatingTarget = 'worker' | 'driver' | 'service' | 'branch';
 
+/**
+ * Moderation state (supabase `ratings.status`, 0053). Nothing is published
+ * automatically: a new review is `pending` until management approves it.
+ */
+export type ReviewStatus = 'pending' | 'approved' | 'rejected';
+
+/** Moderation actions available from the admin queue. */
+export type ModerationAction = 'approve' | 'reject' | 'pending' | 'delete' | 'restore';
+
 export interface Rating {
   id: string;
   customer_name: string;
@@ -12,6 +21,12 @@ export interface Rating {
   stars: number; // 1..5
   comment: string;
   created_at: string;
+  status: ReviewStatus;
+  /** ملاحظة المراجِع (سبب الرفض مثلاً) — لا تظهر للزوار. */
+  moderation_note?: string | null;
+  moderated_at?: string | null;
+  /** حذف = تعطيل (soft delete) — يختفي من الموقع ويبقى في السجل. */
+  deleted_at?: string | null;
 }
 
 /** ملخّص تقييمات عاملة واحدة. */
@@ -41,4 +56,21 @@ export function starTone(stars: number): BadgeTone {
   if (stars >= 4) return 'success';
   if (stars >= 3) return 'gold';
   return 'danger';
+}
+
+export const REVIEW_STATUS_LABEL: Record<ReviewStatus, string> = {
+  pending: 'قيد المراجعة',
+  approved: 'منشور',
+  rejected: 'مرفوض',
+};
+
+export const REVIEW_STATUS_TONE: Record<ReviewStatus, BadgeTone> = {
+  pending: 'gold',
+  approved: 'success',
+  rejected: 'danger',
+};
+
+/** Only approved, non-deleted reviews are ever shown to visitors. */
+export function isPublished(r: Pick<Rating, 'status' | 'deleted_at'>): boolean {
+  return r.status === 'approved' && !r.deleted_at;
 }

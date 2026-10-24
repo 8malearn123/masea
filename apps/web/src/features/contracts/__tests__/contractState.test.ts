@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canTransition, isEditable, nextStatuses } from '@/features/contracts/lib/contractState';
+import {
+  canTransition,
+  isEditable,
+  isRenewable,
+  needsConfirmation,
+  nextStatuses,
+  transitionBlocker,
+} from '@/features/contracts/lib/contractState';
 import { formatContractNo, parseContractNo } from '@/features/contracts/lib/contractNo';
 import { renderClause } from '@/features/contracts/lib/clauses';
 
@@ -71,5 +78,43 @@ describe('clause variable substitution', () => {
       }),
     ).toBe('العميل محمد الأحمدي بمبلغ 18,400.00 ريال');
     expect(renderClause('قيمة {{missing}}', {})).toBe('قيمة {{missing}}');
+  });
+});
+
+describe('contract transition guards (transition_contract mirror)', () => {
+  it('requires the Musaned number before marking the contract created on مساند', () => {
+    const c = { status: 'draft' as const, musaned_contract_no: null };
+    expect(transitionBlocker(c, 'musaned_created', 'musaned')).toMatch(/رقم عقد مساند/);
+    expect(
+      transitionBlocker({ ...c, musaned_contract_no: '4062118045' }, 'musaned_created', 'musaned'),
+    ).toBeNull();
+  });
+
+  it('blocks transitions outside the origin track', () => {
+    const c = { status: 'draft' as const, musaned_contract_no: null };
+    expect(transitionBlocker(c, 'pending_approval', 'musaned')).not.toBeNull();
+    expect(transitionBlocker(c, 'pending_approval', 'internal')).toBeNull();
+  });
+
+  it('asks for confirmation on cancel / complete and renews live or finished contracts only', () => {
+    expect(needsConfirmation('cancelled')).toBe(true);
+    expect(needsConfirmation('completed')).toBe(true);
+    expect(needsConfirmation('approved')).toBe(false);
+    expect(isRenewable('active')).toBe(true);
+    expect(isRenewable('completed')).toBe(true);
+    expect(isRenewable('draft')).toBe(false);
+    expect(isRenewable('cancelled')).toBe(false);
+  });
+});
+
+describe('contract end date', () => {
+  it('computes inclusive end dates for months and days', async () => {
+    const { contractEndDate } = await import('@/features/contracts/lib/contractDates');
+    expect(contractEndDate('2026-11-01', { unit: 'month', count: 3 })).toBe('2027-01-31');
+    expect(contractEndDate('2026-01-31', { unit: 'month', count: 1 })).toBe('2026-02-28');
+    expect(contractEndDate('2026-11-05', { unit: 'day', count: 3 })).toBe('2026-11-07');
+    expect(contractEndDate('2026-11-05', { unit: 'day', count: 1 })).toBe('2026-11-05');
+    expect(contractEndDate('', { unit: 'day', count: 3 })).toBeNull();
+    expect(contractEndDate('2026-11-05', null)).toBeNull();
   });
 });

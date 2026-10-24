@@ -35,6 +35,7 @@ export function isIgnorableWriteError(message: string): boolean {
     s.includes('uuid') ||
     s.includes('permission denied') || // RLS not seeded for demo rows
     s.includes('abort') || // demo mode / request timeout — backend unreachable
+    s.includes('offline') || // the demo-mode fetch guard ("demo mode — offline")
     s.includes('failed to fetch') ||
     s.includes('networkerror') ||
     s.includes('load failed') // Safari's network-failure message

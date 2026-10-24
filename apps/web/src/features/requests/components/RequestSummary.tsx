@@ -10,6 +10,7 @@ import {
   Home,
   MapPin,
   Phone,
+  SearchX,
   Sparkles,
   UserRound,
   UsersRound,
@@ -59,7 +60,7 @@ export default function RequestSummary() {
           <ErrorState description="تعذّر تحميل ملف الطلب." onRetry={() => void refetch()} />
         ) : !data ? (
           <EmptyState
-            icon="🔍"
+            icon={SearchX}
             title="لا يوجد طلب بهذا الرقم"
             description={`لم نجد ملفًا للطلب ${requestNo}. تأكّد من رقم الطلب أو ابدأ طلبًا جديدًا.`}
             action={

@@ -24,7 +24,7 @@ where name in (
   'قالب عقد نقل الكفالة'
 );
 
-insert into contract_templates (service_code, name, clauses, is_active) values
+insert into contract_templates (service_code, name, clauses) values
   ('recruitment', 'عقد استقدام — شامل',
     '["أُبرم هذا العقد بين شركة ماسية الشرق للاستقدام (الطرف الأول) والعميل {{customer_name}} (الطرف الثاني)، وكلاهما بكامل الأهلية المعتبرة شرعاً ونظاماً.",
       "يلتزم الطرف الأول باستقدام عاملة منزلية من جنسية {{nationality}} لمهنة {{profession}} لصالح الطرف الثاني وفق أنظمة وزارة الموارد البشرية والتنمية الاجتماعية.",

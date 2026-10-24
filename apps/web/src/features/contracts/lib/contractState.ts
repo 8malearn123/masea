@@ -88,3 +88,30 @@ export const CONTRACT_STATUS_TONE: Record<ContractStatus, BadgeTone> = {
   completed: 'navy',
   cancelled: 'danger',
 };
+
+/**
+ * Business guards on top of the allowed transitions — a mirror of the checks in
+ * the backend `transition_contract` (0052). Returns the reason a transition is
+ * blocked right now, or null when it may proceed.
+ */
+export function transitionBlocker(
+  contract: { status: ContractStatus; musaned_contract_no: string | null },
+  to: ContractStatus,
+  origin: ContractOrigin = 'internal',
+): string | null {
+  if (!canTransition(contract.status, to, origin)) return 'انتقال غير مسموح من الحالة الحالية';
+  if (to === 'musaned_created' && !contract.musaned_contract_no?.trim()) {
+    return 'أدخل رقم عقد مساند أولاً ثم سجّل الإنشاء على المنصة';
+  }
+  return null;
+}
+
+/** Destructive / final transitions that need an explicit confirmation. */
+export function needsConfirmation(to: ContractStatus): boolean {
+  return to === 'cancelled' || to === 'completed';
+}
+
+/** A contract may be renewed (new version) once it's live or finished. */
+export function isRenewable(status: ContractStatus): boolean {
+  return status === 'active' || status === 'completed';
+}

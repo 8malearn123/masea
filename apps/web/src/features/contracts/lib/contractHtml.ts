@@ -1,5 +1,5 @@
 import { sar } from '@/shared/lib/format';
-import { SERVICE_LABEL, type ContractListItem } from '@/features/contracts/types';
+import { branchLabel, SERVICE_LABEL, type ContractListItem } from '@/features/contracts/types';
 import { CONTRACT_STATUS_LABEL } from '@/features/contracts/lib/contractState';
 
 /**
@@ -58,7 +58,7 @@ export function buildContractHtml(contract: ContractListItem, clauses: string[])
   <h1>عقد ${escapeHtml(contract.service_code ? SERVICE_LABEL[contract.service_code] : '')}</h1>
   <table>
     <tr><td class="k">العميل</td><td>${escapeHtml(contract.customer_name ?? '—')}</td></tr>
-    <tr><td class="k">الفرع</td><td>${escapeHtml(contract.branch_id ?? '—')}</td></tr>
+    <tr><td class="k">الفرع</td><td>${escapeHtml(branchLabel(contract))}</td></tr>
     <tr><td class="k">تاريخ البداية</td><td class="num">${escapeHtml(contract.start_date ?? '—')}</td></tr>
     <tr><td class="k">الحالة</td><td>${CONTRACT_STATUS_LABEL[contract.status]}</td></tr>
   </table>
@@ -67,6 +67,12 @@ export function buildContractHtml(contract: ContractListItem, clauses: string[])
   <ol>${rows || '<li>لا توجد بنود.</li>'}</ol>
 
   <div class="totals">
+    ${
+      contract.discount_amount > 0
+        ? `<div>السعر قبل الخصم: <span class="num">${sar(contract.gross_amount ?? contract.base_amount + contract.discount_amount)}</span> ر.س</div>
+    <div>الخصم المعتمد: <span class="num">${sar(contract.discount_amount)}</span> ر.س</div>`
+        : ''
+    }
     <div>المبلغ الأساسي: <span class="num">${sar(contract.base_amount)}</span> ر.س</div>
     <div>ضريبة القيمة المضافة (15%): <span class="num">${sar(contract.vat_amount)}</span> ر.س</div>
     <div class="t">الإجمالي: <span class="num">${sar(contract.total_amount)}</span> ر.س</div>

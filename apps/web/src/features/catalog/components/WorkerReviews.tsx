@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MessageSquare, Send, Star } from 'lucide-react';
+import { Clock, MessageSquare, Send, Star } from 'lucide-react';
 import { EmptyState, ErrorState, Skeleton } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
 import { useAddWorkerReview, useWorkerReviews } from '@/features/rating/hooks/useRatings';
@@ -19,8 +19,10 @@ export function WorkerReviews({ workerId, workerName }: { workerId: string; work
   const [customerName, setCustomerName] = useState('');
   const [comment, setComment] = useState('');
 
+  const [submitted, setSubmitted] = useState(false);
+
   const submit = () => {
-    if (!comment.trim()) return;
+    if (comment.trim().length < 3) return;
     add.mutate(
       { workerName, customerName, stars, comment },
       {
@@ -29,6 +31,7 @@ export function WorkerReviews({ workerId, workerName }: { workerId: string; work
           setCustomerName('');
           setStars(5);
           setOpen(false);
+          setSubmitted(true);
         },
       },
     );
@@ -103,15 +106,24 @@ export function WorkerReviews({ workerId, workerName }: { workerId: string; work
             placeholder="اكتب تجربتك مع العاملة…"
             className="w-full rounded-xl border border-navy-100 px-3.5 py-2.5 text-sm outline-none focus:border-navy"
           />
+          <p className="text-[11px] text-purple">
+            تُراجَع التعليقات من الإدارة قبل نشرها على الموقع.
+          </p>
           <button
             type="button"
             onClick={submit}
-            disabled={!comment.trim() || add.isPending}
+            disabled={comment.trim().length < 3 || add.isPending}
             className="inline-flex items-center gap-1.5 rounded-xl bg-gold px-4 py-2 text-xs font-bold text-white transition hover:bg-gold-600 disabled:opacity-50"
           >
             <Send size={14} /> {add.isPending ? 'جارٍ الإرسال…' : 'إرسال التقييم'}
           </button>
         </div>
+      )}
+
+      {submitted && (
+        <p className="mb-4 flex items-center gap-1.5 rounded-xl bg-teal-100 px-3 py-2 text-xs text-teal">
+          <Clock size={14} /> استلمنا تقييمك — سيظهر هنا بعد مراجعته والموافقة عليه من الإدارة.
+        </p>
       )}
 
       {/* القائمة */}
@@ -125,7 +137,7 @@ export function WorkerReviews({ workerId, workerName }: { workerId: string; work
         <ErrorState description="تعذّر تحميل التقييمات." onRetry={() => void refetch()} />
       ) : reviews.length === 0 ? (
         <EmptyState
-          icon="💬"
+          icon={MessageSquare}
           title="لا توجد تقييمات بعد"
           description="كن أول من يشارك تجربته مع هذه العاملة."
         />

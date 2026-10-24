@@ -32,6 +32,7 @@ import {
   type ContractTab,
 } from '@/features/contracts/lib/contractInsights';
 import {
+  branchLabel,
   SERVICE_LABEL,
   type ContractFilters,
   type ContractListItem,
@@ -463,7 +464,7 @@ function ContractTable({
       cell: (r) => (
         <div>
           <span className="block text-sm text-navy-900">{r.worker_name ?? '—'}</span>
-          <span className="block text-[11px] text-purple">{r.branch_id ?? '—'}</span>
+          <span className="block text-[11px] text-purple">{branchLabel(r)}</span>
         </div>
       ),
     },
@@ -599,7 +600,7 @@ function OfficeContractsList() {
       header: 'الخدمة',
       cell: (r) => (r.service_code ? SERVICE_LABEL[r.service_code] : '—'),
     },
-    { key: 'branch_id', header: 'الفرع', cell: (r) => r.branch_id ?? '—' },
+    { key: 'branch_id', header: 'الفرع', cell: (r) => branchLabel(r) },
     {
       key: 'recruitment_stage',
       header: 'مرحلة الاستقدام',

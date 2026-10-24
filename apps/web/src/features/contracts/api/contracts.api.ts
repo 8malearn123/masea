@@ -1,9 +1,11 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { fallbackPrice } from '@/shared/lib/pricing';
+import { DEFAULT_PRICING_CONFIG, fallbackBase, priceFromBase } from '@/shared/lib/pricing';
+import { listPromotions } from '@/features/pricing/api/promotions.api';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
 import { DEFAULT_SERVICE_ORIGIN } from '@/features/contracts/lib/contractOrigin';
+import { transitionBlocker } from '@/features/contracts/lib/contractState';
 import type {
   Contract,
   ContractClause,
@@ -15,7 +17,9 @@ import type {
   ContractStatusHistory,
   ContractTemplate,
   CreateContractInput,
+  UpdateDraftInput,
 } from '@/features/contracts/types';
+import { branchLabel } from '@/features/contracts/types';
 
 /** Identity + signature payload captured when signing a contract. */
 export interface SignPayload {
@@ -63,6 +67,9 @@ function mk(o: {
     base_amount: o.base_amount,
     vat_amount: vat,
     total_amount: total,
+    gross_amount: o.base_amount,
+    discount_amount: 0,
+    promotion_id: null,
     amount_paid: o.amount_paid ?? total,
     status: o.status,
     version: 1,
@@ -385,7 +392,7 @@ function applyFilters(rows: ContractListItem[], f: ContractFilters): ContractLis
   return rows.filter((r) => {
     if (f.status !== 'all' && r.status !== f.status) return false;
     if (f.service !== 'all' && r.service_code !== f.service) return false;
-    if (f.branch !== 'all' && r.branch_id !== f.branch) return false;
+    if (f.branch !== 'all' && branchLabel(r) !== f.branch) return false;
     if (f.search.trim()) {
       const q = f.search.trim();
       const hay = `${r.contract_no ?? ''} ${r.customer_name ?? ''}`;
@@ -397,6 +404,7 @@ function applyFilters(rows: ContractListItem[], f: ContractFilters): ContractLis
 
 interface RawRow extends Contract {
   customers: { full_name: string | null } | null;
+  branches: { city: string | null } | null;
 }
 
 /**
@@ -418,38 +426,46 @@ export async function listContracts(filters: ContractFilters): Promise<ContractL
   try {
     const { data, error } = await supabase
       .from('contracts')
-      .select('*, customers(full_name)')
+      .select('*, customers(full_name), branches(city)')
       .not('contract_no', 'is', null)
       .order('created_at', { ascending: false });
     if (!error && data && data.length > 0) {
-      const rows = (data as RawRow[]).map(({ customers, ...rest }) => ({
+      const rows = (data as RawRow[]).map(({ customers, branches, ...rest }) => ({
         ...rest,
         customer_name: customers?.full_name ?? null,
         worker_name: null,
+        branch_name: branches?.city ?? null,
       }));
       return applyFilters(scopeForViewer(rows), filters);
     }
   } catch {
     /* fall through */
   }
-  return applyFilters(scopeForViewer(FALLBACK), filters);
+  return applyFilters(scopeForViewer(FALLBACK), filters).map((c) => ({ ...c }));
 }
 
 export async function getContract(id: string): Promise<ContractListItem | null> {
   try {
     const { data, error } = await supabase
       .from('contracts')
-      .select('*, customers(full_name)')
+      .select('*, customers(full_name), branches(city)')
       .eq('id', id)
       .single();
     if (!error && data) {
-      const { customers, ...rest } = data as RawRow;
-      return { ...rest, customer_name: customers?.full_name ?? null, worker_name: null };
+      const { customers, branches, ...rest } = data as RawRow;
+      return {
+        ...rest,
+        customer_name: customers?.full_name ?? null,
+        worker_name: null,
+        branch_name: branches?.city ?? null,
+      };
     }
   } catch {
     /* fall through */
   }
-  return FALLBACK.find((c) => c.id === id) ?? null;
+  // same viewer scope as the list (external office sees only its assigned contracts)
+  const row = scopeForViewer(FALLBACK).find((c) => c.id === id);
+  return row ? { ...row } : null;
 }
 
 export async function getClauses(contractId: string): Promise<ContractClause[]> {
@@ -463,7 +479,7 @@ export async function getClauses(contractId: string): Promise<ContractClause[]> 
   } catch {
     /* fall through */
   }
-  return FALLBACK_CLAUSES[contractId] ?? [];
+  return [...(FALLBACK_CLAUSES[contractId] ?? [])];
 }
 
 export async function getHistory(contractId: string): Promise<ContractStatusHistory[]> {
@@ -477,7 +493,7 @@ export async function getHistory(contractId: string): Promise<ContractStatusHist
   } catch {
     /* fall through */
   }
-  if (FALLBACK_HISTORY[contractId]) return FALLBACK_HISTORY[contractId];
+  if (FALLBACK_HISTORY[contractId]) return [...FALLBACK_HISTORY[contractId]];
   const c = FALLBACK.find((x) => x.id === contractId);
   return c ? synthHistory(c) : [];
 }
@@ -493,7 +509,7 @@ export async function getSignatures(contractId: string): Promise<ContractSignatu
   } catch {
     /* fall through */
   }
-  return FALLBACK_SIGNATURES[contractId] ?? [];
+  return [...(FALLBACK_SIGNATURES[contractId] ?? [])];
 }
 
 export async function getTemplates(): Promise<ContractTemplate[]> {
@@ -510,33 +526,76 @@ export async function getTemplates(): Promise<ContractTemplate[]> {
 }
 
 /* ------------------------------ mutations -------------------------------- */
-function localDraft(input: CreateContractInput): Contract {
-  const price = fallbackPrice(input.service_code, {
+/** Arabic/Postgres error → message for the user (strips the "ERROR:" noise). */
+function rpcError(message: string): Error {
+  return new Error(message.replace(/^.*?\bERROR:\s*/, '').trim() || 'تعذّر تنفيذ العملية');
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+/** Demo store: make sure a contract has an explicit (mutable) history trail. */
+function demoHistory(c: ContractListItem): ContractStatusHistory[] {
+  FALLBACK_HISTORY[c.id] ??= synthHistory(c);
+  return FALLBACK_HISTORY[c.id] ?? [];
+}
+
+function pushDemoHistory(c: ContractListItem, to: ContractStatus): void {
+  demoHistory(c).push({
+    id: `h-${c.id}-${Date.now()}`,
+    contract_id: c.id,
+    from_status: c.status,
+    to_status: to,
+    changed_by: null,
+    created_at: nowIso(),
+  });
+}
+
+/**
+ * Demo-mode draft — priced with the same layered mirror as calc_price, the
+ * predefined discount re-validated here, then registered in the in-memory store
+ * so the list, detail, clauses and history all stay consistent after refetch.
+ */
+async function localDraft(input: CreateContractInput): Promise<ContractListItem> {
+  const promotions = input.promotion_id ? await listPromotions() : [];
+  const promotion = promotions.find((p) => p.id === input.promotion_id) ?? null;
+  const base = fallbackBase(input.service_code, {
     nationality: input.nationality,
     profession: input.profession,
-    quantity: input.quantity,
+    quantity: input.quantity ?? 1,
   });
-  return {
-    id: `local-${Date.now()}`,
+  const price = priceFromBase(input.service_code, base, { promotion }, DEFAULT_PRICING_CONFIG);
+  if (input.promotion_id && promotion && price.discounts === 0) {
+    throw new Error('لا يمكن تطبيق الخصم المختار على هذا العقد');
+  }
+  const id = `local-${Date.now()}`;
+  const item: ContractListItem = {
+    id,
     contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
     service_code: input.service_code,
-    template_id: null,
+    template_id: input.template_id ?? null,
     customer_id: input.customer_id,
-    worker_id: input.worker_id ?? null,
-    branch_id: input.branch_id,
+    worker_id: null,
+    branch_id: input.branch,
     created_by: null,
     start_date: input.start_date,
     end_date: input.end_date ?? null,
-    base_amount: price.base,
+    base_amount: price.net,
     vat_amount: price.vat,
     total_amount: price.total,
+    gross_amount: price.base,
+    discount_amount: price.discounts,
+    promotion_id: price.discounts > 0 ? (promotion?.id ?? null) : null,
     amount_paid: 0,
     status: 'draft',
     version: 1,
     parent_contract_id: null,
     signed_at: null,
-    musaned_contract_no: input.musaned_contract_no ?? null,
-    created_at: new Date().toISOString(),
+    musaned_contract_no: input.musaned_contract_no?.trim() || null,
+    created_at: nowIso(),
+    customer_name: input.customer_name ?? null,
+    worker_name: input.worker_name ?? null,
     assigned_office_id: null,
     assigned_at: null,
     recruitment_stage: null,
@@ -544,39 +603,37 @@ function localDraft(input: CreateContractInput): Contract {
     expected_arrival_date: null,
     flight_no: null,
   };
+  FALLBACK.unshift(item);
+  FALLBACK_CLAUSES[id] = (input.clauses ?? []).map((body, i) => ({
+    id: `cl-${id}-${i}`,
+    contract_id: id,
+    sort_order: i,
+    body,
+  }));
+  FALLBACK_HISTORY[id] = [
+    {
+      id: `h-${id}-0`,
+      contract_id: id,
+      from_status: null,
+      to_status: 'draft',
+      changed_by: null,
+      created_at: item.created_at,
+    },
+  ];
+  return { ...item };
 }
 
-export async function createDraft(input: CreateContractInput): Promise<Contract> {
+/** Create a draft atomically in the backend (price · number · clauses · history). */
+export async function createDraft(input: CreateContractInput): Promise<ContractListItem> {
+  const { clauses = [], customer_name, worker_name, ...rest } = input;
   try {
-    const { data: priceData } = await supabase.rpc('calc_contract_price', {
-      p_service_code: input.service_code,
-      p_params: {
-        nationality: input.nationality,
-        profession: input.profession,
-        quantity: input.quantity,
-      },
+    const { data, error } = await supabase.rpc('create_contract_draft', {
+      p_input: rest,
+      p_clauses: clauses,
     });
-    const price = priceData as { base: number; vat: number; total: number } | null;
-    const { data: noData } = await supabase.rpc('generate_contract_no');
-    const { data, error } = await supabase
-      .from('contracts')
-      .insert({
-        contract_no: noData as string,
-        service_code: input.service_code,
-        template_id: null,
-        customer_id: input.customer_id,
-        worker_id: input.worker_id ?? null,
-        branch_id: input.branch_id,
-        start_date: input.start_date,
-        end_date: input.end_date ?? null,
-        base_amount: price?.base ?? 0,
-        musaned_contract_no: input.musaned_contract_no ?? null,
-        status: 'draft',
-      })
-      .select('*')
-      .single();
-    if (error) throw new Error(error.message);
-    return data as Contract;
+    if (error) throw rpcError(error.message);
+    const row = data as Contract;
+    return { ...row, customer_name: customer_name ?? null, worker_name: worker_name ?? null };
   } catch (e) {
     const msg = e instanceof Error ? e.message : '';
     if (!isIgnorableWriteError(msg)) throw e;
@@ -584,13 +641,131 @@ export async function createDraft(input: CreateContractInput): Promise<Contract>
   }
 }
 
+/** Edit a DRAFT's dates / branch (signed contracts are immutable → renew instead). */
+export async function updateDraft(id: string, patch: UpdateDraftInput): Promise<void> {
+  if (isDemoId(id)) {
+    const c = FALLBACK.find((x) => x.id === id);
+    if (c && c.status !== 'draft') throw new Error('لا يُعدَّل إلا العقد في حالة المسودة');
+    demoMutateContract(id, {
+      start_date: patch.start_date,
+      end_date: patch.end_date,
+      branch_id: patch.branch,
+    });
+    return;
+  }
+  const { error } = await supabase.rpc('update_contract_draft', {
+    p_contract_id: id,
+    p_patch: patch,
+  });
+  if (error && !isIgnorableWriteError(error.message)) throw rpcError(error.message);
+}
+
+/** Renew an active/completed contract as a NEW draft version (versioning). */
+export async function renewContract(id: string): Promise<ContractListItem> {
+  if (!isDemoId(id)) {
+    const { data, error } = await supabase.rpc('renew_contract', { p_contract_id: id });
+    if (error && !isIgnorableWriteError(error.message)) throw rpcError(error.message);
+    if (!error && data) {
+      const parent = await getContract(id);
+      return {
+        ...(data as Contract),
+        customer_name: parent?.customer_name ?? null,
+        worker_name: parent?.worker_name ?? null,
+      };
+    }
+  }
+  const old = FALLBACK.find((c) => c.id === id);
+  if (!old) throw new Error('العقد غير موجود');
+  if (old.status !== 'active' && old.status !== 'completed') {
+    throw new Error('يُجدَّد العقد النشط أو المنتهي فقط');
+  }
+  if (FALLBACK.some((c) => c.parent_contract_id === id && c.status !== 'cancelled')) {
+    throw new Error('يوجد تجديد قائم لهذا العقد');
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const dayAfter = (d: string) => {
+    const x = new Date(`${d}T00:00:00Z`);
+    x.setUTCDate(x.getUTCDate() + 1);
+    return x.toISOString().slice(0, 10);
+  };
+  const start = old.end_date && dayAfter(old.end_date) > today ? dayAfter(old.end_date) : today;
+  let end: string | null = null;
+  if (old.start_date && old.end_date) {
+    const span = Date.parse(old.end_date) - Date.parse(old.start_date);
+    end = new Date(Date.parse(start) + span).toISOString().slice(0, 10);
+  }
+  const gross = old.gross_amount ?? old.base_amount;
+  const price = priceFromBase(old.service_code ?? 'monthly_rental', gross);
+  const nid = `local-${Date.now()}`;
+  const item: ContractListItem = {
+    ...old,
+    id: nid,
+    contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    status: 'draft',
+    version: old.version + 1,
+    parent_contract_id: old.id,
+    start_date: start,
+    end_date: end,
+    base_amount: price.net,
+    vat_amount: price.vat,
+    total_amount: price.total,
+    gross_amount: gross,
+    discount_amount: 0,
+    promotion_id: null,
+    amount_paid: 0,
+    signed_at: null,
+    musaned_contract_no: null,
+    created_at: nowIso(),
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+  };
+  FALLBACK.unshift(item);
+  FALLBACK_CLAUSES[nid] = (FALLBACK_CLAUSES[id] ?? []).map((c, i) => ({
+    ...c,
+    id: `cl-${nid}-${i}`,
+    contract_id: nid,
+  }));
+  FALLBACK_HISTORY[nid] = [
+    {
+      id: `h-${nid}-0`,
+      contract_id: nid,
+      from_status: null,
+      to_status: 'draft',
+      changed_by: null,
+      created_at: item.created_at,
+    },
+  ];
+  return { ...item };
+}
+
 export async function transitionContract(id: string, toStatus: ContractStatus): Promise<void> {
-  if (isDemoId(id)) return; // demo contract — optimistic status change is the truth
+  if (isDemoId(id)) {
+    // demo contract — persist in the in-memory store so a refetch keeps the change
+    const c = FALLBACK.find((x) => x.id === id);
+    if (c) {
+      const origin = DEFAULT_SERVICE_ORIGIN[c.service_code ?? 'monthly_rental'] ?? 'internal';
+      const blocked = transitionBlocker(c, toStatus, origin);
+      if (blocked) throw new Error(blocked);
+      if (toStatus === 'signed' && (FALLBACK_SIGNATURES[id]?.length ?? 0) < 2) {
+        throw new Error('لا يمكن تأكيد التوقيع قبل توقيع الطرفين');
+      }
+      pushDemoHistory(c, toStatus);
+      Object.assign(c, {
+        status: toStatus,
+        signed_at: toStatus === 'signed' || toStatus === 'musaned_signed' ? nowIso() : c.signed_at,
+      });
+    }
+    return;
+  }
   const { error } = await supabase.rpc('transition_contract', {
     p_contract_id: id,
     p_to_status: toStatus,
   });
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+  if (error && !isIgnorableWriteError(error.message)) throw rpcError(error.message);
 }
 
 /** Set/update the Musaned reference number (رقم عقد مساند) for a musaned-origin
@@ -605,14 +780,33 @@ export async function setMusanedNo(id: string, no: string): Promise<void> {
     p_contract_id: id,
     p_no: clean,
   });
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+  if (error && !isIgnorableWriteError(error.message)) throw rpcError(error.message);
 }
 
 /** Upload customer + company signatures to Storage, record them (with the
  *  signer's name, national id, and IP), then transition the contract to signed. */
 export async function signContract(contractId: string, payload: SignPayload): Promise<void> {
-  // Demo contract → skip Storage/DB; the UI marks it signed optimistically.
-  if (isDemoId(contractId)) return;
+  // Demo contract → skip Storage/DB; record the trail in the in-memory store.
+  if (isDemoId(contractId)) {
+    const at = nowIso();
+    const mkSig = (type: 'customer' | 'company', name: string, nid: string | null) => ({
+      id: `sig-${contractId}-${type}-${Date.now()}`,
+      contract_id: contractId,
+      signer_type: type,
+      signer_name: name,
+      national_id: nid,
+      ip_address: payload.ipAddress,
+      signature_image: null,
+      signed_at: at,
+    });
+    FALLBACK_SIGNATURES[contractId] = [
+      ...(FALLBACK_SIGNATURES[contractId] ?? []),
+      mkSig('customer', payload.customerName, payload.nationalId),
+      mkSig('company', 'ماسية الشرق للاستقدام', null),
+    ];
+    await transitionContract(contractId, 'signed');
+    return;
+  }
   const entries: Array<{
     type: 'customer' | 'company';
     dataUrl: string;
@@ -633,7 +827,7 @@ export async function signContract(contractId: string, payload: SignPayload): Pr
     const { error: upErr } = await supabase.storage
       .from('signatures')
       .upload(path, blob, { contentType: 'image/png', upsert: true });
-    if (upErr && !isIgnorableWriteError(upErr.message)) throw new Error(upErr.message);
+    if (upErr && !isIgnorableWriteError(upErr.message)) throw rpcError(upErr.message);
     const { error: insErr } = await supabase.from('contract_signatures').insert({
       contract_id: contractId,
       signer_type: type,
@@ -642,11 +836,11 @@ export async function signContract(contractId: string, payload: SignPayload): Pr
       ip_address: payload.ipAddress,
       signature_image: path,
     });
-    if (insErr && !isIgnorableWriteError(insErr.message)) throw new Error(insErr.message);
+    if (insErr && !isIgnorableWriteError(insErr.message)) throw rpcError(insErr.message);
   }
   const { error } = await supabase.rpc('transition_contract', {
     p_contract_id: contractId,
     p_to_status: 'signed',
   });
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+  if (error && !isIgnorableWriteError(error.message)) throw rpcError(error.message);
 }

@@ -1,4 +1,12 @@
-import type { Rating, RatingSummary } from '@/features/rating/types';
+import { supabase } from '@/shared/lib/supabase';
+import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import {
+  isPublished,
+  type ModerationAction,
+  type Rating,
+  type RatingSummary,
+  type ReviewStatus,
+} from '@/features/rating/types';
 
 const RATINGS: Rating[] = [
   {
@@ -9,6 +17,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w1',
     stars: 5,
     comment: 'عاملة ممتازة ومتعاونة جدًا',
+    status: 'approved',
     created_at: '2026-06-12T10:00:00Z',
   },
   {
@@ -18,6 +27,7 @@ const RATINGS: Rating[] = [
     target_name: 'الاستقدام',
     stars: 4,
     comment: 'الخدمة جيدة لكن المباشرة تأخرت قليلًا',
+    status: 'approved',
     created_at: '2026-06-11T18:00:00Z',
   },
   {
@@ -27,6 +37,7 @@ const RATINGS: Rating[] = [
     target_name: 'سعيد المطيري',
     stars: 5,
     comment: 'سائق ملتزم بالمواعيد',
+    status: 'approved',
     created_at: '2026-06-11T09:30:00Z',
   },
   {
@@ -37,6 +48,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w3',
     stars: 3,
     comment: 'أداء متوسط',
+    status: 'approved',
     created_at: '2026-06-10T20:15:00Z',
   },
   {
@@ -46,6 +58,7 @@ const RATINGS: Rating[] = [
     target_name: 'فرع نجران',
     stars: 5,
     comment: 'تعامل راقٍ من الموظفين',
+    status: 'approved',
     created_at: '2026-06-10T12:00:00Z',
   },
   {
@@ -55,6 +68,7 @@ const RATINGS: Rating[] = [
     target_name: 'التأجير الشهري',
     stars: 2,
     comment: 'تأخر في الرد على الاستفسارات',
+    status: 'approved',
     created_at: '2026-06-09T14:00:00Z',
   },
   {
@@ -65,6 +79,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w5',
     stars: 4,
     comment: 'جيدة في الأعمال المنزلية',
+    status: 'approved',
     created_at: '2026-06-08T16:40:00Z',
   },
   {
@@ -74,6 +89,7 @@ const RATINGS: Rating[] = [
     target_name: 'سعيد المطيري',
     stars: 4,
     comment: 'مهذب ومتعاون',
+    status: 'approved',
     created_at: '2026-06-08T08:00:00Z',
   },
   {
@@ -84,6 +100,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w1',
     stars: 5,
     comment: 'نظيفة ومرتّبة، وتعاملها مع الأطفال ممتاز.',
+    status: 'approved',
     created_at: '2026-07-02T09:10:00Z',
   },
   {
@@ -94,6 +111,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w1',
     stars: 4,
     comment: 'ملتزمة بالمواعيد، وتحتاج وقتًا للتأقلم مع المطبخ السعودي.',
+    status: 'approved',
     created_at: '2026-06-24T17:30:00Z',
   },
   {
@@ -104,6 +122,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w2',
     stars: 5,
     comment: 'خبرتها مع الرضّع واضحة، والوالدة ارتاحت لها من أول يوم.',
+    status: 'approved',
     created_at: '2026-08-05T11:00:00Z',
   },
   {
@@ -114,6 +133,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w2',
     stars: 4,
     comment: 'متعاونة، لكن نتمنى تحسّن لغتها العربية.',
+    status: 'approved',
     created_at: '2026-07-19T08:45:00Z',
   },
   {
@@ -124,6 +144,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w3',
     stars: 4,
     comment: 'شغلها في تنظيم البيت ممتاز، والطبخ مقبول.',
+    status: 'approved',
     created_at: '2026-08-12T15:20:00Z',
   },
   {
@@ -134,6 +155,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w4',
     stars: 5,
     comment: 'جهّزت وليمة لستين شخصًا بإتقان — ننصح بها للمناسبات.',
+    status: 'approved',
     created_at: '2026-09-02T19:00:00Z',
   },
   {
@@ -144,6 +166,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w4',
     stars: 5,
     comment: 'حلوياتها ممتازة والتقديم منظّم.',
+    status: 'approved',
     created_at: '2026-08-21T20:10:00Z',
   },
   {
@@ -154,6 +177,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w6',
     stars: 5,
     comment: 'صبورة جدًا مع الأطفال وتتابع واجباتهم.',
+    status: 'approved',
     created_at: '2026-07-28T16:00:00Z',
   },
   {
@@ -164,6 +188,7 @@ const RATINGS: Rating[] = [
     worker_id: 'w9',
     stars: 4,
     comment: 'اعتنت بوالدي خلال فترة النقاهة باهتمام.',
+    status: 'approved',
     created_at: '2026-09-08T10:25:00Z',
   },
   {
@@ -174,24 +199,80 @@ const RATINGS: Rating[] = [
     worker_id: 'w11',
     stars: 5,
     comment: 'خبرتها مع حديثي الولادة أراحتنا كثيرًا.',
+    status: 'approved',
     created_at: '2026-09-11T07:40:00Z',
+  },
+  // في قائمة المراجعة — لم تُنشر بعد (لا يظهر أي تعليق للزوار قبل موافقة الإدارة)
+  {
+    id: 'rt19',
+    customer_name: 'فيصل آل منصور',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 2,
+    status: 'pending',
+    comment: 'تأخرت المباشرة يومين عن الموعد المتفق عليه.',
+    created_at: '2026-10-20T13:15:00Z',
+  },
+  {
+    id: 'rt20',
+    customer_name: 'جواهر العسيري',
+    target_type: 'service',
+    target_name: 'التأجير اليومي',
+    stars: 5,
+    status: 'pending',
+    comment: 'خدمة سريعة في جازان، والعاملة وصلت في الوقت.',
+    created_at: '2026-10-22T09:40:00Z',
+  },
+  {
+    id: 'rt21',
+    customer_name: 'زائر',
+    target_type: 'worker',
+    target_name: 'غريس ريّس',
+    worker_id: 'w2',
+    stars: 1,
+    status: 'rejected',
+    moderation_note: 'تعليق مسيء وغير مرتبط بالخدمة.',
+    comment: 'تواصل معي على الرقم ٠٥٠٠٠٠٠٠٠٠ لعروض أرخص',
+    created_at: '2026-10-18T22:05:00Z',
   },
 ];
 
 const newest = (a: Rating, b: Rating) => (a.created_at < b.created_at ? 1 : -1);
 
+const COLUMNS =
+  'id, customer_name, target_type, target_name, worker_id, stars, comment, status, moderation_note, moderated_at, deleted_at, created_at';
+
+/** Backend read (RLS returns only approved rows to visitors) — null → use the demo store. */
+async function fetchRatings(workerId?: string): Promise<Rating[] | null> {
+  try {
+    let q = supabase.from('ratings').select(COLUMNS).order('created_at', { ascending: false });
+    if (workerId) q = q.eq('worker_id', workerId);
+    const { data, error } = await q;
+    if (!error && data && data.length > 0) return data as Rating[];
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+/** Admin moderation queue — every review incl. pending / rejected / deleted. */
 export async function listRatings(): Promise<Rating[]> {
-  return [...RATINGS].sort(newest);
+  return (await fetchRatings()) ?? RATINGS.map((r) => ({ ...r })).sort(newest);
 }
 
-/** تقييمات وتعليقات عاملة واحدة — الأحدث أولًا. */
+/** تقييمات وتعليقات عاملة واحدة المنشورة فقط (الموافَق عليها) — الأحدث أولًا. */
 export async function listWorkerReviews(workerId: string): Promise<Rating[]> {
-  return RATINGS.filter((r) => r.worker_id === workerId).sort(newest);
+  const rows = (await fetchRatings(workerId)) ?? RATINGS.filter((r) => r.worker_id === workerId);
+  return rows
+    .filter(isPublished)
+    .map((r) => ({ ...r }))
+    .sort(newest);
 }
 
-/** ملخّص تقييمات عاملة (متوسّط + توزيع) — يُحسب من نفس القائمة، بلا تخزين مكرّر. */
+/** ملخّص تقييمات عاملة (متوسّط + توزيع) — من التقييمات المنشورة فقط. */
 export function ratingSummaryOf(workerId: string): RatingSummary {
-  const rows = RATINGS.filter((r) => r.worker_id === workerId);
+  const rows = RATINGS.filter((r) => r.worker_id === workerId && isPublished(r));
   const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   rows.forEach((r) => {
     distribution[r.stars] = (distribution[r.stars] ?? 0) + 1;
@@ -205,7 +286,10 @@ export function ratingSummaryOf(workerId: string): RatingSummary {
 
 let reviewSeq = 1;
 
-/** إضافة تقييم/تعليق جديد على عاملة (Prototype — يُحفظ في نفس المخزن). */
+/**
+ * إضافة تقييم/تعليق جديد على عاملة — يُحفظ «قيد المراجعة» دائماً ولا يظهر
+ * للزوار حتى توافق عليه الإدارة من لوحة التحكم.
+ */
 export async function addWorkerReview(input: {
   workerId: string;
   workerName: string;
@@ -213,6 +297,9 @@ export async function addWorkerReview(input: {
   stars: number;
   comment: string;
 }): Promise<Rating> {
+  const comment = input.comment.trim();
+  if (comment.length < 3) throw new Error('اكتب تعليقاً واضحاً (3 أحرف على الأقل)');
+  if (comment.length > 1000) throw new Error('التعليق طويل جداً (الحد 1000 حرف)');
   const row: Rating = {
     id: `rt-new-${reviewSeq++}`,
     customer_name: input.customerName.trim() || 'عميل',
@@ -220,9 +307,66 @@ export async function addWorkerReview(input: {
     target_name: input.workerName,
     worker_id: input.workerId,
     stars: Math.min(5, Math.max(1, Math.round(input.stars))),
-    comment: input.comment.trim(),
+    comment,
+    status: 'pending',
     created_at: new Date().toISOString(),
   };
+  if (!isDemoId(input.workerId)) {
+    // No `.select()`: visitors can't read back a pending row (RLS shows approved only).
+    const { error } = await supabase.from('ratings').insert({
+      customer_name: row.customer_name,
+      target_type: row.target_type,
+      target_name: row.target_name,
+      worker_id: row.worker_id,
+      stars: row.stars,
+      comment: row.comment,
+      status: 'pending',
+    });
+    if (!error) return row;
+    if (!isIgnorableWriteError(error.message)) throw new Error(error.message);
+  }
   RATINGS.unshift(row);
-  return row;
+  return { ...row };
+}
+
+/** The resulting status after a moderation action (pure — mirrors moderate_rating()). */
+export function applyModeration(r: Rating, action: ModerationAction, note?: string): Rating {
+  const status: ReviewStatus =
+    action === 'approve'
+      ? 'approved'
+      : action === 'reject'
+        ? 'rejected'
+        : action === 'pending'
+          ? 'pending'
+          : r.status;
+  const deleted_at =
+    action === 'delete'
+      ? new Date().toISOString()
+      : action === 'restore'
+        ? null
+        : (r.deleted_at ?? null);
+  return {
+    ...r,
+    status,
+    deleted_at,
+    moderation_note: note?.trim() ? note.trim() : (r.moderation_note ?? null),
+    moderated_at: new Date().toISOString(),
+  };
+}
+
+/** Approve / reject / hold / delete (soft) / restore a review — audited in the backend. */
+export async function moderateRating(
+  id: string,
+  action: ModerationAction,
+  note?: string,
+): Promise<void> {
+  const local = RATINGS.find((r) => r.id === id);
+  if (local) Object.assign(local, applyModeration(local, action, note));
+  if (isDemoId(id)) return;
+  const { error } = await supabase.rpc('moderate_rating', {
+    p_rating_id: id,
+    p_action: action,
+    p_note: note ?? null,
+  });
+  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
 }

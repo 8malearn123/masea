@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
+  BadgePercent,
   Calculator,
   FileText,
   ListOrdered,
@@ -27,7 +28,13 @@ import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
 import type { ServiceCode } from '@/lib/funnel';
-import { calcPriceDetail, DEFAULT_PRICING_CONFIG, type PricingConfig } from '@/shared/lib/pricing';
+import {
+  calcPriceDetail,
+  DEFAULT_PRICING_CONFIG,
+  fallbackBase,
+  type PricingConfig,
+  type Promotion,
+} from '@/shared/lib/pricing';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { recordPricingLog } from '@/features/pricing/api/pricing.api';
 import {
@@ -38,6 +45,8 @@ import {
   useUpdatePricingRule,
 } from '@/features/pricing/hooks/usePricingRules';
 import { useCreateQuote, useMarkQuoteSent, useQuotes } from '@/features/pricing/hooks/useQuotes';
+import { PromotionPicker } from '@/features/pricing/components/PromotionPicker';
+import { DiscountsManager } from '@/features/pricing/components/DiscountsManager';
 import {
   PRICING_SERVICE_LABEL,
   QUOTE_STATUS_LABEL,
@@ -59,20 +68,21 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
   const [nationality, setNationality] = useState('الفلبين');
   const [task, setTask] = useState('تنظيف');
   const [quantity, setQuantity] = useState(1);
-  const [discountPct, setDiscountPct] = useState(0);
+  const [promotion, setPromotion] = useState<Promotion | null>(null);
   const [lateDays, setLateDays] = useState(0);
   const [absenceDays, setAbsenceDays] = useState(0);
   const [cancelled, setCancelled] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
 
+  const priceArgs = {
+    nationality,
+    profession: service === 'daily_rental' ? task : undefined,
+    quantity: Math.max(quantity, 1),
+  };
   const detail = calcPriceDetail(
     service,
-    {
-      nationality,
-      profession: service === 'daily_rental' ? task : undefined,
-      quantity: Math.max(quantity, 1),
-    },
-    { discountPct, lateDays, absenceDays, cancelled },
+    priceArgs,
+    { promotion, lateDays, absenceDays, cancelled },
     cfg,
   );
 
@@ -90,7 +100,10 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
         <Select
           label="الخدمة"
           value={service}
-          onChange={(e) => setService(e.target.value as ServiceCode)}
+          onChange={(e) => {
+            setService(e.target.value as ServiceCode);
+            setPromotion(null);
+          }}
           options={SERVICE_OPTIONS}
         />
         {service === 'daily_rental' ? (
@@ -116,14 +129,6 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
           onChange={(e) => setQuantity(Number(e.target.value))}
         />
         <Input
-          label="خصم (٪)"
-          type="number"
-          min={0}
-          max={100}
-          value={discountPct}
-          onChange={(e) => setDiscountPct(Number(e.target.value))}
-        />
-        <Input
           label="أيام تأخر السداد"
           type="number"
           min={0}
@@ -136,6 +141,14 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
           min={0}
           value={absenceDays}
           onChange={(e) => setAbsenceDays(Number(e.target.value))}
+        />
+      </div>
+      <div className="mt-3">
+        <PromotionPicker
+          service={service}
+          base={fallbackBase(service, priceArgs)}
+          value={promotion}
+          onChange={setPromotion}
         />
       </div>
       <label className="mt-3 flex items-center gap-2 text-sm text-navy">
@@ -168,7 +181,7 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
                 nationality,
                 profession: task,
                 quantity,
-                discountPct,
+                promotion_id: promotion?.id ?? null,
                 lateDays,
                 absenceDays,
                 cancelled,
@@ -199,7 +212,7 @@ function Calc({ cfg }: { cfg: PricingConfig }) {
 function CalcOrderCard({ cfg }: { cfg: PricingConfig }) {
   const steps = [
     'السعر الأساسي × الكمية / المدة',
-    '− الخصم المعتمد على العميل',
+    '− الخصم المعتمد (من قائمة الخصومات فقط، بعد التحقق من شروطه وبحد السعر الأدنى)',
     `+ غرامة التأخر (بحد ${cfg.late_max_pct}٪) − تعويض غياب العاملة`,
     `+ رسوم الإلغاء بعد المباشرة (${cfg.cancellation_pct}٪) إن وُجدت`,
     `+ ضريبة القيمة المضافة (${Math.round(cfg.vat_rate * 100)}٪)`,
@@ -483,7 +496,7 @@ function ConfigForm({ cfg, editable }: { cfg: PricingConfig; editable: boolean }
 }
 
 /* ------------------------------- board ----------------------------------- */
-type Tab = 'calc' | 'config' | 'quotes' | 'log';
+type Tab = 'calc' | 'discounts' | 'config' | 'quotes' | 'log';
 
 export default function PricingBoard() {
   const { can } = usePermissions();
@@ -619,6 +632,7 @@ export default function PricingBoard() {
 
   const TABS: { value: Tab; label: string; icon: typeof Calculator; count?: number }[] = [
     { value: 'calc', label: 'الحاسبة والقواعد', icon: Calculator },
+    { value: 'discounts', label: 'الخصومات', icon: BadgePercent },
     { value: 'config', label: 'الإعدادات', icon: Settings2 },
     { value: 'quotes', label: 'عروض السعر', icon: FileText, count: quotes.length },
     { value: 'log', label: 'سجل التسعير', icon: ScrollText },
@@ -710,6 +724,8 @@ export default function PricingBoard() {
           </div>
         </div>
       )}
+
+      {tab === 'discounts' && <DiscountsManager editable={manageable} />}
 
       {tab === 'config' && <ConfigForm cfg={cfg} editable={manageable} />}
 

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Check, FileText, UserPlus, UserRound } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
@@ -8,19 +7,18 @@ import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
 import { BRANCHES_AR, type WorkerProfile } from '@/lib/funnel';
 import { usePrice } from '@/hooks/usePricing';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
-import { useContractTemplates } from '@/features/contracts/hooks/useContracts';
+import { useContractTemplates, useCreateContract } from '@/features/contracts/hooks/useContracts';
+import { usePricingConfig } from '@/features/pricing/hooks/usePricingRules';
+import { PromotionPicker } from '@/features/pricing/components/PromotionPicker';
+import { PriceBreakdown } from '@/components/PriceBreakdown';
+import { evaluatePromotion, priceFromBase, type Promotion } from '@/shared/lib/pricing';
+import { contractEndDate } from '@/features/contracts/lib/contractDates';
+import { createContractInputSchema } from '@/features/contracts/schemas/contract.schema';
 import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins';
 import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { useCreateCustomer, useCustomerSearch } from '@/features/contracts/hooks/useCustomers';
 import { renderClauses } from '@/features/contracts/lib/clauses';
-import { formatContractNo } from '@/features/contracts/lib/contractNo';
-import { contractKeys } from '@/features/contracts/api/keys';
-import {
-  SERVICE_LABEL,
-  type ContractClause,
-  type ContractListItem,
-  type ContractServiceCode,
-} from '@/features/contracts/types';
+import { SERVICE_LABEL, type ContractServiceCode } from '@/features/contracts/types';
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
 
 interface Draft {
@@ -36,6 +34,7 @@ interface Draft {
   customer: CustomerLite | null;
   templateId: string;
   musanedNo: string;
+  promotion: Promotion | null;
 }
 
 const EMPTY: Draft = {
@@ -51,6 +50,7 @@ const EMPTY: Draft = {
   customer: null,
   templateId: '',
   musanedNo: '',
+  promotion: null,
 };
 
 const STEP_LABEL: Record<string, string> = {
@@ -65,8 +65,9 @@ const STEP_LABEL: Record<string, string> = {
 export default function ContractWizard() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const qc = useQueryClient();
   const toast = useToast();
+  const create = useCreateContract();
+  const { data: pricingCfg } = usePricingConfig();
   const { data: templates = [] } = useContractTemplates();
   const { data: origins } = useServiceOrigins();
   const { data: workers = [] } = useWorkerProfiles();
@@ -108,7 +109,34 @@ export default function ContractWizard() {
     }),
     [d.nationality, d.profession, d.task, d.quantity, d.service],
   );
-  const { data: price } = usePrice(service, priceArgs, d.service !== '');
+  const { data: listPrice, isLoading: priceLoading } = usePrice(
+    service,
+    priceArgs,
+    d.service !== '',
+  );
+  // الخصم من الخصومات المعتمدة فقط — يُتحقّق منه هنا للعرض ثم يُعاد التحقق في الـ backend.
+  const promotion = d.promotion;
+  const promoCheck =
+    promotion && listPrice ? evaluatePromotion(promotion, service, listPrice.base) : null;
+  const detail = listPrice
+    ? priceFromBase(
+        service,
+        listPrice.base,
+        { promotion: promoCheck?.ok ? promotion : null },
+        pricingCfg,
+      )
+    : null;
+  const price = detail ? { base: detail.net, vat: detail.vat, total: detail.total } : undefined;
+  const endDate = contractEndDate(
+    d.start_date,
+    d.service === 'recruitment'
+      ? { unit: 'month', count: d.contractMonths }
+      : d.service === 'monthly_rental'
+        ? { unit: 'month', count: Math.max(d.quantity, 1) }
+        : d.service === 'daily_rental'
+          ? { unit: 'day', count: Math.max(d.quantity, 1) }
+          : null,
+  );
 
   const serviceTemplates = useMemo(
     () => templates.filter((t) => t.service_code === d.service),
@@ -124,7 +152,7 @@ export default function ContractWizard() {
       task: d.task || '—',
       duration: String(d.service === 'recruitment' ? d.contractMonths : d.quantity),
       days: String(d.quantity),
-      monthly: price ? sar(Math.round((price.base || 0) / Math.max(d.quantity, 1))) : '—',
+      monthly: listPrice ? sar(Math.round((listPrice.base || 0) / Math.max(d.quantity, 1))) : '—',
       start_date: d.start_date || '—',
       total: price ? sar(price.total) : '—',
     });
@@ -137,9 +165,17 @@ export default function ContractWizard() {
       if (!d.start_date) return 'حدّد تاريخ البداية';
       if (!d.branch) return 'اختر الفرع';
       if (d.service === 'daily_rental' && !d.task) return 'اختر نوع المهمة';
+      if ((d.service === 'monthly_rental' || d.service === 'daily_rental') && !(d.quantity >= 1)) {
+        return d.service === 'monthly_rental' ? 'عدد الأشهر 1 على الأقل' : 'عدد الأيام 1 على الأقل';
+      }
       return null;
     }
     if (current === 'customer') return d.customer ? null : 'اختر العميل';
+    if (current === 'pricing') {
+      if (priceLoading) return 'جارٍ احتساب السعر…';
+      if (!listPrice || listPrice.base <= 0) return 'لا توجد قاعدة تسعير لهذه الخدمة';
+      if (promotion && !promoCheck?.ok) return `الخصم غير مؤهل: ${promoCheck?.reason ?? ''}`;
+    }
     return null;
   }
   const err = stepError();
@@ -149,73 +185,47 @@ export default function ContractWizard() {
   }
 
   function save() {
-    if (!d.service || !d.customer || !price) return;
-    const id = `c-${Date.now()}`;
-    const item: ContractListItem = {
-      id,
-      contract_no: formatContractNo(
-        new Date().getFullYear(),
-        Math.floor(Math.random() * 99999) + 1,
-      ),
+    if (!d.service || !d.customer) return;
+    if (!price) {
+      toast.error('تعذّر احتساب السعر — حاول مرة أخرى');
+      return;
+    }
+    if (promotion && !promoCheck?.ok) {
+      toast.error(`لا يمكن تطبيق الخصم: ${promoCheck?.reason ?? 'غير مؤهل'}`);
+      return;
+    }
+    const parsed = createContractInputSchema.safeParse({
       service_code: d.service,
-      template_id: template?.id ?? null,
       customer_id: d.customer.id,
-      worker_id: null,
-      branch_id: d.branch,
-      created_by: null,
-      start_date: d.start_date,
-      end_date: null,
-      base_amount: price.base,
-      vat_amount: price.vat,
-      total_amount: price.total,
-      amount_paid: 0,
-      status: 'draft',
-      version: 1,
-      parent_contract_id: null,
-      signed_at: null,
-      musaned_contract_no: musaned ? d.musanedNo.trim() || null : null,
-      created_at: new Date().toISOString(),
-      assigned_office_id: null,
-      assigned_at: null,
-      recruitment_stage: null,
-      visa_number: null,
-      expected_arrival_date: null,
-      flight_no: null,
       customer_name: d.customer.full_name,
       worker_name: d.worker?.full_name ?? null,
-    };
-    // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
-    const clauses: ContractClause[] = musaned
-      ? []
-      : clausePreview.map((body, i) => ({
-          id: `cl-${id}-${i}`,
-          contract_id: id,
-          sort_order: i,
-          body,
-        }));
-
-    qc.setQueryData(contractKeys.detail(id), item);
-    qc.setQueryData(contractKeys.clauses(id), clauses);
-    qc.setQueryData(contractKeys.history(id), [
-      {
-        id: `h-${id}`,
-        contract_id: id,
-        from_status: null,
-        to_status: 'draft',
-        changed_by: null,
-        created_at: new Date().toISOString(),
+      branch: d.branch,
+      start_date: d.start_date,
+      end_date: endDate,
+      quantity: priceArgs.quantity,
+      nationality: priceArgs.nationality,
+      profession: priceArgs.profession,
+      template_id: musaned ? null : (template?.id ?? null),
+      promotion_id: promotion?.id ?? null,
+      // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
+      clauses: musaned ? [] : clausePreview,
+      musaned_contract_no: musaned ? d.musanedNo.trim() || undefined : undefined,
+    });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? 'بيانات العقد غير مكتملة');
+      return;
+    }
+    create.mutate(parsed.data, {
+      onSuccess: (created) => {
+        toast.success(
+          musaned
+            ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'
+            : 'تم إنشاء العقد — جاهز للاعتماد والتوقيع',
+        );
+        navigate(`/contracts/${created.id}`);
       },
-    ]);
-    qc.setQueriesData<ContractListItem[]>({ queryKey: ['contracts', 'list'] }, (old) =>
-      old ? [item, ...old] : old,
-    );
-
-    toast.success(
-      musaned
-        ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'
-        : 'تم إنشاء العقد — جاهز للاعتماد والتوقيع',
-    );
-    navigate(`/contracts/${id}`);
+      onError: (e) => toast.error(e.message || 'تعذّر إنشاء العقد'),
+    });
   }
 
   return (
@@ -256,7 +266,9 @@ export default function ContractWizard() {
               <button
                 key={code}
                 type="button"
-                onClick={() => set({ service: code, worker: null, templateId: '' })}
+                onClick={() =>
+                  set({ service: code, worker: null, templateId: '', promotion: null })
+                }
                 className={`rounded-xl border p-4 text-right transition ${d.service === code ? 'border-navy bg-navy-50' : 'border-navy-100 hover:border-navy'}`}
               >
                 <span className="font-bold text-navy">{SERVICE_LABEL[code]}</span>
@@ -402,14 +414,27 @@ export default function ContractWizard() {
         )}
 
         {current === 'pricing' && (
-          <div className="rounded-xl border border-navy-100 p-4">
-            <Row label="السعر الأساسي" value={`${sar(price?.base ?? 0)} ر.س`} />
-            <Row label="ضريبة القيمة المضافة (١٥٪)" value={`${sar(price?.vat ?? 0)} ر.س`} />
-            <div className="my-2 border-t border-navy-100" />
-            <Row label="الإجمالي" value={`${sar(price?.total ?? 0)} ر.س`} strong />
-            <p className="mt-3 text-[11px] text-purple">
-              يُحتسب التسعير في الـ backend (ضريبة 15%).
-            </p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <PromotionPicker
+                service={service}
+                base={listPrice?.base ?? 0}
+                value={d.promotion}
+                onChange={(p) => set({ promotion: p })}
+                disabled={!listPrice}
+              />
+              <p className="mt-3 text-[11px] text-purple">
+                لا يوجد خصم مفتوح — تُختار الخصومات من القائمة المعتمدة في شاشة التسعير، ويُعاد
+                التحقق من شروطها واحتسابها في الـ backend عند حفظ العقد.
+              </p>
+            </div>
+            {detail ? (
+              <PriceBreakdown detail={detail} />
+            ) : (
+              <div className="rounded-xl border border-navy-100 p-4 text-sm text-purple">
+                {priceLoading ? 'جارٍ احتساب السعر…' : 'تعذّر احتساب السعر لهذه الخدمة.'}
+              </div>
+            )}
           </div>
         )}
 
@@ -439,11 +464,19 @@ export default function ContractWizard() {
                 )}
                 <p className="num mt-1 text-xs text-gold-600">
                   الإجمالي {sar(price?.total ?? 0)} ر.س
+                  {detail && detail.discounts > 0 && (
+                    <span className="text-green-700"> (بعد خصم {sar(detail.discounts)} ر.س)</span>
+                  )}
                 </p>
+                {endDate && (
+                  <p className="num mt-1 text-xs text-purple">
+                    من {d.start_date} إلى {endDate}
+                  </p>
+                )}
               </Card>
             </div>
             {musaned ? (
-              <div className="border-gold-200 bg-gold-50/60 rounded-xl border p-4">
+              <div className="rounded-xl border border-gold-500/30 bg-gold-100/60 p-4">
                 <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-navy">
                   <FileText size={16} /> العقد على منصة مساند
                 </h2>
@@ -496,26 +529,13 @@ export default function ContractWizard() {
               التالي
             </Button>
           ) : (
-            <Button onClick={save}>
+            <Button onClick={save} loading={create.isPending} disabled={!price}>
               <Check size={16} />{' '}
               {musaned ? 'تسجيل العقد ومتابعة مساند' : 'إنشاء العقد ومتابعة التوقيع'}
             </Button>
           )}
         </div>
       </Card>
-    </div>
-  );
-}
-
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className={strong ? 'font-bold text-navy' : 'text-sm text-purple'}>{label}</span>
-      <span
-        className={`num ${strong ? 'text-lg font-bold text-gold-600' : 'text-sm text-navy-900'}`}
-      >
-        {value}
-      </span>
     </div>
   );
 }

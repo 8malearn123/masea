@@ -94,6 +94,10 @@ export const contractSchema = z.object({
   base_amount: z.number(),
   vat_amount: z.number(),
   total_amount: z.number(),
+  // Predefined-discount trail (0052): base_amount is the NET after discount.
+  gross_amount: z.number().nullable().default(null),
+  discount_amount: z.number().default(0),
+  promotion_id: z.string().nullable().default(null),
   // Running total collected against the contract (supabase contracts.amount_paid).
   amount_paid: z.number().default(0),
   status: contractStatusSchema,
@@ -155,18 +159,44 @@ export interface ExternalOfficeAccount {
   branch: string | null;
 }
 
-/** Wizard input — validated on the client and re-validated/priced in the backend. */
-export const createContractInputSchema = z.object({
-  service_code: contractServiceCodeSchema,
-  customer_id: z.string().uuid({ message: 'اختر العميل' }),
-  worker_id: z.string().uuid().nullable().optional(),
-  branch_id: z.string().uuid({ message: 'اختر الفرع' }),
-  start_date: z.string().min(1, { message: 'حدّد تاريخ البداية' }),
-  end_date: z.string().nullable().optional(),
-  quantity: z.number().int().positive().default(1),
-  nationality: z.string().optional(),
-  profession: z.string().optional(),
-  // Optional at creation for musaned contracts — can be filled once issued on مساند.
-  musaned_contract_no: z.string().optional(),
-});
-export type CreateContractInput = z.infer<typeof createContractInputSchema>;
+/**
+ * Wizard input — validated on the client and re-validated/priced in the backend
+ * (create_contract_draft, 0052). `branch` is a branch name or uuid (resolved
+ * server-side); the price is never sent — only the predefined `promotion_id`.
+ */
+export const createContractInputSchema = z
+  .object({
+    service_code: contractServiceCodeSchema,
+    customer_id: z.string().min(1, { message: 'اختر العميل' }),
+    customer_name: z.string().nullable().optional(),
+    worker_name: z.string().nullable().optional(),
+    branch: z.string().min(1, { message: 'اختر الفرع' }),
+    start_date: z.string().min(1, { message: 'حدّد تاريخ البداية' }),
+    end_date: z.string().nullable().optional(),
+    quantity: z.number().int().positive({ message: 'الكمية يجب أن تكون 1 على الأقل' }).default(1),
+    nationality: z.string().optional(),
+    profession: z.string().optional(),
+    template_id: z.string().nullable().optional(),
+    promotion_id: z.string().nullable().optional(),
+    clauses: z.array(z.string()).default([]),
+    // Optional at creation for musaned contracts — can be filled once issued on مساند.
+    musaned_contract_no: z.string().optional(),
+  })
+  .refine((v) => !v.end_date || v.end_date >= v.start_date, {
+    message: 'تاريخ النهاية قبل تاريخ البداية',
+    path: ['end_date'],
+  });
+export type CreateContractInput = z.input<typeof createContractInputSchema>;
+
+/** Editable fields of a DRAFT contract (update_contract_draft, 0052). */
+export const updateDraftInputSchema = z
+  .object({
+    start_date: z.string().min(1, { message: 'حدّد تاريخ البداية' }),
+    end_date: z.string().nullable(),
+    branch: z.string().min(1, { message: 'اختر الفرع' }),
+  })
+  .refine((v) => !v.end_date || v.end_date >= v.start_date, {
+    message: 'تاريخ النهاية قبل تاريخ البداية',
+    path: ['end_date'],
+  });
+export type UpdateDraftInput = z.infer<typeof updateDraftInputSchema>;

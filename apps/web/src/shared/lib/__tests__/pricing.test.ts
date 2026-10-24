@@ -3,10 +3,33 @@ import {
   applyVat,
   calcPriceDetail,
   DEFAULT_PRICING_CONFIG,
+  evaluatePromotion,
   fallbackBase,
   fallbackPrice,
+  priceFromBase,
   VAT_RATE,
+  type Promotion,
 } from '@/shared/lib/pricing';
+
+function promo(p: Partial<Promotion> = {}): Promotion {
+  return {
+    id: 'pm-test',
+    name: 'خصم تجريبي',
+    code: null,
+    description: null,
+    discount_pct: null,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: null,
+    starts_at: null,
+    ends_at: null,
+    usage_limit: null,
+    usage_count: 0,
+    is_active: true,
+    ...p,
+  };
+}
 
 describe('VAT (15%)', () => {
   it('applies 15% VAT correctly', () => {
@@ -59,11 +82,11 @@ describe('layered pricing (calc_price mirror)', () => {
   });
 
   it('applies VAT on the NET (after discount & penalty), not the base', () => {
-    // base 16000, −10% discount (1600), +10% late penalty (1600) → net 16000
+    // base 16000, −10% predefined discount (1600), +10% late penalty (1600) → net 16000
     const d = calcPriceDetail(
       'recruitment',
       { nationality: 'الفلبين', quantity: 1 },
-      { discountPct: 10, lateDays: 10 },
+      { promotion: promo({ discount_pct: 10 }), lateDays: 10 },
     );
     expect(d).toEqual({
       base: 16000,
@@ -107,9 +130,77 @@ describe('layered pricing (calc_price mirror)', () => {
   });
 
   it('never discounts below zero', () => {
-    const d = calcPriceDetail('sponsorship_transfer', { quantity: 1 }, { discountAmount: 99999 });
+    const d = calcPriceDetail(
+      'sponsorship_transfer',
+      { quantity: 1 },
+      { promotion: promo({ discount_amount: 99999 }) },
+    );
     expect(d.discounts).toBe(2000);
     expect(d.net).toBe(0);
     expect(d.total).toBe(0);
+  });
+});
+
+describe('predefined discounts (evaluate_promotion mirror)', () => {
+  const now = new Date('2026-09-20T10:00:00Z');
+
+  it('computes a percentage discount capped by max_discount_amount', () => {
+    const p = promo({ discount_pct: 5, max_discount_amount: 500 });
+    expect(evaluatePromotion(p, 'recruitment', 16000, now)).toEqual({
+      ok: true,
+      amount: 500,
+      reason: null,
+    });
+    expect(evaluatePromotion(p, 'recruitment', 8000, now).amount).toBe(400);
+  });
+
+  it('computes a fixed-amount discount', () => {
+    expect(
+      evaluatePromotion(promo({ discount_amount: 300 }), 'daily_rental', 900, now).amount,
+    ).toBe(300);
+  });
+
+  it('rejects ineligible discounts with a reason (no silent discount)', () => {
+    const base = promo({ discount_pct: 10 });
+    expect(evaluatePromotion({ ...base, is_active: false }, 'recruitment', 1000, now).ok).toBe(
+      false,
+    );
+    expect(
+      evaluatePromotion({ ...base, service_codes: ['monthly_rental'] }, 'recruitment', 1000, now)
+        .reason,
+    ).toBe('الخصم لا يشمل هذه الخدمة');
+    expect(evaluatePromotion({ ...base, min_base_amount: 5000 }, 'recruitment', 1000, now).ok).toBe(
+      false,
+    );
+    expect(
+      evaluatePromotion({ ...base, ends_at: '2026-09-01T00:00:00Z' }, 'recruitment', 1000, now)
+        .reason,
+    ).toBe('انتهت صلاحية الخصم');
+    expect(
+      evaluatePromotion({ ...base, starts_at: '2026-10-01T00:00:00Z' }, 'recruitment', 1000, now)
+        .ok,
+    ).toBe(false);
+    expect(
+      evaluatePromotion({ ...base, usage_limit: 3, usage_count: 3 }, 'recruitment', 1000, now).ok,
+    ).toBe(false);
+  });
+
+  it('applies no discount when the selected promotion is not eligible', () => {
+    const d = calcPriceDetail(
+      'recruitment',
+      { nationality: 'الفلبين', quantity: 1 },
+      { promotion: promo({ discount_pct: 10, service_codes: ['monthly_rental'] }) },
+    );
+    expect(d.discounts).toBe(0);
+    expect(d.total).toBe(18400);
+  });
+
+  it('never discounts below the managed floor (min_price)', () => {
+    const d = priceFromBase('recruitment', 16000, {
+      promotion: promo({ discount_pct: 20 }),
+      floor: 15000,
+    });
+    expect(d.discounts).toBe(1000);
+    expect(d.net).toBe(15000);
   });
 });

@@ -14,6 +14,7 @@ export type {
   ContractSignature,
   ContractStatusHistory,
   CreateContractInput,
+  UpdateDraftInput,
   PriceBreakdown,
   RecruitmentStage,
   RecruitmentFollowup,
@@ -24,6 +25,13 @@ export type {
 export interface ContractListItem extends Contract {
   customer_name: string | null;
   worker_name: string | null;
+  /** Branch display name (backend join on `branches.city`); demo rows carry the name in branch_id. */
+  branch_name?: string | null;
+}
+
+/** Human branch label for a contract — the joined name, else the stored value. */
+export function branchLabel(c: Pick<ContractListItem, 'branch_id' | 'branch_name'>): string {
+  return c.branch_name ?? c.branch_id ?? '—';
 }
 
 export interface ContractFilters {
