@@ -57,7 +57,7 @@ async function activeContract(start: string) {
     service_code: 'monthly_rental',
     customer_id: 'cust-2',
     customer_name: 'سارة القحطاني',
-    branch_id: 'نجران',
+    branch: 'نجران',
     start_date: start,
     end_date: end,
     quantity: 3,

@@ -12,20 +12,19 @@ import {
   getContract,
   listContracts,
   updateContractTerm,
-  type CreateDraftInput,
 } from '@/features/contracts/api/contracts.api';
 import { expiryAlerts } from '@/features/contracts/lib/contractInsights';
 import { buildContractHtml } from '@/features/contracts/lib/contractHtml';
-import type { ContractListItem } from '@/features/contracts/types';
+import type { ContractListItem, CreateContractInput } from '@/features/contracts/types';
 
 const ALL = { status: 'all', service: 'all', branch: 'all', search: '' } as const;
 
-function input(over: Partial<CreateDraftInput>): CreateDraftInput {
+function input(over: Partial<CreateContractInput>): CreateContractInput {
   return {
     service_code: 'monthly_rental',
     customer_id: 'cust-1',
     customer_name: 'محمد الأحمدي',
-    branch_id: 'نجران',
+    branch: 'نجران',
     start_date: '2026-10-01',
     end_date: '2026-12-31',
     quantity: 3,
@@ -141,7 +140,7 @@ describe('حفظ مدة العقد (الوضع التجريبي)', () => {
 
   it('يظهر العقد الجديد في تصنيف التنبيه المناسب', async () => {
     const now = new Date('2026-09-15T09:00:00Z');
-    const make = async (service: CreateDraftInput['service_code'], start: string, n: number) => {
+    const make = async (service: CreateContractInput['service_code'], start: string, n: number) => {
       const end = contractEndDate(service, start, n);
       const c = await createDraft(
         input({ service_code: service, start_date: start, end_date: end, quantity: n }),
@@ -176,6 +175,9 @@ describe('طباعة العقد', () => {
     base_amount: 6000,
     vat_amount: 900,
     total_amount: 6900,
+    gross_amount: 6000,
+    discount_amount: 0,
+    promotion_id: null,
     amount_paid: 0,
     status: 'draft',
     version: 1,

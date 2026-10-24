@@ -1,6 +1,7 @@
 /**
- * مسار الحفظ مع قاعدة بيانات فعلية (Supabase مُحاكى): تاريخ النهاية يصل إلى
- * جملة الإدخال والتعديل، وأي فشل يُبلَّغ للمستخدم دون نجاح وهمي أو مسودة محلية.
+ * مسار الحفظ مع قاعدة بيانات فعلية (Supabase مُحاكى): تاريخ النهاية يصل إلى دوال
+ * الخادم الذرّية (create_contract_draft / update_contract_draft / renew_contract)،
+ * وأي فشل يُبلغ للمستخدم دون نجاح وهمي أو مسودة محلية.
  */
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,8 +13,8 @@ import {
   getContract,
   listContracts,
   updateContractTerm,
-  type CreateDraftInput,
 } from '@/features/contracts/api/contracts.api';
+import type { CreateContractInput } from '@/features/contracts/types';
 import { useCreateContract, useRenewContract } from '@/features/contracts/hooks/useContracts';
 import { renewContract } from '@/features/contracts/api/contracts.api';
 import { updateConfig } from '@/features/settings/api/settings.api';
@@ -23,11 +24,6 @@ const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CONTRACT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const RENEWAL_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
-interface Call {
-  table: string;
-  op: 'insert' | 'update';
-  payload: unknown;
-}
 interface Result {
   data: unknown;
   error: { message: string } | null;
@@ -118,11 +114,20 @@ vi.mock('@/shared/lib/supabase', () => {
             error: null,
           });
         }
-        if (fn === 'calc_contract_price') {
-          return Promise.resolve({ data: { base: 6000, vat: 900, total: 6900 }, error: null });
-        }
-        if (fn === 'generate_contract_no') {
-          return Promise.resolve({ data: 'MAS-2026-00042', error: null });
+        if (fn === 'create_contract_draft') {
+          const { p_input } = params as { p_input: Record<string, unknown> };
+          return Promise.resolve({
+            data: {
+              ...p_input,
+              id: CONTRACT_ID,
+              contract_no: 'MAS-2026-00042',
+              branch_id: BRANCH_ID,
+              base_amount: 6000,
+              status: 'draft',
+              created_at: '2026-10-01T09:00:00Z',
+            },
+            error: null,
+          });
         }
         return Promise.resolve({ data: null, error: null });
       },
@@ -130,12 +135,12 @@ vi.mock('@/shared/lib/supabase', () => {
   };
 });
 
-function input(over: Partial<CreateDraftInput> = {}): CreateDraftInput {
+function input(over: Partial<CreateContractInput> = {}): CreateContractInput {
   return {
     service_code: 'monthly_rental',
     customer_id: CUSTOMER_ID,
     customer_name: 'سارة القحطاني',
-    branch_id: 'جازان',
+    branch: 'جازان',
     start_date: '2026-10-01',
     end_date: '2026-12-31',
     quantity: 3,
@@ -155,44 +160,41 @@ beforeEach(() => {
 });
 
 describe('إنشاء العقد مع قاعدة بيانات فعلية', () => {
-  it('يرسل تاريخ البداية والنهاية ومعرّف الفرع الحقيقي في جملة الإدخال', async () => {
+  it('يرسل تاريخ البداية والنهاية والفرع والبنود إلى دالة الخادم الذرّية', async () => {
     const saved = await createDraft(input());
-    const insert = db.calls.find((c: Call) => c.table === 'contracts' && c.op === 'insert');
-    expect(insert?.payload).toMatchObject({
-      start_date: '2026-10-01',
-      end_date: '2026-12-31',
-      branch_id: BRANCH_ID,
-      base_amount: 6000,
-      template_id: null, // قالب تجريبي (ليس uuid) لا يُرسل كمفتاح خارجي
-      status: 'draft',
+    const call = db.rpcs.find((r) => r.fn === 'create_contract_draft');
+    expect(call?.params).toMatchObject({
+      p_input: {
+        start_date: '2026-10-01',
+        end_date: '2026-12-31',
+        branch: 'جازان', // يُحوَّل لمعرّف الفرع في الخادم (resolve_branch_id)
+        template_id: null, // قالب تجريبي (ليس uuid) لا يُرسل كمفتاح خارجي
+      },
+      p_clauses: ['بند أول', 'بند ثانٍ'],
     });
+    // السعر لا يُرسل من المتصفح — calc_price في الخادم
+    expect(call?.params).not.toHaveProperty('p_input.base_amount');
+    expect(db.calls).toEqual([]); // لا insert مباشر — العقد والبنود والسجل في معاملة الخادم
     expect(saved.id).toBe(CONTRACT_ID);
     expect(saved.end_date).toBe('2026-12-31');
-    const clauses = db.calls.find((c: Call) => c.table === 'contract_clauses');
-    expect(clauses?.payload).toHaveLength(2);
+    expect(saved.customer_name).toBe('سارة القحطاني');
   });
 
-  it('يُبلغ عن فشل الإدخال ولا يُنشئ مسودة محلية بديلة', async () => {
-    db.failOn = 'contracts';
+  it('يُبلغ عن فشل الحفظ ولا يُنشئ مسودة محلية بديلة', async () => {
+    db.failOn = 'create_contract_draft';
     await expect(createDraft(input())).rejects.toThrow('تعذّر حفظ العقد');
     // لا عقد وهمي أُضيف: القائمة من قاعدة البيانات وحدها (فارغة هنا) لا من بيانات العرض
     db.failOn = null;
     expect(await listContracts(ALL)).toEqual([]);
   });
 
-  it('يُبلغ عن فشل التسعير بدل حفظ عقد بمبلغ صفر', async () => {
-    db.failOn = 'calc_contract_price';
-    await expect(createDraft(input())).rejects.toThrow('تعذّر احتساب سعر العقد');
-    expect(db.calls.some((c: Call) => c.table === 'contracts')).toBe(false);
-  });
-
-  it('يُبلغ عن فشل حفظ البنود بعد حفظ العقد', async () => {
-    db.failOn = 'contract_clauses';
-    await expect(createDraft(input())).rejects.toThrow('تعذّر حفظ بنوده');
+  it('يرفض تواريخ غير منطقية قبل الاتصال بالخادم', async () => {
+    await expect(createDraft(input({ end_date: '2026-09-01' }))).rejects.toThrow('لا يمكن أن يسبق');
+    expect(db.rpcs).toEqual([]);
   });
 
   it('لا تُعرض رسالة نجاح عندما يفشل الحفظ', async () => {
-    db.failOn = 'contracts';
+    db.failOn = 'create_contract_draft';
     const qc = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={qc}>
@@ -209,24 +211,32 @@ describe('إنشاء العقد مع قاعدة بيانات فعلية', () => 
 });
 
 describe('تعديل مدة العقد مع قاعدة بيانات فعلية', () => {
-  it('يرسل تاريخ النهاية الجديد في جملة التعديل', async () => {
+  it('يرسل تاريخ النهاية الجديد إلى دالة تعديل المسودة دون تغيير الفرع', async () => {
     await updateContractTerm(CONTRACT_ID, '2026-11-01', '2027-01-31');
-    const update = db.calls.find((c: Call) => c.table === 'contracts' && c.op === 'update');
-    expect(update?.payload).toEqual({ start_date: '2026-11-01', end_date: '2027-01-31' });
+    expect(db.rpcs).toContainEqual({
+      fn: 'update_contract_draft',
+      params: {
+        p_contract_id: CONTRACT_ID,
+        p_patch: { start_date: '2026-11-01', end_date: '2027-01-31' },
+      },
+    });
+    expect(db.calls).toEqual([]);
   });
 
-  it('يُبلغ عندما لا يتأثّر أي صف (ليس مسودة أو بلا صلاحية)', async () => {
-    db.updatedRows = 0;
+  it('يُبلغ عن رفض الخادم (ليس مسودة أو بلا صلاحية)', async () => {
+    db.failOn = 'update_contract_draft';
+    db.failMessage = 'لا يُعدَّل إلا العقد في حالة المسودة';
     await expect(updateContractTerm(CONTRACT_ID, '2026-11-01', '2027-01-31')).rejects.toThrow(
-      'لم تُحفظ المدة',
+      'تعذّر حفظ مدة العقد',
     );
+    db.failMessage = 'permission denied for table contracts';
   });
 
   it('يرفض تواريخ غير منطقية قبل الوصول لقاعدة البيانات', async () => {
     await expect(updateContractTerm(CONTRACT_ID, '2026-11-01', '2026-10-01')).rejects.toThrow(
       'لا يمكن أن يسبق',
     );
-    expect(db.calls).toHaveLength(0);
+    expect(db.rpcs).toHaveLength(0);
   });
 });
 

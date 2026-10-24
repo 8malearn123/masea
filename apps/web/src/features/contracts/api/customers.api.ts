@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { supabase } from '@/shared/lib/supabase';
 import { isIgnorableWriteError } from '@/shared/lib/demoBackend';
 
@@ -28,11 +29,25 @@ export async function searchCustomers(q: string): Promise<CustomerLite[]> {
   return s ? FALLBACK.filter((c) => c.full_name.includes(s)) : FALLBACK;
 }
 
-export async function createCustomer(input: {
+/** New customer from the contract wizard — validated before it reaches the backend. */
+export const newCustomerSchema = z.object({
+  full_name: z.string().trim().min(3, { message: 'أدخل اسم العميل كاملاً' }),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^05\d{8}$/, { message: 'رقم الجوال يبدأ بـ 05 ومكوّن من 10 أرقام' }),
+  city: z.string().trim(),
+});
+
+export async function createCustomer(raw: {
   full_name: string;
   phone: string;
   city: string;
 }): Promise<CustomerLite> {
+  const parsed = newCustomerSchema.safeParse(raw);
+  if (!parsed.success)
+    throw new Error(parsed.error.issues[0]?.message ?? 'بيانات العميل غير صحيحة');
+  const input = parsed.data;
   const { data, error } = await supabase
     .from('customers')
     .insert({ full_name: input.full_name, phone: input.phone, city: input.city })
@@ -41,12 +56,14 @@ export async function createCustomer(input: {
   // Backend not provisioned → return a local demo customer so the flow continues.
   if (error) {
     if (isIgnorableWriteError(error.message)) {
-      return {
+      const local: CustomerLite = {
         id: `cust-${Date.now()}`,
         full_name: input.full_name,
         phone: input.phone,
-        city: input.city,
+        city: input.city || null,
       };
+      FALLBACK.unshift(local); // searchable for the rest of the session
+      return local;
     }
     throw new Error(error.message);
   }

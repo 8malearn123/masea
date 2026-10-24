@@ -6,13 +6,25 @@ import {
   ExternalLink,
   FileDown,
   FileText,
+  FileX,
   GitBranch,
   History,
+  Pencil,
   ScrollText,
   Signature,
-  FileX,
+  TriangleAlert,
 } from 'lucide-react';
-import { Badge, Card, Skeleton, EmptyState, ErrorState, Button, Input, Select } from '@/shared/ui';
+import {
+  Badge,
+  Card,
+  Skeleton,
+  EmptyState,
+  ErrorState,
+  Button,
+  Input,
+  Modal,
+  Select,
+} from '@/shared/ui';
 import { isDemoMode } from '@/shared/lib/demoBackend';
 import { sar, dateAr, dateTimeAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -24,8 +36,12 @@ import {
   useContractSignatures,
   useTransitionContract,
   useUpdateContractTerm,
+  useUpdateDraft,
   useUpdateMusanedNo,
 } from '@/features/contracts/hooks/useContracts';
+import { BRANCHES_AR } from '@/lib/funnel';
+import { updateDraftInputSchema } from '@/features/contracts/schemas/contract.schema';
+import { contractInsight } from '@/features/contracts/lib/contractInsights';
 import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins';
 import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { StatusBadge } from '@/features/contracts/components/StatusBadge';
@@ -33,7 +49,13 @@ import { SignContractModal } from '@/features/contracts/components/SignContractM
 import { RecruitmentJourney } from '@/features/contracts/components/RecruitmentJourney';
 import { RenewContractButton } from '@/features/contracts/components/RenewContract';
 import { activeRenewalsOf } from '@/features/contracts/lib/contractRenewal';
-import { CONTRACT_STATUS_LABEL, nextStatuses } from '@/features/contracts/lib/contractState';
+import {
+  CONTRACT_STATUS_LABEL,
+  isEditable,
+  needsConfirmation,
+  nextStatuses,
+  transitionBlocker,
+} from '@/features/contracts/lib/contractState';
 import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
 import {
   RECRUITMENT_TERM_MONTHS,
@@ -44,6 +66,7 @@ import {
   validateContractTerm,
 } from '@/features/contracts/lib/contractTerm';
 import {
+  branchLabel,
   SERVICE_LABEL,
   type ContractListItem,
   type ContractStatus,
@@ -82,6 +105,8 @@ export default function ContractDetails() {
   const { data: origins } = useServiceOrigins();
   const transition = useTransitionContract(id);
   const [showSign, setShowSign] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [confirmTo, setConfirmTo] = useState<ContractStatus | null>(null);
 
   if (isLoading) {
     return (
@@ -102,9 +127,17 @@ export default function ContractDetails() {
     if (to === 'approved') return can('contracts', 'approve');
     return can('contracts', 'edit');
   }
-  const actions = nextStatuses(contract.status, musaned ? 'musaned' : 'internal').filter(canDo);
+  const origin = musaned ? 'musaned' : 'internal';
+  const actions = nextStatuses(contract.status, origin).filter(canDo);
+  const canEditDraft = isEditable(contract.status) && can('contracts', 'edit');
+  const remaining = contractInsight(contract, new Date()).remaining;
   const parent = lineage.find((c) => c.id === contract.parent_contract_id) ?? null;
   const renewals = activeRenewalsOf(contract.id, lineage);
+
+  function runTransition(to: ContractStatus) {
+    if (needsConfirmation(to)) setConfirmTo(to);
+    else transition.mutate(to);
+  }
 
   return (
     <div>
@@ -185,7 +218,7 @@ export default function ContractDetails() {
                 'داخلي (النظام)'
               )}
             </Row>
-            <Row label="الفرع">{contract.branch_id ?? '—'}</Row>
+            <Row label="الفرع">{branchLabel(contract)}</Row>
             <Row label="تاريخ البداية">{dateAr(contract.start_date)}</Row>
             <Row label="تاريخ النهاية">
               {contract.end_date
@@ -197,7 +230,20 @@ export default function ContractDetails() {
             {contractTermLabel(contract) && (
               <Row label="مدة العقد">{contractTermLabel(contract)}</Row>
             )}
-            <Row label="المبلغ الأساسي">
+            {contract.discount_amount > 0 && (
+              <>
+                <Row label="السعر قبل الخصم">
+                  <span className="num">
+                    {sar(contract.gross_amount ?? contract.base_amount + contract.discount_amount)}{' '}
+                    ر.س
+                  </span>
+                </Row>
+                <Row label="الخصم المعتمد">
+                  <span className="num text-green-700">− {sar(contract.discount_amount)} ر.س</span>
+                </Row>
+              </>
+            )}
+            <Row label={contract.discount_amount > 0 ? 'الصافي الخاضع للضريبة' : 'المبلغ الأساسي'}>
               <span className="num">{sar(contract.base_amount)} ر.س</span>
             </Row>
             <Row label="ضريبة القيمة المضافة (١٥٪)">
@@ -261,26 +307,40 @@ export default function ContractDetails() {
                 <RenewContractButton contract={contract} existingRenewals={renewals} size="md" />
               </div>
             )}
-            {actions.length === 0 ? (
+            {actions.length === 0 && !canEditDraft ? (
               <p className="text-sm text-purple">لا توجد إجراءات متاحة لحالتك ودورك.</p>
             ) : (
               <div className="flex flex-col gap-2">
-                {actions.map((to) =>
-                  to === 'signed' ? (
+                {canEditDraft && (
+                  <Button variant="outline" onClick={() => setShowEdit(true)}>
+                    <Pencil size={15} /> تعديل المسودة
+                  </Button>
+                )}
+                {actions.map((to) => {
+                  const blocked = transitionBlocker(contract, to, origin);
+                  return to === 'signed' ? (
                     <Button key={to} variant="primary" onClick={() => setShowSign(true)}>
                       {ACTION_LABEL[to]}
                     </Button>
                   ) : (
-                    <Button
-                      key={to}
-                      variant={to === 'cancelled' ? 'danger' : 'primary'}
-                      loading={transition.isPending}
-                      onClick={() => transition.mutate(to)}
-                    >
-                      {ACTION_LABEL[to]}
-                    </Button>
-                  ),
-                )}
+                    <div key={to}>
+                      <Button
+                        className="w-full"
+                        variant={to === 'cancelled' ? 'danger' : 'primary'}
+                        loading={transition.isPending && transition.variables === to}
+                        disabled={transition.isPending || Boolean(blocked)}
+                        onClick={() => runTransition(to)}
+                      >
+                        {ACTION_LABEL[to]}
+                      </Button>
+                      {blocked && (
+                        <p className="mt-1 flex items-center gap-1 text-[11px] text-gold-600">
+                          <TriangleAlert size={12} /> {blocked}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -396,7 +456,104 @@ export default function ContractDetails() {
           onClose={() => setShowSign(false)}
         />
       )}
+
+      {showEdit && <EditDraftModal contract={contract} onClose={() => setShowEdit(false)} />}
+
+      <Modal
+        open={confirmTo !== null}
+        onClose={() => setConfirmTo(null)}
+        title={confirmTo === 'cancelled' ? 'تأكيد إلغاء العقد' : 'تأكيد إنهاء العقد'}
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-navy-900">
+            {confirmTo === 'cancelled'
+              ? 'سيُلغى العقد نهائياً ولا يمكن إعادة تفعيله — يمكن إنشاء عقد جديد عند الحاجة.'
+              : 'سيُغلق العقد كمنتهٍ. التجديد (نسخة جديدة) متاح للعقد الساري فقط — جدّده قبل الإنهاء إن لزم.'}
+          </p>
+          {remaining > 0 && (
+            <p className="flex items-center gap-1.5 rounded-xl bg-gold-100 p-3 text-xs text-gold-600">
+              <TriangleAlert size={14} /> متبقٍّ على العميل{' '}
+              <span className="num font-bold">{sar(remaining)}</span> ر.س غير محصّل.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              variant={confirmTo === 'cancelled' ? 'danger' : 'primary'}
+              loading={transition.isPending}
+              onClick={() =>
+                confirmTo && transition.mutate(confirmTo, { onSuccess: () => setConfirmTo(null) })
+              }
+            >
+              تأكيد
+            </Button>
+            <Button className="flex-1" variant="outline" onClick={() => setConfirmTo(null)}>
+              تراجع
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+/**
+ * Edit a DRAFT's branch (validated with Zod, saved via update_contract_draft).
+ * The term is edited in TermEditor — its end date is computed from the duration
+ * (the price depends on it), so dates are never typed freely here.
+ */
+function EditDraftModal({
+  contract,
+  onClose,
+}: {
+  contract: ContractListItem;
+  onClose: () => void;
+}) {
+  const update = useUpdateDraft(contract.id);
+  const [branch, setBranch] = useState(contract.branch_name ?? contract.branch_id ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const branchOptions: { value: string; label: string }[] = BRANCHES_AR.map((b) => ({
+    value: b,
+    label: b,
+  }));
+  if (branch && !BRANCHES_AR.some((b) => b === branch)) {
+    branchOptions.unshift({ value: branch, label: branch });
+  }
+
+  function submit() {
+    const parsed = updateDraftInputSchema.safeParse({
+      start_date: contract.start_date ?? '',
+      end_date: contract.end_date,
+      branch,
+    });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? 'بيانات غير صحيحة');
+      return;
+    }
+    setError(null);
+    update.mutate(parsed.data, { onSuccess: onClose });
+  }
+
+  return (
+    <Modal open onClose={onClose} title="تعديل مسودة العقد">
+      <div className="space-y-4">
+        <Select
+          label="الفرع"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          options={branchOptions}
+          placeholder="اختر الفرع"
+        />
+        <p className="text-[11px] text-purple">
+          مدة العقد تُعدَّل من بطاقة «تعديل مدة العقد». الخدمة والسعر والخصم تُحدَّد عند الإنشاء —
+          لتغييرها ألغِ المسودة وأنشئ عقداً جديداً.
+        </p>
+        {error && <p className="text-xs text-red-600">{error}</p>}
+        <Button className="w-full" loading={update.isPending} onClick={submit}>
+          حفظ التعديلات
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -405,15 +562,17 @@ export default function ContractDetails() {
  * Our system tracks the process and the reference number only — editable inline
  * (with contracts.edit) so it can be filled once the contract is issued on مساند.
  */
-function MusanedPanel({
-  contract,
-}: {
-  contract: import('@/features/contracts/types').ContractListItem;
-}) {
+function MusanedPanel({ contract }: { contract: ContractListItem }) {
   const { can } = usePermissions();
   const update = useUpdateMusanedNo(contract.id);
   const editable = can('contracts', 'edit');
   const [value, setValue] = useState(contract.musaned_contract_no ?? '');
+  const [syncedFrom, setSyncedFrom] = useState(contract.musaned_contract_no);
+  if (syncedFrom !== contract.musaned_contract_no) {
+    // the saved number changed (save / refetch) → reflect it in the field
+    setSyncedFrom(contract.musaned_contract_no);
+    setValue(contract.musaned_contract_no ?? '');
+  }
   const dirty = value.trim() !== (contract.musaned_contract_no ?? '');
 
   return (

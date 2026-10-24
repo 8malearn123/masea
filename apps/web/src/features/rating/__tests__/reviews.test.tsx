@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { ToastProvider } from '@/shared/ui';
 import { FALLBACK_WORKERS, type WorkerProfile } from '@/lib/funnel';
 import { emptyDraft } from '@/lib/orderTypes';
-import { listWorkerReviews } from '@/features/rating/api/rating.api';
+import { listWorkerReviews, moderateRating } from '@/features/rating/api/rating.api';
 import {
   createMockReviewService,
   DUPLICATE_REVIEW_MESSAGE,
@@ -113,9 +113,13 @@ describe('خدمة التقييمات (Mock)', () => {
       comment: 'ممتازة في الطبخ',
       customer_name: 'هيا آل مفرح',
       target_type: 'worker',
+      status: 'pending',
     });
-    expect(svc.getWorkerRatingSummary(w.id).count).toBe(before + 1);
+    // لا يُنشر تلقائيًا: قيد المراجعة حتى توافق الإدارة
+    expect(svc.getWorkerRatingSummary(w.id).count).toBe(before);
     expect(svc.getRequestReview(requestNo, w.id)?.id).toBe(row.id);
+    await moderateRating(row.id, 'approve');
+    expect(svc.getWorkerRatingSummary(w.id).count).toBe(before + 1);
   });
 
   it('يمنع تقييمًا ثانيًا لنفس الطلب والعاملة (متتابعًا أو متزامنًا)', async () => {
@@ -134,7 +138,8 @@ describe('خدمة التقييمات (Mock)', () => {
       svc.addReview({ requestNo: other, workerId: w.id, rating: 4, comment: '' }),
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(svc.getWorkerRatingSummary(w.id).count).toBe(count + 1);
+    // التقييمان المقبولان قيد المراجعة — لا يغيّران الملخّص المنشور
+    expect(svc.getWorkerRatingSummary(w.id).count).toBe(count);
   });
 
   it('لا تقييم لطلب بلا عاملة، أو لطلب غير موجود، أو لعاملة غير مرتبطة بالطلب', async () => {
@@ -215,7 +220,9 @@ describe('التكامل مع المطابقة', () => {
     const w = worker('w7');
     expect(rating('w7')).toBeUndefined();
     const requestNo = await requestWith(w);
-    await svc.addReview({ requestNo, workerId: w.id, rating: 5, comment: '' });
+    const row = await svc.addReview({ requestNo, workerId: w.id, rating: 5, comment: '' });
+    expect(rating('w7')).toBeUndefined(); // قيد المراجعة — لا يدخل المطابقة
+    await moderateRating(row.id, 'approve');
     expect(rating('w7')).toMatchObject({ status: 'matched' });
     expect(matchWorker(w, home)).toEqual(matchWorker(w, home));
   });
@@ -288,7 +295,8 @@ describe('حالات إضافية', () => {
     const w = worker('w11');
     const requestNo = await requestWith(w);
     const long = 'ممتاز'.repeat(REVIEW_COMMENT_MAX / 5); // ٥٠٠ حرف بلا مسافات طرفية
-    await svc.addReview({ requestNo, workerId: w.id, rating: 5, comment: long });
+    const row = await svc.addReview({ requestNo, workerId: w.id, rating: 5, comment: long });
+    await moderateRating(row.id, 'approve');
     render(wrap(<ReviewList workerId={w.id} />));
     expect(await screen.findByText(long)).toBeInTheDocument();
   });
@@ -328,11 +336,14 @@ describe('التقييم من ملف الطلب', () => {
     await user.click(within(section).getByRole('button', { name: /إرسال التقييم/ }));
 
     expect(await within(section).findByText(/قيّمت هذه العاملة لهذا الطلب/)).toBeInTheDocument();
-    expect(svc.getWorkerRatingSummary(w.id).count).toBe(before + 1);
+    // يدخل قائمة المراجعة: لا يُنشر ولا يغيّر الملخّص حتى توافق الإدارة
+    expect(within(section).getByText('(قيد المراجعة)')).toBeInTheDocument();
+    expect(svc.getWorkerRatingSummary(w.id).count).toBe(before);
     const mine = svc.getRequestReview(requestNo, w.id)!;
     expect(mine.comment).toBe('منظّمة ومتعاونة');
+    expect(mine.status).toBe('pending');
     expect(
-      await within(section).findByText(new RegExp(`\\(${reviewsLabel(before + 1)}\\)`)),
+      await within(section).findByText(new RegExp(`\\(${reviewsLabel(before)}\\)`)),
     ).toBeInTheDocument();
     expect(within(section).queryByRole('button', { name: /أضف تقييمك/ })).toBeNull();
 

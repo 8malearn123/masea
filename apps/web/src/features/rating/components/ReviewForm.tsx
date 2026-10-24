@@ -57,7 +57,7 @@ export function ReviewForm({
         role="status"
         className="flex items-center gap-1.5 rounded-xl bg-teal-100 p-3 text-sm font-semibold text-teal"
       >
-        <CheckCircle2 size={16} /> شكرًا لك — نُشر تقييمك.
+        <CheckCircle2 size={16} /> شكرًا لك — استلمنا تقييمك وسيظهر بعد مراجعة الإدارة.
       </p>
     );
   }

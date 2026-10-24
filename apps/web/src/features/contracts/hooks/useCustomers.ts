@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
-import { createCustomer, searchCustomers, type CustomerLite } from '@/features/contracts/api/customers.api';
+import {
+  createCustomer,
+  searchCustomers,
+  type CustomerLite,
+} from '@/features/contracts/api/customers.api';
 
 export function useCustomerSearch(q: string) {
   return useQuery({

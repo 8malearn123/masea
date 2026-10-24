@@ -3,7 +3,8 @@ import { Star, Wallet, Crown, Share2, Gift, Copy, TrendingUp, Phone } from 'luci
 import { Badge, Button, Card, Input, useToast } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { useLoyaltyAccount, useRedeemPoints } from '@/features/loyalty/hooks/useLoyalty';
-import { LOYALTY_CONFIG, PACKAGES } from '@/features/loyalty/data/engine';
+import { LOYALTY_CONFIG } from '@/features/loyalty/data/engine';
+import { useLoyaltyConfig, useLoyaltyPackages } from '@/features/loyalty/hooks/useLoyalty';
 import { TIER_LABEL, TIER_TONE } from '@/features/loyalty/types';
 
 function Kpi({
@@ -28,6 +29,10 @@ function Kpi({
 }
 
 export function CustomerLoyalty({ customerId }: { customerId?: string | undefined }) {
+  // الإعدادات والباقات المُدارة من «الإدارة» — لا قيم ثابتة في العرض
+  const { data: cfg = LOYALTY_CONFIG } = useLoyaltyConfig();
+  const { data: allPackages = [] } = useLoyaltyPackages();
+  const packages = allPackages.filter((p) => p.is_active);
   const { data: acc, isLoading } = useLoyaltyAccount(customerId);
   const redeem = useRedeemPoints(customerId);
   const toast = useToast();
@@ -37,7 +42,7 @@ export function CustomerLoyalty({ customerId }: { customerId?: string | undefine
     return <Card className="py-10 text-center text-sm text-purple">جارٍ التحميل…</Card>;
   }
 
-  const redeemValue = points / LOYALTY_CONFIG.redeem_points_per_riyal;
+  const redeemValue = points / cfg.redeem_points_per_riyal;
   const remainingToNext = acc.next_tier
     ? Math.max(acc.next_tier.min_spend - acc.total_spend, 0)
     : 0;
@@ -141,8 +146,8 @@ export function CustomerLoyalty({ customerId }: { customerId?: string | undefine
             </button>
           </div>
           <p className="mt-2 text-[11px] text-purple">
-            احصل على <span className="font-bold">{LOYALTY_CONFIG.referral_commission_pct}٪</span>{' '}
-            عمولة في محفظتك عند أول طلب مدفوع لمن تُحيله.
+            احصل على <span className="font-bold">{cfg.referral_commission_pct}٪</span> عمولة في
+            محفظتك عند أول طلب مدفوع لمن تُحيله.
           </p>
         </Card>
       </div>
@@ -185,7 +190,7 @@ export function CustomerLoyalty({ customerId }: { customerId?: string | undefine
           <Gift size={16} /> الباقات والمميزات
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          {PACKAGES.map((p) => (
+          {packages.map((p) => (
             <Card key={p.id} className="py-4">
               <div className="flex items-center justify-between">
                 <p className="font-bold text-navy">{p.name}</p>

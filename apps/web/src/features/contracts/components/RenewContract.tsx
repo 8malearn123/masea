@@ -4,6 +4,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Badge, Button, Input, Modal, useToast } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { isDemoMode } from '@/shared/lib/demoBackend';
+import { priceFromBase } from '@/shared/lib/pricing';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useContractLineage, useRenewContract } from '@/features/contracts/hooks/useContracts';
 import { useExpiryWindow } from '@/features/contracts/hooks/useExpiryWindow';
@@ -64,6 +65,11 @@ function RenewContractModal({
   const submitting = useRef(false);
 
   const plan = renewalTerm(contract, start);
+  // نفس تسعير renew_contract: من السعر قبل الخصم (الخصم المعرّف مسبقًا لا ينتقل)
+  const renewalTotal = priceFromBase(
+    contract.service_code ?? 'monthly_rental',
+    contract.gross_amount ?? contract.base_amount,
+  ).total;
   const version = lineage
     ? nextVersion(
         contract,
@@ -130,8 +136,13 @@ function RenewContractModal({
             </Line>
             <Line label="الحالة">مسودة — تمرّ بالاعتماد والتوقيع من جديد</Line>
             <Line label="الإجمالي">
-              <span className="num">{sar(contract.total_amount)} ر.س</span>
+              <span className="num">{sar(renewalTotal)} ر.س</span>
             </Line>
+            {contract.discount_amount > 0 && (
+              <p className="mt-1 text-[11px] text-purple">
+                الخصم المعتمد على العقد الأصلي لا ينتقل للنسخة الجديدة.
+              </p>
+            )}
           </div>
           {plan.error !== null && <p className="mt-2 text-xs text-red-600">{plan.error}</p>}
         </section>

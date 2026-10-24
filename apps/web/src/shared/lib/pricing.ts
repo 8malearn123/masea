@@ -89,31 +89,95 @@ export interface PriceDetail {
   total: number;
 }
 
+// ----------------------------------------------------------------------------
+// Predefined discounts (0051). There is NO open discount: a discount can only
+// come from a promotion defined by management (pct OR amount + conditions) and
+// is re-validated by the backend (evaluate_promotion / calc_price).
+// ----------------------------------------------------------------------------
+
+/** A managed discount definition (supabase `promotions`). */
+export interface Promotion {
+  id: string;
+  name: string;
+  code: string | null;
+  description: string | null;
+  /** Exactly one of pct / amount is set. */
+  discount_pct: number | null;
+  discount_amount: number | null;
+  /** Services the discount applies to — empty = all services. */
+  service_codes: string[];
+  min_base_amount: number | null;
+  max_discount_amount: number | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  usage_limit: number | null;
+  usage_count: number;
+  is_active: boolean;
+}
+
+export interface PromotionCheck {
+  ok: boolean;
+  amount: number;
+  reason: string | null;
+}
+
+/** Pure mirror of the backend `evaluate_promotion()` — same rules, same order. */
+export function evaluatePromotion(
+  promo: Promotion,
+  service: string,
+  base: number,
+  now: Date = new Date(),
+): PromotionCheck {
+  const fail = (reason: string): PromotionCheck => ({ ok: false, amount: 0, reason });
+  if (!promo.is_active) return fail('الخصم معطّل');
+  if (promo.starts_at && now < new Date(promo.starts_at)) return fail('الخصم لم يبدأ بعد');
+  if (promo.ends_at && now > new Date(promo.ends_at)) return fail('انتهت صلاحية الخصم');
+  if (promo.service_codes.length > 0 && !promo.service_codes.includes(service)) {
+    return fail('الخصم لا يشمل هذه الخدمة');
+  }
+  if (promo.min_base_amount != null && base < promo.min_base_amount) {
+    return fail('المبلغ أقل من الحد الأدنى لتطبيق الخصم');
+  }
+  if (promo.usage_limit != null && promo.usage_count >= promo.usage_limit) {
+    return fail('استُنفد عدد مرات استخدام الخصم');
+  }
+  let amount =
+    promo.discount_pct != null
+      ? round2((base * promo.discount_pct) / 100)
+      : round2(promo.discount_amount ?? 0);
+  if (promo.max_discount_amount != null) amount = Math.min(amount, promo.max_discount_amount);
+  return { ok: true, amount: Math.min(amount, base), reason: null };
+}
+
 /** Inputs from loyalty (٠٧) and operations that adjust the base price. */
 export interface PriceModifiers {
-  discountAmount?: number;
-  discountPct?: number;
+  /** The selected predefined discount — applied only if eligible. */
+  promotion?: Promotion | null;
   walletRedeem?: number;
   lateDays?: number;
   cancelled?: boolean;
   absenceDays?: number;
+  /** Managed floor (pricing_rules.min_price × quantity) — discounts never go below it. */
+  floor?: number;
 }
 
-export function calcPriceDetail(
-  service: ServiceCode,
-  args: PriceArgs,
+/** Layered price from an already-resolved base (backend rule or fallback). */
+export function priceFromBase(
+  service: string,
+  rawBase: number,
   mods: PriceModifiers = {},
   cfg: PricingConfig = DEFAULT_PRICING_CONFIG,
 ): PriceDetail {
-  const base = round2(fallbackBase(service, args));
+  const base = round2(rawBase);
 
-  // (2) discounts: explicit + wallet + absence compensation, capped at base
-  let discounts =
-    (mods.discountAmount ?? 0) + (base * (mods.discountPct ?? 0)) / 100 + (mods.walletRedeem ?? 0);
+  // (2) discounts: predefined promotion + wallet + absence compensation,
+  //     capped at the managed floor (and never below zero)
+  let discounts = mods.walletRedeem ?? 0;
+  if (mods.promotion) discounts += evaluatePromotion(mods.promotion, service, base).amount;
   if (mods.absenceDays && mods.absenceDays > 0) {
     discounts += cfg.absence_per_day * Math.min(mods.absenceDays, cfg.absence_max_days);
   }
-  discounts = Math.min(round2(discounts), base);
+  discounts = Math.min(round2(discounts), Math.max(base - (mods.floor ?? 0), 0));
 
   // (3) penalties: late payment (capped) + cancellation
   let penalties = 0;
@@ -128,4 +192,13 @@ export function calcPriceDetail(
   const net = Math.max(round2(base - discounts + penalties), 0);
   const vat = round2(net * cfg.vat_rate);
   return { base, discounts, penalties, net, vat, total: round2(net + vat) };
+}
+
+export function calcPriceDetail(
+  service: ServiceCode,
+  args: PriceArgs,
+  mods: PriceModifiers = {},
+  cfg: PricingConfig = DEFAULT_PRICING_CONFIG,
+): PriceDetail {
+  return priceFromBase(service, fallbackBase(service, args), mods, cfg);
 }

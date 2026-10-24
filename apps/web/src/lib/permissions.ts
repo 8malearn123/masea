@@ -57,7 +57,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     payments: 'full',
     hr: 'full',
     call_center: 'full',
-    loyalty: 'full',
+    // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
+    loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     housing: 'full',
     orders: 'full',
     rating: 'full',
@@ -76,7 +77,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     payments: 'view',
     hr: 'view',
     call_center: 'full',
-    loyalty: 'full',
+    // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
+    loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     housing: 'full',
     orders: 'full',
     rating: 'full',

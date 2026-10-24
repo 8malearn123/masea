@@ -30,7 +30,12 @@ import { CustomerPicker } from '@/features/loyalty/components/CustomerPicker';
 import { WheelOfFortune } from '@/features/loyalty/components/WheelOfFortune';
 import { WheelPrizesManager } from '@/features/loyalty/components/WheelPrizesManager';
 import { CampaignFormModal } from '@/features/loyalty/components/CampaignFormModal';
-import { LOYALTY_CONFIG, PACKAGES, TIERS } from '@/features/loyalty/data/engine';
+import { usePermissions } from '@/hooks/usePermissions';
+import {
+  LoyaltyConfigCard,
+  PackagesCard,
+  TiersCard,
+} from '@/features/loyalty/components/LoyaltySettings';
 import {
   CAMPAIGN_TYPE_LABEL,
   CAMPAIGN_TYPE_TONE,
@@ -242,49 +247,15 @@ function MarketingView() {
 
 /* ------------------------------- admin view ------------------------------ */
 function AdminView() {
-  const cfg = LOYALTY_CONFIG;
-  const item = (label: string, value: string) => (
-    <div className="flex items-center justify-between rounded-lg bg-navy-50/50 px-3 py-2 text-sm">
-      <span className="text-purple">{label}</span>
-      <span className="num font-bold text-navy">{value}</span>
-    </div>
-  );
+  const { can } = usePermissions();
+  const editable = can('loyalty', 'manage');
   return (
     <div className="grid gap-5 lg:grid-cols-2">
-      <Card>
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-          <Settings2 size={16} /> إعدادات الولاء
-        </h2>
-        <div className="space-y-2">
-          {item('نقاط لكل ريال', String(cfg.points_per_riyal))}
-          {item('نقاط الاستبدال لكل ريال', String(cfg.redeem_points_per_riyal))}
-          {item('عمولة الإحالة', `${cfg.referral_commission_pct}٪`)}
-          {item('خصم الطلب الأول', `${cfg.first_order_discount_pct}٪`)}
-          {item('محاولات عجلة الحظ', String(cfg.wheel_spins_per_customer))}
-        </div>
-        <p className="mt-2 text-[11px] text-purple">
-          قابلة للتعديل من الإدارة عند ربط Supabase (جدول loyalty_config).
-        </p>
-      </Card>
-      <Card>
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-          <Star size={16} /> الفئات والمضاعفات
-        </h2>
-        <div className="space-y-2">
-          {TIERS.map((t) => item(`${t.label} (من ${sar(t.min_spend)} ر.س)`, `×${t.multiplier}`))}
-        </div>
-        <h2 className="mb-2 mt-4 flex items-center gap-2 text-sm font-bold text-navy">
-          <Gift size={16} /> الباقات
-        </h2>
-        <div className="space-y-1.5">
-          {PACKAGES.map((p) => (
-            <div key={p.id} className="flex items-center justify-between text-xs">
-              <span className="text-navy">{p.name}</span>
-              <span className="num font-bold text-gold-600">{sar(p.special_price)} ر.س</span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <LoyaltyConfigCard editable={editable} />
+      <div className="space-y-5">
+        <TiersCard editable={editable} />
+        <PackagesCard editable={editable} />
+      </div>
       <div className="lg:col-span-2">
         <WheelPrizesManager />
       </div>

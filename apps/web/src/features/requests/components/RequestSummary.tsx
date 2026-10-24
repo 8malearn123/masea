@@ -16,13 +16,13 @@ import {
   Layers,
   MapPin,
   Phone,
+  SearchX,
   Sparkles,
   Star,
   Store,
   UserRound,
   UsersRound,
   FlaskConical,
-  SearchX,
 } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
 import { EmptyState, ErrorState, Skeleton } from '@/shared/ui';
@@ -37,6 +37,7 @@ import { bookedRangesOf } from '@/features/catalog/lib/availability';
 import { RatingBadge, StarRow } from '@/features/rating/components/RatingParts';
 import { ReviewForm } from '@/features/rating/components/ReviewForm';
 import { useReviewEligibility } from '@/features/rating/hooks/useRatings';
+import { REVIEW_STATUS_LABEL } from '@/features/rating/types';
 import {
   DUPLICATE_REVIEW_MESSAGE,
   REVIEW_NOT_READY_MESSAGE,
@@ -343,6 +344,11 @@ function RequestReviewBlock({
         <p className="flex flex-wrap items-center gap-2 font-semibold text-navy">
           <CheckCircle2 size={14} className="text-teal" /> قيّمت هذه العاملة لهذا الطلب
           <StarRow value={existing.stars} />
+          {existing.status !== 'approved' && (
+            <span className="text-xs font-normal text-purple">
+              ({REVIEW_STATUS_LABEL[existing.status]})
+            </span>
+          )}
         </p>
         {existing.comment && (
           <p className="mt-1 break-words text-xs text-navy-900 [overflow-wrap:anywhere]">

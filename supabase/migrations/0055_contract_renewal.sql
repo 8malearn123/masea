@@ -1,5 +1,5 @@
 -- =============================================================
--- Masiat Alsharq ERP — 0051 Contract renewal + expiry alert window
+-- Masiat Alsharq ERP — 0055 Contract renewal + expiry alert window
 --
 -- (1) مهلة تنبيه انتهاء العقود في app_config (كانت في بيانات العرض فقط).
 --     on conflict do nothing: لا تُستبدل قيمة ضبطها الإداري.
@@ -13,6 +13,9 @@
 --       عند الضغط المتكرر أو الطلبات المتزامنة.
 --     • security definer على نمط transition_contract / set_musaned_contract_no:
 --       تُفحص الصلاحية ونطاق الفرع صراحةً بنفس شروط سياسات RLS للعقود.
+-- (3) يحلّ محلّ renew_contract(uuid) من 0052: نسخة واحدة للتجديد يختار فيها
+--     المستخدم تاريخ البداية (بنفس مدة الأصل). الخصم المعرّف مسبقًا (0051/0052)
+--     لا ينتقل للنسخة: تُسعَّر من السعر قبل الخصم، ويُسجَّل التجديد في audit_log.
 -- لا تعديل على الجداول أو سياسات RLS أو حالات العقود أو التسعير.
 -- =============================================================
 
@@ -37,6 +40,9 @@ as $$
 $$;
 
 -- ---------- (2b) renew_contract ----------
+-- نسخة 0052 ذات الوسيط الواحد تُستبدل بهذه (وإلا بقيت دالتان بنفس الاسم).
+drop function if exists renew_contract(uuid);
+
 create or replace function renew_contract(
   p_contract_id uuid,
   p_start_date  date,
@@ -135,14 +141,19 @@ begin
   where parent_contract_id = v_parent.id;
 
   -- النسخة الجديدة: بيانات الأصل التجارية فقط؛ لا توقيع/سداد/مساند/مراحل استقدام
+  -- السعر: من السعر قبل الخصم (gross_amount، 0052) — الخصم يُستهلك مرة واحدة
   insert into contracts (
     contract_no, customer_id, worker_id, branch_id, service_type, service_code,
-    template_id, start_date, end_date, base_amount, payment_method,
+    template_id, start_date, end_date, gross_amount, discount_amount, promotion_id,
+    base_amount, pricing_params, payment_method,
     status, version, parent_contract_id, created_by
   ) values (
     generate_contract_no(), v_parent.customer_id, v_parent.worker_id, v_parent.branch_id,
     v_parent.service_type, v_parent.service_code, v_parent.template_id,
-    p_start_date, p_end_date, v_parent.base_amount, v_parent.payment_method,
+    p_start_date, p_end_date,
+    coalesce(v_parent.gross_amount, v_parent.base_amount), 0, null,
+    coalesce(v_parent.gross_amount, v_parent.base_amount), v_parent.pricing_params,
+    v_parent.payment_method,
     'draft', v_version, v_parent.id, auth.uid()
   )
   returning * into v_row;
@@ -156,6 +167,10 @@ begin
 
   insert into contract_status_history (contract_id, from_status, to_status, changed_by)
   values (v_row.id, null, 'draft', auth.uid());
+
+  insert into audit_log (user_id, action, table_name, record_id, new_data)
+  values (auth.uid(), 'contract.renew', 'contracts', v_row.id,
+          jsonb_build_object('parent', v_parent.id, 'version', v_row.version));
 
   return v_row;
 end $$;
