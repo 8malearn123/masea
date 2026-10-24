@@ -1,3 +1,12 @@
+import {
+  BriefcaseBusiness,
+  CalendarDays,
+  PlaneLanding,
+  Repeat,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react';
+
 /**
  * Customer funnel domain types + offline fallback data.
  *
@@ -52,7 +61,7 @@ export const FALLBACK_SERVICES: ServiceItem[] = [
     name_ar: 'استقدام',
     tagline_ar: 'استقدام عمالة منزلية من الخارج',
     description_ar: 'استقدم عاملتك المنزلية بعقد موثّق وإجراءات كاملة حتى الوصول.',
-    icon: '🛬',
+    icon: 'plane',
     unit: 'fixed',
   },
   {
@@ -60,7 +69,7 @@ export const FALLBACK_SERVICES: ServiceItem[] = [
     name_ar: 'تأجير شهري',
     tagline_ar: 'عاملة بعقد شهري مرن',
     description_ar: 'استأجر عاملة منزلية بعقد شهري قابل للتجديد دون التزامات الاستقدام.',
-    icon: '🗓️',
+    icon: 'calendar',
     unit: 'month',
   },
   {
@@ -68,7 +77,7 @@ export const FALLBACK_SERVICES: ServiceItem[] = [
     name_ar: 'تأجير يومي',
     tagline_ar: 'خدمة منزلية ليوم واحد',
     description_ar: 'احجز عاملة لمهمة يومية: تنظيف، طبخ، أو رعاية — بسرعة ومرونة.',
-    icon: '🧹',
+    icon: 'sparkles',
     unit: 'day',
   },
   {
@@ -76,7 +85,7 @@ export const FALLBACK_SERVICES: ServiceItem[] = [
     name_ar: 'نقل كفالة',
     tagline_ar: 'نقل كفالة عاملة قائمة',
     description_ar: 'انقل كفالة عاملة حالية إليك بإجراءات نظامية عبر مساند وأبشر.',
-    icon: '🔁',
+    icon: 'repeat',
     unit: 'fixed',
   },
 ];
@@ -239,3 +248,15 @@ export const FALLBACK_WORKERS: WorkerProfile[] = [
     bio_ar: 'سائق خاص بخبرة طويلة يلتزم بالمواعيد.',
   },
 ];
+
+/** Service icon (lucide, by service code) — the DB `services.icon` text is not rendered. */
+const SERVICE_ICON: Record<string, LucideIcon> = {
+  recruitment: PlaneLanding,
+  monthly_rental: CalendarDays,
+  daily_rental: Sparkles,
+  sponsorship_transfer: Repeat,
+};
+
+export function serviceIcon(code: string): LucideIcon {
+  return SERVICE_ICON[code] ?? BriefcaseBusiness;
+}

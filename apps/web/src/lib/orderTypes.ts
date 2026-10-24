@@ -1,3 +1,4 @@
+import { Banknote, CreditCard, Smartphone, Wallet, type LucideIcon } from 'lucide-react';
 /** Order draft model + shared option lists for the customer wizard. */
 import type { ServiceCode } from '@/lib/funnel';
 import { buildPeriod } from '@/features/requests/lib/period';
@@ -54,13 +55,13 @@ export const TASK_TYPES = ['تنظيف', 'طبخ', 'رعاية'] as const;
 export interface PaymentMethodOpt {
   key: string;
   label: string;
-  icon: string;
+  icon: LucideIcon;
 }
 export const PAYMENT_METHODS: PaymentMethodOpt[] = [
-  { key: 'mada', label: 'مدى / Moyasar', icon: '💳' },
-  { key: 'apple_pay', label: 'Apple Pay', icon: '' },
-  { key: 'stc_pay', label: 'STC Pay', icon: '📱' },
-  { key: 'tamara', label: 'تابي / تمارا (تقسيط)', icon: '🟣' },
+  { key: 'mada', label: 'مدى / Moyasar', icon: CreditCard },
+  { key: 'apple_pay', label: 'Apple Pay', icon: Smartphone },
+  { key: 'stc_pay', label: 'STC Pay', icon: Wallet },
+  { key: 'tamara', label: 'تابي / تمارا (تقسيط)', icon: Banknote },
 ];
 
 /** Post-order tracking stages, per service. */

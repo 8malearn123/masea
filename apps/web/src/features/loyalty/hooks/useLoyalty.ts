@@ -19,9 +19,21 @@ import {
   spinWheel,
   updateWheelPrize,
 } from '@/features/loyalty/data/engine';
+import {
+  getLoyaltyConfig,
+  listPackages,
+  listTiers,
+  savePackage,
+  updateLoyaltyConfig,
+  updateTier,
+} from '@/features/loyalty/api/loyaltySettings.api';
 import type {
   Campaign,
   CampaignInput,
+  LoyaltyConfig,
+  LoyaltyPackageInput,
+  LoyaltyTier,
+  TierInfo,
   WheelPrize,
   WheelPrizeInput,
 } from '@/features/loyalty/types';
@@ -178,5 +190,68 @@ export function useRemoveWheelPrize() {
       toast.success('تم حذف الجائزة');
     },
     onError: (e) => toast.error(e.message || 'تعذّر حذف الجائزة'),
+  });
+}
+
+// ------------------------ managed loyalty settings ------------------------
+const CONFIG_KEY = ['loyalty', 'config'] as const;
+const TIERS_KEY = ['loyalty', 'tiers'] as const;
+const PACKAGES_KEY = ['loyalty', 'packages'] as const;
+
+export function useLoyaltyConfig() {
+  return useQuery({ queryKey: CONFIG_KEY, queryFn: getLoyaltyConfig, staleTime: 0 });
+}
+
+export function useUpdateLoyaltyConfig() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, LoyaltyConfig>({
+    mutationFn: (cfg) => updateLoyaltyConfig(cfg),
+    onSuccess: (_v, cfg) => {
+      qc.setQueryData(CONFIG_KEY, cfg);
+      void qc.invalidateQueries({ queryKey: ['loyalty'] });
+      toast.success('تم حفظ إعدادات الولاء');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ الإعدادات'),
+  });
+}
+
+export function useLoyaltyTiers() {
+  return useQuery({ queryKey: TIERS_KEY, queryFn: listTiers, staleTime: 0 });
+}
+
+export function useUpdateTier() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    void,
+    Error,
+    { tier: LoyaltyTier; patch: Pick<TierInfo, 'label' | 'min_spend' | 'multiplier'> }
+  >({
+    mutationFn: ({ tier, patch }) => updateTier(tier, patch),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['loyalty'] });
+      toast.success('تم تحديث الفئة');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر تحديث الفئة'),
+  });
+}
+
+export function useLoyaltyPackages() {
+  return useQuery({ queryKey: PACKAGES_KEY, queryFn: listPackages, staleTime: 0 });
+}
+
+export function useSavePackage() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { id: string | null; input: LoyaltyPackageInput }>({
+    mutationFn: ({ id, input }) => savePackage(id, input),
+    onSuccess: (_v, { id, input }) => {
+      void qc.invalidateQueries({ queryKey: PACKAGES_KEY });
+      toast.success(
+        id ? (input.is_active ? 'تم تحديث الباقة' : 'تم تعطيل الباقة') : 'تمت إضافة الباقة',
+      );
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ الباقة'),
   });
 }

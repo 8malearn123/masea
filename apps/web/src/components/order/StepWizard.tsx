@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText } from 'lucide-react';
+import { FileText, Paperclip, type LucideIcon } from 'lucide-react';
 import { sar } from '@/lib/format';
 import type { ServiceCode } from '@/lib/funnel';
 import { BRANCHES_AR } from '@/lib/funnel';
@@ -74,7 +74,7 @@ function RadioCards({
 }: {
   value: string;
   onChange: (v: string) => void;
-  options: { key: string; label: string; icon?: string }[];
+  options: { key: string; label: string; icon?: LucideIcon | null }[];
 }) {
   return (
     <div className="grid gap-2.5 sm:grid-cols-2">
@@ -88,7 +88,7 @@ function RadioCards({
             (value === o.key ? 'border-brand bg-brand-50' : 'border-brand-100 hover:border-brand')
           }
         >
-          {o.icon ? <span className="text-xl">{o.icon}</span> : null}
+          {o.icon ? <o.icon size={20} className="text-brand" /> : null}
           <span className="text-sm font-medium text-brand-dark">{o.label}</span>
         </button>
       ))}
@@ -493,7 +493,9 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
             {draft.documents.length > 0 && (
               <ul className="mt-3 space-y-1 text-sm text-brand-dark/70">
                 {draft.documents.map((d) => (
-                  <li key={d}>📎 {d}</li>
+                  <li key={d} className="flex items-center gap-1.5">
+                    <Paperclip size={13} /> {d}
+                  </li>
                 ))}
               </ul>
             )}

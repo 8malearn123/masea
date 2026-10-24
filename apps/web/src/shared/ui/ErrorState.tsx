@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react';
 import { Button } from '@/shared/ui/Button';
 
 export function ErrorState({
@@ -11,7 +12,7 @@ export function ErrorState({
 }) {
   return (
     <div className="grid place-items-center rounded-2xl border border-red-100 bg-red-50/40 p-10 text-center">
-      <div className="text-4xl">⚠️</div>
+      <TriangleAlert size={36} className="mx-auto text-gold-600" />
       <p className="mt-3 font-bold text-red-700">{title}</p>
       <p className="mt-1 max-w-sm text-sm text-red-600/80">{description}</p>
       {onRetry && (

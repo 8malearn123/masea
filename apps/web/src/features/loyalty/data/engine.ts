@@ -134,12 +134,14 @@ export const PACKAGES: LoyaltyPackage[] = [
     name: 'باقة العائلة',
     included: ['استقدام', 'خدمة يومية شهر'],
     special_price: 17500,
+    is_active: true,
   },
   {
     id: 'pk2',
     name: 'باقة المنزل المتكامل',
     included: ['تأجير شهري', 'نقل كفالة'],
     special_price: 4200,
+    is_active: true,
   },
 ];
 

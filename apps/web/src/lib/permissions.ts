@@ -4,6 +4,25 @@
  * The backend (RLS + has_perm) is the source of truth for security; this
  * mirror only drives UI gating (sidebar, PermissionGate). Keep both in sync.
  */
+import {
+  BarChart3,
+  Building2,
+  Calculator,
+  CreditCard,
+  FileText,
+  Gift,
+  Headphones,
+  KanbanSquare,
+  MapPin,
+  Settings2,
+  ShieldCheck,
+  Star,
+  Tag,
+  Target,
+  Truck,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import type { AppRole } from '@masiat/shared';
 
 export type RoleCode = AppRole;
@@ -57,7 +76,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     payments: 'full',
     hr: 'full',
     call_center: 'full',
-    loyalty: 'full',
+    // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
+    loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     housing: 'full',
     orders: 'full',
     rating: 'full',
@@ -76,7 +96,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     payments: 'view',
     hr: 'view',
     call_center: 'full',
-    loyalty: 'full',
+    // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
+    loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     housing: 'full',
     orders: 'full',
     rating: 'full',
@@ -186,7 +207,8 @@ export const ROLE_META: Record<RoleCode, RoleMeta> = {
 export interface ModuleNav {
   module: ModuleCode;
   label: string;
-  icon: string;
+  /** lucide-react icon (no emoji). */
+  icon: LucideIcon;
   to: string;
 }
 
@@ -214,20 +236,20 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 
 /** Sidebar source — filtered by `view` permission at render time. */
 export const MODULES: ModuleNav[] = [
-  { module: 'contracts', label: 'العقود', icon: '📄', to: '/contracts' },
-  { module: 'leads', label: 'العملاء المحتملون', icon: '🧲', to: '/leads' },
-  { module: 'orders', label: 'الطلبات والسائقون', icon: '🚚', to: '/orders' },
-  { module: 'gps', label: 'التتبّع GPS', icon: '🛰️', to: '/gps' },
-  { module: 'pricing', label: 'التسعير', icon: '🏷️', to: '/pricing' },
-  { module: 'payments', label: 'المدفوعات', icon: '💳', to: '/payments' },
-  { module: 'call_center', label: 'مركز الاتصال', icon: '📞', to: '/call-center' },
-  { module: 'loyalty', label: 'الولاء والتسويق', icon: '⭐', to: '/loyalty' },
-  { module: 'rating', label: 'التقييم', icon: '🌟', to: '/rating' },
-  { module: 'hr', label: 'الموارد البشرية', icon: '🧑‍💼', to: '/hr' },
-  { module: 'housing', label: 'السكن', icon: '🏠', to: '/housing' },
-  { module: 'targets', label: 'الأهداف ولوحة الشرف', icon: '🎯', to: '/targets' },
-  { module: 'accounting', label: 'المحاسبة', icon: '🧮', to: '/accounting' },
-  { module: 'reports', label: 'التقارير', icon: '📊', to: '/reports' },
-  { module: 'settings', label: 'الإعدادات', icon: '⚙️', to: '/settings' },
-  { module: 'rbac', label: 'الحسابات والصلاحيات', icon: '🔐', to: '/rbac' },
+  { module: 'contracts', label: 'العقود', icon: FileText, to: '/contracts' },
+  { module: 'leads', label: 'العملاء المحتملون', icon: KanbanSquare, to: '/leads' },
+  { module: 'orders', label: 'الطلبات والسائقون', icon: Truck, to: '/orders' },
+  { module: 'gps', label: 'التتبّع GPS', icon: MapPin, to: '/gps' },
+  { module: 'pricing', label: 'التسعير', icon: Tag, to: '/pricing' },
+  { module: 'payments', label: 'المدفوعات', icon: CreditCard, to: '/payments' },
+  { module: 'call_center', label: 'مركز الاتصال', icon: Headphones, to: '/call-center' },
+  { module: 'loyalty', label: 'الولاء والتسويق', icon: Gift, to: '/loyalty' },
+  { module: 'rating', label: 'التقييم', icon: Star, to: '/rating' },
+  { module: 'hr', label: 'الموارد البشرية', icon: Users, to: '/hr' },
+  { module: 'housing', label: 'السكن', icon: Building2, to: '/housing' },
+  { module: 'targets', label: 'الأهداف ولوحة الشرف', icon: Target, to: '/targets' },
+  { module: 'accounting', label: 'المحاسبة', icon: Calculator, to: '/accounting' },
+  { module: 'reports', label: 'التقارير', icon: BarChart3, to: '/reports' },
+  { module: 'settings', label: 'الإعدادات', icon: Settings2, to: '/settings' },
+  { module: 'rbac', label: 'الحسابات والصلاحيات', icon: ShieldCheck, to: '/rbac' },
 ];

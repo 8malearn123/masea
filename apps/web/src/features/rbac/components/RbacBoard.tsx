@@ -135,7 +135,9 @@ export default function RbacBoard() {
               {MODULES.map((m) => (
                 <tr key={m.module} className="border-t border-navy-50">
                   <td className="sticky right-0 bg-white p-2 text-right font-semibold text-navy">
-                    {m.icon} {m.label}
+                    <span className="inline-flex items-center gap-1.5">
+                      <m.icon size={14} /> {m.label}
+                    </span>
                   </td>
                   {ROLE_ORDER.map((r) => {
                     const a = accessFor(r, m.module);

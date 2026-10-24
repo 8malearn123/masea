@@ -130,7 +130,12 @@ export interface LoyaltyPackage {
   name: string;
   included: string[];
   special_price: number;
+  /** باقة معطّلة لا تُعرض للعملاء (تعطيل = soft delete). */
+  is_active: boolean;
 }
+
+/** بيانات إنشاء/تعديل باقة (بدون المعرّف). */
+export type LoyaltyPackageInput = Omit<LoyaltyPackage, 'id'>;
 
 export interface PointsEntry {
   id: string;
