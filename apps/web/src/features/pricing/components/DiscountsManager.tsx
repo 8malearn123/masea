@@ -29,6 +29,7 @@ const EMPTY: PromotionInput = {
   ends_at: null,
   usage_limit: null,
   is_active: true,
+  requires_code: false,
 };
 
 function toForm(p: Promotion): PromotionInput {
@@ -45,6 +46,7 @@ function toForm(p: Promotion): PromotionInput {
     ends_at: p.ends_at ? p.ends_at.slice(0, 10) : null,
     usage_limit: p.usage_limit,
     is_active: p.is_active,
+    requires_code: p.requires_code,
   };
 }
 
@@ -78,7 +80,10 @@ export function DiscountsManager({ editable }: { editable: boolean }) {
       header: 'الخصم',
       cell: (p) => (
         <div>
-          <span className="block text-sm font-semibold text-navy-900">{p.name}</span>
+          <span className="flex items-center gap-1.5 text-sm font-semibold text-navy-900">
+            {p.name}
+            {p.requires_code && <Badge tone="gold">كوبون</Badge>}
+          </span>
           {p.code && <span className="num block text-[11px] text-purple">{p.code}</span>}
         </div>
       ),
@@ -233,7 +238,7 @@ function DiscountFormModal({
             error={errors.name}
           />
           <Input
-            label="الرمز (اختياري)"
+            label={form.requires_code ? 'رمز الكوبون' : 'الرمز (اختياري)'}
             value={form.code}
             onChange={(e) => set({ code: e.target.value })}
             placeholder="NATIONAL95"
@@ -329,6 +334,20 @@ function DiscountFormModal({
             className="h-4 w-4 rounded border-navy-100"
           />
           مفعّل ومتاح للاختيار
+        </label>
+        <label className="flex items-start gap-2 text-sm text-navy">
+          <input
+            type="checkbox"
+            checked={form.requires_code}
+            onChange={(e) => set({ requires_code: e.target.checked })}
+            className="mt-0.5 h-4 w-4 rounded border-navy-100"
+          />
+          <span>
+            كوبون خصم — لا يظهر في قائمة الخصومات، ويُطبَّق فقط بإدخال رمزه
+            <span className="block text-[11px] text-purple">
+              يُمنح للعميل (رسالة، حملة، عجلة الحظ) ويُدخله الموظف في خانة الكوبون.
+            </span>
+          </span>
         </label>
         <Button onClick={submit} loading={save.isPending} className="w-full">
           حفظ الخصم

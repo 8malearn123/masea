@@ -41,7 +41,8 @@ export function RenewContractButton({
   return (
     <>
       <Button size={size} variant="primary" onClick={() => setOpen(true)}>
-        <RefreshCw size={size === 'sm' ? 13 : 16} /> تجديد العقد
+        <RefreshCw size={size === 'sm' ? 13 : 16} />{' '}
+        {contract.status === 'cancelled' ? 'تجديد العقد الملغى' : 'تجديد العقد'}
       </Button>
       {open && <RenewContractModal contract={contract} onClose={() => setOpen(false)} />}
     </>

@@ -113,6 +113,8 @@ export interface Promotion {
   usage_limit: number | null;
   usage_count: number;
   is_active: boolean;
+  /** Coupon: hidden from the discount list, applied only by entering its code. */
+  requires_code: boolean;
 }
 
 export interface PromotionCheck {
@@ -127,8 +129,12 @@ export function evaluatePromotion(
   service: string,
   base: number,
   now: Date = new Date(),
+  code: string | null = null,
 ): PromotionCheck {
   const fail = (reason: string): PromotionCheck => ({ ok: false, amount: 0, reason });
+  if (promo.requires_code && !sameCode(code, promo.code)) {
+    return fail('الخصم يتطلب رمز كوبون صحيح');
+  }
   if (!promo.is_active) return fail('الخصم معطّل');
   if (promo.starts_at && now < new Date(promo.starts_at)) return fail('الخصم لم يبدأ بعد');
   if (promo.ends_at && now > new Date(promo.ends_at)) return fail('انتهت صلاحية الخصم');
@@ -149,10 +155,23 @@ export function evaluatePromotion(
   return { ok: true, amount: Math.min(amount, base), reason: null };
 }
 
+/** Case/space-insensitive coupon code comparison. */
+export function sameCode(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (v: string | null | undefined) => (v ?? '').trim().toUpperCase();
+  return norm(a) !== '' && norm(a) === norm(b);
+}
+
+/** Find the promotion a coupon code refers to (any discount with that code). */
+export function findByCode(promotions: Promotion[], code: string): Promotion | null {
+  return promotions.find((p) => sameCode(code, p.code)) ?? null;
+}
+
 /** Inputs from loyalty (٠٧) and operations that adjust the base price. */
 export interface PriceModifiers {
   /** The selected predefined discount — applied only if eligible. */
   promotion?: Promotion | null;
+  /** The coupon code entered for it (required when the promotion is a coupon). */
+  promotionCode?: string | null;
   walletRedeem?: number;
   lateDays?: number;
   cancelled?: boolean;
@@ -173,7 +192,15 @@ export function priceFromBase(
   // (2) discounts: predefined promotion + wallet + absence compensation,
   //     capped at the managed floor (and never below zero)
   let discounts = mods.walletRedeem ?? 0;
-  if (mods.promotion) discounts += evaluatePromotion(mods.promotion, service, base).amount;
+  if (mods.promotion) {
+    discounts += evaluatePromotion(
+      mods.promotion,
+      service,
+      base,
+      new Date(),
+      mods.promotionCode ?? null,
+    ).amount;
+  }
   if (mods.absenceDays && mods.absenceDays > 0) {
     discounts += cfg.absence_per_day * Math.min(mods.absenceDays, cfg.absence_max_days);
   }
@@ -201,4 +228,35 @@ export function calcPriceDetail(
   cfg: PricingConfig = DEFAULT_PRICING_CONFIG,
 ): PriceDetail {
   return priceFromBase(service, fallbackBase(service, args), mods, cfg);
+}
+
+/** The fields of a pricing rule the floor lookup needs (pricing_rules). */
+export interface FloorRule {
+  service_code: string;
+  nationality: string | null;
+  profession: string | null;
+  min_price: number | null;
+  is_active: boolean;
+}
+
+/**
+ * Managed price floor for an order: the most specific active rule's
+ * `min_price × quantity` — the same rule selection calc_price uses.
+ */
+export function ruleFloor(rules: FloorRule[], service: string, args: PriceArgs): number {
+  const match = rules
+    .filter(
+      (r) =>
+        r.is_active &&
+        r.service_code === service &&
+        (r.nationality == null || r.nationality === args.nationality) &&
+        (r.profession == null || r.profession === args.profession),
+    )
+    .sort(
+      (a, b) =>
+        Number(b.nationality != null) +
+        Number(b.profession != null) -
+        (Number(a.nationality != null) + Number(a.profession != null)),
+    )[0];
+  return round2((match?.min_price ?? 0) * Math.max(args.quantity, 1));
 }

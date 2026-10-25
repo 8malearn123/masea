@@ -3,13 +3,14 @@
  * نفس القواعد تنفّذها دالة الخادم `renew_contract` (supabase 0055)؛ هذه النسخة
  * للواجهة (أهلية الزر، التواريخ المقترحة) وللوضع التجريبي.
  *
- * - يُجدَّد العقد الساري فقط، لخدمة لها مدة، وله تاريخ نهاية.
+ * - يُجدَّد العقد الساري أو الملغى، لخدمة لها مدة، وله تاريخ نهاية.
+ *   الملغى يُجدَّد كعقد جديد يبدأ افتراضيًا اليوم (لا يُشترط أن يبدأ بعد نهايته).
  * - النسخة الجديدة بنفس مدة الأصل (السعر مرتبط بالمدة؛ تغيير المدة يتطلب قرار تسعير).
  * - تبدأ بعد نهاية الأصل (لا تداخل)، وافتراضيًا في اليوم التالي لنهايته.
  * - تجديد قائم واحد فقط (غير ملغى) لكل عقد؛ والإصدار = أكبر إصدار في الأصل
  *   وتجديداته السابقة (ومنها الملغاة) + ١، فلا يتكرّر رقم إصدار.
  */
-import { addDays, isValidDay } from '@/features/requests/lib/period';
+import { addDays, isValidDay, today } from '@/features/requests/lib/period';
 import {
   contractEndDate,
   contractTermLabel,
@@ -32,7 +33,9 @@ export function renewalRuleError(
   c: ContractListItem,
   existingRenewals: ContractListItem[],
 ): string | null {
-  if (c.status !== 'active') return 'التجديد متاح للعقود السارية فقط';
+  if (c.status !== 'active' && c.status !== 'cancelled') {
+    return 'التجديد متاح للعقود السارية أو الملغاة فقط';
+  }
   if (contractTermUnit(c.service_code) === null) return 'هذه الخدمة بلا مدة — لا تُجدَّد';
   if (!c.end_date || !c.start_date) return 'تاريخ نهاية العقد الأصلي غير محدد';
   if (inferTermCount(c.service_code, c.start_date, c.end_date) === null) {
@@ -55,14 +58,17 @@ export function renewalBlocker(
 ): string | null {
   const rule = renewalRuleError(c, existingRenewals);
   if (rule) return rule;
+  // الملغى لا ينتظر مهلة التنبيه — يُجدَّد متى احتاجه العميل
+  if (c.status === 'cancelled') return null;
   if (!needsRenewal(contractInsight(c, now, windowDays).expiry)) {
     return 'لم يدخل العقد مهلة التجديد بعد';
   }
   return null;
 }
 
-/** تاريخ البداية المقترح: اليوم التالي لنهاية العقد الأصلي. */
-export function defaultRenewalStart(c: ContractListItem): string {
+/** تاريخ البداية المقترح: اليوم التالي لنهاية الأصل، أو اليوم إن كان الأصل ملغى. */
+export function defaultRenewalStart(c: ContractListItem, now: Date = new Date()): string {
+  if (c.status === 'cancelled') return today(now);
   return c.end_date ? addDays(c.end_date, 1) : '';
 }
 
@@ -84,7 +90,7 @@ export function renewalTerm(
   }
   if (!start) return { term: null, error: 'حدّد تاريخ بداية النسخة الجديدة' };
   if (!isValidDay(start)) return { term: null, error: 'تاريخ البداية غير صالح' };
-  if (start <= c.end_date) {
+  if (c.status !== 'cancelled' && start <= c.end_date) {
     return { term: null, error: 'تبدأ النسخة الجديدة بعد نهاية العقد الأصلي' };
   }
   const end = contractEndDate(c.service_code, start, count);

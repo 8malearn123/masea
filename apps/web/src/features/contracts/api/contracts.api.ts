@@ -3,8 +3,16 @@ import { useAuth } from '@/store/auth';
 import { loadDemo } from '@/lib/demo';
 import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { DEFAULT_PRICING_CONFIG, fallbackBase, priceFromBase } from '@/shared/lib/pricing';
+import {
+  DEFAULT_PRICING_CONFIG,
+  evaluatePromotion,
+  fallbackBase,
+  findByCode,
+  priceFromBase,
+  ruleFloor,
+} from '@/shared/lib/pricing';
 import { listPromotions } from '@/features/pricing/api/promotions.api';
+import { listPricingRules } from '@/features/pricing/api/pricing.api';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
 import { addDays, addMonths, computeEndDate } from '@/features/requests/lib/period';
 import type { PeriodUnit } from '@/features/requests/types';
@@ -625,17 +633,38 @@ async function localDraft(
   input: CreateContractInput,
   term: ContractTerm,
 ): Promise<ContractListItem> {
-  const promotions = input.promotion_id ? await listPromotions() : [];
-  const promotion = promotions.find((p) => p.id === input.promotion_id) ?? null;
+  const code = input.promotion_code?.trim() || null;
+  const wantsDiscount = Boolean(input.promotion_id || code);
+  const promotions = wantsDiscount ? await listPromotions() : [];
+  // same resolution as calc_price: by id, else the coupon code
+  const promotion =
+    promotions.find((p) => p.id === input.promotion_id) ??
+    (code ? findByCode(promotions, code) : null);
   const base = fallbackBase(input.service_code, {
     nationality: input.nationality,
     profession: input.profession,
     quantity: input.quantity ?? 1,
   });
-  const price = priceFromBase(input.service_code, base, { promotion }, DEFAULT_PRICING_CONFIG);
-  if (input.promotion_id && promotion && price.discounts === 0) {
-    throw new Error('لا يمكن تطبيق الخصم المختار على هذا العقد');
+  if (wantsDiscount) {
+    if (!promotion) throw new Error('لا يمكن تطبيق الخصم: رمز الكوبون غير صحيح');
+    const check = evaluatePromotion(promotion, input.service_code, base, new Date(), code);
+    if (!check.ok) throw new Error(`لا يمكن تطبيق الخصم: ${check.reason ?? 'غير مؤهل'}`);
   }
+  const price = priceFromBase(
+    input.service_code,
+    base,
+    {
+      promotion,
+      promotionCode: code,
+      // managed floor (pricing_rules.min_price × qty) — same as calc_price
+      floor: ruleFloor(await listPricingRules(), input.service_code, {
+        nationality: input.nationality,
+        profession: input.profession,
+        quantity: input.quantity ?? 1,
+      }),
+    },
+    DEFAULT_PRICING_CONFIG,
+  );
   const id = `local-${Date.now()}-${++localSeq}`;
   const item: ContractListItem = {
     id,

@@ -199,6 +199,8 @@ export const createContractInputSchema = z
     profession: z.string().optional(),
     template_id: z.string().nullable().optional(),
     promotion_id: z.string().nullable().optional(),
+    /** Coupon code — required by the backend when the promotion is a coupon. */
+    promotion_code: z.string().nullable().optional(),
     clauses: z.array(z.string()).default([]),
     // Optional at creation for musaned contracts — can be filled once issued on مساند.
     musaned_contract_no: z.string().optional(),

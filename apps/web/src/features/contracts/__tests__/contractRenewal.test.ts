@@ -185,7 +185,10 @@ describe('تجديد العقد (الوضع التجريبي)', () => {
 
   it('يرفض تجديد غير الساري ونقل الكفالة', async () => {
     signInDemo('admin');
-    await expect(renewContract('00006', '2027-01-01', '2027-03-31')).rejects.toThrow('السارية فقط'); // ملغى
+    // معتمد (لم يسرِ بعد) — التجديد للساري أو الملغى فقط
+    await expect(renewContract('00003', '2027-01-01', '2027-01-03')).rejects.toThrow(
+      'السارية أو الملغاة فقط',
+    );
     demoMutateContract('00005', { status: 'active' });
     await expect(renewContract('00005', '2027-01-01', '2027-03-31')).rejects.toThrow('بلا مدة');
   });
@@ -217,8 +220,15 @@ describe('قواعد زر التجديد', () => {
     expect(renewalBlocker(base({}), [], 5, NOW)).toBe('لم يدخل العقد مهلة التجديد بعد');
   });
 
-  it('لا يظهر للملغى أو بلا تاريخ نهاية أو مع تجديد قائم', () => {
-    expect(renewalBlocker(base({ status: 'cancelled' }), [], 30, NOW)).not.toBeNull();
+  it('يظهر للملغى دون انتظار مهلة التنبيه، ويُخفى بلا تاريخ نهاية أو مع تجديد قائم', () => {
+    // ملغى قبل دخول المهلة بكثير — يُجدَّد كعقد جديد يبدأ اليوم
+    const cancelled = base({
+      status: 'cancelled',
+      end_date: '2027-06-30',
+      start_date: '2027-04-01',
+    });
+    expect(renewalBlocker(cancelled, [], 30, NOW)).toBeNull();
+    expect(renewalBlocker(base({ status: 'draft' }), [], 30, NOW)).not.toBeNull();
     expect(renewalBlocker(base({ end_date: null }), [], 30, NOW)).not.toBeNull();
     const child = base({ id: 'y', parent_contract_id: 'x', status: 'draft' });
     expect(renewalBlocker(base({}), [child], 30, NOW)).toContain('يوجد تجديد قائم');
