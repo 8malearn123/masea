@@ -11,17 +11,17 @@ import { useOrderIntent } from '@/store/orderIntent';
 import {
   AGE_RANGES,
   availabilityOf,
+  attributeOptions,
   maritalOf,
-  MARITAL_STATUSES,
   motherTongueOf,
-  MOTHER_TONGUES,
   NATIONALITIES,
   PROFESSIONS,
-  ratingOf,
   religionOf,
-  RELIGIONS,
   spokenLanguages,
 } from '@/features/catalog/lib/catalog';
+import type { WorkerProfile } from '@/lib/funnel';
+import { getReviewService } from '@/features/rating/services/reviewService';
+import { compareByRating } from '@/features/rating/lib/ratingRank';
 
 type Sort = 'rating' | 'available' | 'salary';
 
@@ -32,6 +32,9 @@ export default function WorkerCatalog() {
   const [profession, setProfession] = useState('all');
   const [ageRange, setAgeRange] = useState('all');
   const [religion, setReligion] = useState('all');
+  const religionOptions = useMemo(() => attributeOptions(workers, religionOf), [workers]);
+  const maritalOptions = useMemo(() => attributeOptions(workers, maritalOf), [workers]);
+  const motherTongueOptions = useMemo(() => attributeOptions(workers, motherTongueOf), [workers]);
   const [marital, setMarital] = useState('all');
   const [motherTongue, setMotherTongue] = useState('all');
   const [language, setLanguage] = useState('all');
@@ -66,6 +69,13 @@ export default function WorkerCatalog() {
       }
       return true;
     });
+    // الأعلى تقييمًا: متوسط مرجّح بالعدد (ratingRank.ts) — المتوسط العام من كل العاملات
+    const reviews = getReviewService();
+    const rankable = (w: WorkerProfile) => ({
+      id: w.id,
+      summary: reviews.getWorkerRatingSummary(w.id),
+    });
+    const byRating = compareByRating(workers.map(rankable));
     return [...rows].sort((a, b) => {
       if (sort === 'salary') return a.monthly_salary - b.monthly_salary;
       if (sort === 'available') {
@@ -73,7 +83,7 @@ export default function WorkerCatalog() {
           Number(availabilityOf(a) !== 'available') - Number(availabilityOf(b) !== 'available')
         );
       }
-      return ratingOf(b) - ratingOf(a);
+      return byRating(rankable(a), rankable(b));
     });
   }, [
     workers,
@@ -184,15 +194,26 @@ export default function WorkerCatalog() {
                 options={AGE_RANGES.map((r) => r.label)}
               />
             </Group>
-            <Group label="الديانة">
-              <Pills value={religion} onChange={setReligion} options={RELIGIONS} />
-            </Group>
-            <Group label="الحالة الاجتماعية">
-              <Pills value={marital} onChange={setMarital} options={MARITAL_STATUSES} />
-            </Group>
-            <Group label="اللغة الأم">
-              <Pills value={motherTongue} onChange={setMotherTongue} options={MOTHER_TONGUES} />
-            </Group>
+            {/* سمات شخصية: خيارات من البيانات الموجودة فقط — تختفي إن لم تتوفر */}
+            {religionOptions.length > 0 && (
+              <Group label="الديانة">
+                <Pills value={religion} onChange={setReligion} options={religionOptions} />
+              </Group>
+            )}
+            {maritalOptions.length > 0 && (
+              <Group label="الحالة الاجتماعية">
+                <Pills value={marital} onChange={setMarital} options={maritalOptions} />
+              </Group>
+            )}
+            {motherTongueOptions.length > 0 && (
+              <Group label="اللغة الأم">
+                <Pills
+                  value={motherTongue}
+                  onChange={setMotherTongue}
+                  options={motherTongueOptions}
+                />
+              </Group>
+            )}
             <Group label="اللغات التي تتحدثها">
               <Pills value={language} onChange={setLanguage} options={languageOptions} />
             </Group>
@@ -226,7 +247,7 @@ export default function WorkerCatalog() {
         <main>
           <div className="mb-3 flex items-center justify-between">
             <p className="text-sm text-purple">
-              <span className="num font-bold text-navy">{filtered.length}</span> عاملة متاحة
+              <span className="num font-bold text-navy">{filtered.length}</span> عاملة في النتائج
             </p>
             <select
               value={sort}

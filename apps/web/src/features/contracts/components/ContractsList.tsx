@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -19,13 +19,14 @@ import { useRecruitmentStages } from '@/features/contracts/hooks/useRecruitment'
 import { StatusBadge } from '@/features/contracts/components/StatusBadge';
 import { ExpiryAlerts } from '@/features/contracts/components/ExpiryAlerts';
 import { CONTRACT_STATUS_LABEL } from '@/features/contracts/lib/contractState';
-import { useConfig } from '@/features/settings/hooks/useSettings';
-import { configValue } from '@/features/settings/api/settings.api';
+import { useExpiryWindow } from '@/features/contracts/hooks/useExpiryWindow';
 import {
   contractInsight,
   contractKpis,
-  RENEWAL_WINDOW_DAYS,
   contractStageLabel,
+  EXPIRY_STATE_LABEL,
+  expiryTone,
+  type ExpiryState,
   matchesTab,
   sortContracts,
   type ContractSort,
@@ -76,7 +77,7 @@ const ACTION_LABEL: Record<ContractStatus, string> = {
   awaiting_signature: 'توقيع',
   signed: 'تفعيل',
   active: 'متابعة',
-  completed: 'تجديد',
+  completed: 'عرض',
   cancelled: 'تجديد',
 };
 
@@ -109,7 +110,12 @@ function EnhancedContractsList() {
     branch: 'all',
     search: '',
   });
-  const [tab, setTab] = useState<ContractTab>('all');
+  // ?tab=renewals — رابط «العقود التي تحتاج تجديدًا» من لوحة التحكم.
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<ContractTab>(() => {
+    const t = params.get('tab');
+    return TABS.some((x) => x.value === t) ? (t as ContractTab) : 'all';
+  });
   const [sort, setSort] = useState<ContractSort>('recent');
   const [page, setPage] = useState(0);
   const { can } = usePermissions();
@@ -119,9 +125,8 @@ function EnhancedContractsList() {
 
   const now = useMemo(() => new Date(), []);
   // مهلة التنبيه/التجديد قيمة إدارية من إعدادات النظام — مصدر واحد للتنبيهات
-  // ولتبويب التجديدات ومؤشّره، فتغييرها من الواجهة ينعكس على الشاشة كلها.
-  const { data: config = [] } = useConfig();
-  const renewalWindow = configValue(config, 'contract_expiry_alert_days', RENEWAL_WINDOW_DAYS);
+  // ولتبويب التجديدات ومؤشّره وشارة الحالة، فتغييرها من الواجهة ينعكس على الشاشة كلها.
+  const renewalWindow = useExpiryWindow().days;
   const kpis = useMemo(() => contractKpis(data, now, renewalWindow), [data, now, renewalWindow]);
 
   // rows enriched with derived insight, then tab-filtered + sorted
@@ -204,8 +209,8 @@ function EnhancedContractsList() {
         )}
       </div>
 
-      {/* تنبيهات انتهاء العقود */}
-      <ExpiryAlerts contracts={data} />
+      {/* تنبيهات انتهاء العقود — بعد نجاح الجلب فقط (لا «لا تنبيهات» عند الخطأ) */}
+      {!isLoading && !isError && <ExpiryAlerts contracts={data} />}
 
       {/* KPI row */}
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
@@ -226,9 +231,9 @@ function EnhancedContractsList() {
         <Kpi
           icon={<RefreshCw size={18} />}
           tone="gold"
-          label={`تجديدات خلال ${renewalWindow} يوم`}
+          label="تحتاج تجديدًا"
           value={String(kpis.renewals)}
-          hint="فرصة دخل متكرر"
+          hint={`منتهية ${kpis.expired} · تنتهي خلال ${renewalWindow} يومًا ${kpis.expiringSoon}`}
         />
         <Kpi
           icon={<AlertCircle size={18} />}
@@ -329,6 +334,7 @@ function EnhancedContractsList() {
         onRetry={() => void refetch()}
         stageName={stageName}
         now={now}
+        windowDays={renewalWindow}
       />
 
       {/* summary footer */}
@@ -413,6 +419,12 @@ function Kpi({
 }
 
 /* ----------------------------- rich table -------------------------------- */
+function expiryStateTone(state: ExpiryState) {
+  return state === 'expired' || state === 'critical' || state === 'soon'
+    ? expiryTone(state)
+    : 'neutral';
+}
+
 function ContractTable({
   rows,
   isLoading,
@@ -420,6 +432,7 @@ function ContractTable({
   onRetry,
   stageName,
   now,
+  windowDays,
 }: {
   rows: ContractListItem[];
   isLoading: boolean;
@@ -427,6 +440,7 @@ function ContractTable({
   onRetry: () => void;
   stageName: (code: string | null) => string | null;
   now: Date;
+  windowDays: number;
 }) {
   const columns: Column<ContractListItem>[] = [
     {
@@ -501,7 +515,7 @@ function ContractTable({
       key: 'stage',
       header: 'مرحلة العقد',
       cell: (r) => {
-        const ins = contractInsight(r, now);
+        const ins = contractInsight(r, now, windowDays);
         return (
           <div className="min-w-[120px]">
             <span className="block text-xs text-navy-900">
@@ -521,11 +535,12 @@ function ContractTable({
       key: 'status',
       header: 'الحالة',
       cell: (r) => {
-        const ins = contractInsight(r, now);
+        const ins = contractInsight(r, now, windowDays);
+        const label = EXPIRY_STATE_LABEL[ins.expiry];
         return (
           <div className="flex flex-col items-start gap-1">
             <StatusBadge status={r.status} />
-            {ins.nearExpiry && <Badge tone="gold">قارب الانتهاء</Badge>}
+            {label && <Badge tone={expiryStateTone(ins.expiry)}>{label}</Badge>}
           </div>
         );
       },

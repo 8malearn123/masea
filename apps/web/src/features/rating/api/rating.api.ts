@@ -202,9 +202,86 @@ const RATINGS: Rating[] = [
     status: 'approved',
     created_at: '2026-09-11T07:40:00Z',
   },
-  // في قائمة المراجعة — لم تُنشر بعد (لا يظهر أي تعليق للزوار قبل موافقة الإدارة)
   {
     id: 'rt19',
+    customer_name: 'عبدالرحمن الزهراني',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'منظّمة جدًا، والبيت صار مرتّبًا من أول أسبوع.',
+    status: 'approved',
+    created_at: '2026-08-14T13:00:00Z',
+  },
+  {
+    id: 'rt20',
+    customer_name: 'وعد السلمي',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'تتعامل مع الأطفال بلطف وتلتزم بتعليمات الأم.',
+    status: 'approved',
+    created_at: '2026-08-28T18:20:00Z',
+  },
+  {
+    id: 'rt21',
+    customer_name: 'فيصل القرني',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 4,
+    comment: '',
+    status: 'approved',
+    created_at: '2026-09-05T09:00:00Z',
+  },
+  {
+    id: 'rt22',
+    customer_name: 'جواهر العتيبي',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'ممتازة في التنظيف والكي، وأمينة.',
+    status: 'approved',
+    created_at: '2026-09-15T16:45:00Z',
+  },
+  {
+    id: 'rt23',
+    customer_name: 'مشعل آل منصور',
+    target_type: 'worker',
+    target_name: 'ماريا سانتوس',
+    worker_id: 'w1',
+    stars: 5,
+    comment: 'تجربة ثانية معها وكانت أفضل من الأولى.',
+    status: 'approved',
+    created_at: '2026-09-22T11:10:00Z',
+  },
+  {
+    id: 'rt24',
+    customer_name: 'أروى الغامدي',
+    target_type: 'worker',
+    target_name: 'ديوي أنغرايني',
+    worker_id: 'w4',
+    stars: 4,
+    comment: 'أكلها لذيذ، تحتاج وقتًا إضافيًا في الولائم الكبيرة.',
+    status: 'approved',
+    created_at: '2026-09-18T20:30:00Z',
+  },
+  {
+    id: 'rt25',
+    customer_name: 'سعود اليامي',
+    target_type: 'worker',
+    target_name: 'سيتي نورهاليزا',
+    worker_id: 'w3',
+    stars: 3,
+    comment: 'تحتاج متابعة في التفاصيل، لكنها متعاونة.',
+    status: 'approved',
+    created_at: '2026-09-20T10:00:00Z',
+  },
+  // في قائمة المراجعة — لم تُنشر بعد (لا يظهر أي تعليق للزوار قبل موافقة الإدارة)
+  {
+    id: 'rt26',
     customer_name: 'فيصل آل منصور',
     target_type: 'worker',
     target_name: 'ماريا سانتوس',
@@ -215,7 +292,7 @@ const RATINGS: Rating[] = [
     created_at: '2026-10-20T13:15:00Z',
   },
   {
-    id: 'rt20',
+    id: 'rt27',
     customer_name: 'جواهر العسيري',
     target_type: 'service',
     target_name: 'التأجير اليومي',
@@ -225,7 +302,7 @@ const RATINGS: Rating[] = [
     created_at: '2026-10-22T09:40:00Z',
   },
   {
-    id: 'rt21',
+    id: 'rt28',
     customer_name: 'زائر',
     target_type: 'worker',
     target_name: 'غريس ريّس',
@@ -270,7 +347,7 @@ export async function listWorkerReviews(workerId: string): Promise<Rating[]> {
     .sort(newest);
 }
 
-/** ملخّص تقييمات عاملة (متوسّط + توزيع) — من التقييمات المنشورة فقط. */
+/** ملخّص تقييمات عاملة (متوسّط + عدد + توزيع) — من التقييمات المنشورة فقط، بلا تخزين مكرّر. */
 export function ratingSummaryOf(workerId: string): RatingSummary {
   const rows = RATINGS.filter((r) => r.worker_id === workerId && isPublished(r));
   const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -279,52 +356,49 @@ export function ratingSummaryOf(workerId: string): RatingSummary {
   });
   const average =
     rows.length === 0
-      ? 0
+      ? null
       : Math.round((rows.reduce((sum, r) => sum + r.stars, 0) / rows.length) * 10) / 10;
   return { count: rows.length, average, distribution };
+}
+
+/**
+ * تقييم سابق لنفس (الطلب + العاملة) إن وُجد — بأي حالة مراجعة (قيد المراجعة أو
+ * مرفوض يمنع تقييمًا ثانيًا لنفس الطلب). المحذوف (تعطيل) لا يُحتسب.
+ */
+export function findRequestReview(requestNo: string, workerId: string): Rating | null {
+  return (
+    RATINGS.find((r) => r.request_no === requestNo && r.worker_id === workerId && !r.deleted_at) ??
+    null
+  );
 }
 
 let reviewSeq = 1;
 
 /**
- * إضافة تقييم/تعليق جديد على عاملة — يُحفظ «قيد المراجعة» دائماً ولا يظهر
- * للزوار حتى توافق عليه الإدارة من لوحة التحكم.
+ * حفظ تقييم عاملة في المخزن (Prototype). التحقق ومنع التكرار في خدمة التقييمات
+ * (`services/reviewService.ts`) — لا يُستدعى هذا مباشرة من الواجهة.
+ * يُحفظ «قيد المراجعة» دائماً ولا يظهر للزوار حتى توافق عليه الإدارة.
  */
-export async function addWorkerReview(input: {
+export function insertWorkerReview(input: {
   workerId: string;
   workerName: string;
   customerName: string;
   stars: number;
   comment: string;
-}): Promise<Rating> {
-  const comment = input.comment.trim();
-  if (comment.length < 3) throw new Error('اكتب تعليقاً واضحاً (3 أحرف على الأقل)');
-  if (comment.length > 1000) throw new Error('التعليق طويل جداً (الحد 1000 حرف)');
+  requestNo: string;
+}): Rating {
   const row: Rating = {
     id: `rt-new-${reviewSeq++}`,
-    customer_name: input.customerName.trim() || 'عميل',
+    customer_name: input.customerName,
     target_type: 'worker',
     target_name: input.workerName,
     worker_id: input.workerId,
-    stars: Math.min(5, Math.max(1, Math.round(input.stars))),
-    comment,
+    stars: input.stars,
+    comment: input.comment,
     status: 'pending',
     created_at: new Date().toISOString(),
+    request_no: input.requestNo,
   };
-  if (!isDemoId(input.workerId)) {
-    // No `.select()`: visitors can't read back a pending row (RLS shows approved only).
-    const { error } = await supabase.from('ratings').insert({
-      customer_name: row.customer_name,
-      target_type: row.target_type,
-      target_name: row.target_name,
-      worker_id: row.worker_id,
-      stars: row.stars,
-      comment: row.comment,
-      status: 'pending',
-    });
-    if (!error) return row;
-    if (!isIgnorableWriteError(error.message)) throw new Error(error.message);
-  }
   RATINGS.unshift(row);
   return { ...row };
 }

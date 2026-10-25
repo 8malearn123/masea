@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, Lock, Receipt } from 'lucide-react';
+import { ArrowRight, Lock, ReceiptText } from 'lucide-react';
 import { Button, Card, EmptyState, Skeleton } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import { useInvoice, useRecordPayment } from '@/features/payments/hooks/usePayments';
@@ -22,7 +22,7 @@ export default function PaymentCheckout() {
     );
   }
   if (!invoice) {
-    return <EmptyState icon={Receipt} title="الفاتورة غير موجودة" />;
+    return <EmptyState icon={ReceiptText} title="الفاتورة غير موجودة" />;
   }
 
   async function submit() {

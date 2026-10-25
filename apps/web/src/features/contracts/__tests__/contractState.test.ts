@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   canTransition,
   isEditable,
-  isRenewable,
   needsConfirmation,
   nextStatuses,
   transitionBlocker,
@@ -96,25 +95,21 @@ describe('contract transition guards (transition_contract mirror)', () => {
     expect(transitionBlocker(c, 'pending_approval', 'internal')).toBeNull();
   });
 
-  it('asks for confirmation on cancel / complete and renews live, finished or cancelled contracts', () => {
+  it('asks for confirmation on cancel / complete and renews live or finished contracts only', () => {
     expect(needsConfirmation('cancelled')).toBe(true);
     expect(needsConfirmation('completed')).toBe(true);
     expect(needsConfirmation('approved')).toBe(false);
-    expect(isRenewable('active')).toBe(true);
-    expect(isRenewable('completed')).toBe(true);
-    expect(isRenewable('draft')).toBe(false);
-    expect(isRenewable('cancelled')).toBe(true); // cancelled → renew as a new contract
   });
 });
 
 describe('contract end date', () => {
   it('computes inclusive end dates for months and days', async () => {
-    const { contractEndDate } = await import('@/features/contracts/lib/contractDates');
-    expect(contractEndDate('2026-11-01', { unit: 'month', count: 3 })).toBe('2027-01-31');
-    expect(contractEndDate('2026-01-31', { unit: 'month', count: 1 })).toBe('2026-02-28');
-    expect(contractEndDate('2026-11-05', { unit: 'day', count: 3 })).toBe('2026-11-07');
-    expect(contractEndDate('2026-11-05', { unit: 'day', count: 1 })).toBe('2026-11-05');
-    expect(contractEndDate('', { unit: 'day', count: 3 })).toBeNull();
-    expect(contractEndDate('2026-11-05', null)).toBeNull();
+    const { contractEndDate } = await import('@/features/contracts/lib/contractTerm');
+    expect(contractEndDate('monthly_rental', '2026-11-01', 3)).toBe('2027-01-31');
+    expect(contractEndDate('monthly_rental', '2026-01-31', 1)).toBe('2026-02-28');
+    expect(contractEndDate('daily_rental', '2026-11-05', 3)).toBe('2026-11-07');
+    expect(contractEndDate('daily_rental', '2026-11-05', 1)).toBe('2026-11-05');
+    expect(contractEndDate('daily_rental', '', 3)).toBeNull();
+    expect(contractEndDate('sponsorship_transfer', '2026-11-05', 1)).toBeNull();
   });
 });

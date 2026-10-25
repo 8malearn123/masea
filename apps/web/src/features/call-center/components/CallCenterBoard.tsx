@@ -15,6 +15,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useCalls, useUpdateCallStatus } from '@/features/call-center/hooks/useCalls';
 import { NewCallModal } from '@/features/call-center/components/NewCallModal';
 import { IncomingCallConsole } from '@/features/call-center/components/IncomingCallConsole';
+import { FeedbackInbox } from '@/features/chatbot/components/FeedbackInbox';
 import { TicketsPanel } from '@/features/call-center/components/TicketsPanel';
 import { RetentionPanel } from '@/features/call-center/components/RetentionPanel';
 import {
@@ -63,7 +64,7 @@ export default function CallCenterBoard() {
   const [modal, setModal] = useState(false);
   const [console_, setConsole] = useState(false);
   const [consolePhone, setConsolePhone] = useState('');
-  const [view, setView] = useState<'calls' | 'tickets' | 'retention'>('calls');
+  const [view, setView] = useState<'calls' | 'tickets' | 'retention' | 'feedback'>('calls');
   const [detail, setDetail] = useState<CallLog | null>(null);
 
   function openConsoleFor(p: string) {
@@ -215,7 +216,7 @@ export default function CallCenterBoard() {
         )}
       </div>
 
-      <div className="mb-4 inline-flex rounded-xl bg-navy-50 p-1">
+      <div className="mb-4 inline-flex flex-wrap rounded-xl bg-navy-50 p-1">
         <button
           onClick={() => setView('calls')}
           className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${view === 'calls' ? 'bg-white text-navy shadow-card' : 'text-purple'}`}
@@ -234,10 +235,17 @@ export default function CallCenterBoard() {
         >
           الاحتفاظ بالعملاء
         </button>
+        <button
+          onClick={() => setView('feedback')}
+          className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${view === 'feedback' ? 'bg-white text-navy shadow-card' : 'text-purple'}`}
+        >
+          ملاحظات العملاء
+        </button>
       </div>
 
       {view === 'tickets' && <TicketsPanel />}
       {view === 'retention' && <RetentionPanel onCall={openConsoleFor} />}
+      {view === 'feedback' && <FeedbackInbox />}
 
       {view === 'calls' && (
         <>

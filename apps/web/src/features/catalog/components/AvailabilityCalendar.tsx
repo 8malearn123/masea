@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 import { dateAr } from '@/shared/lib/format';
 import {
   bookedRangesOf,
   dayState,
   freeDaysInHorizon,
+  type DayState,
   gridForDay,
   shiftMonth,
   WEEKDAYS_AR,
@@ -19,6 +20,20 @@ export interface HighlightRange {
 }
 
 const CELL_BASE = 'grid h-9 place-items-center rounded-lg text-xs font-medium transition num';
+
+const STATE_LABEL: Record<DayState, string> = {
+  available: 'متاحة',
+  booked: 'محجوزة',
+  unavailable: 'غير متاحة',
+  past: 'تاريخ سابق',
+};
+
+const STATE_CLASS: Record<DayState, string> = {
+  available: 'bg-teal-100 text-teal',
+  booked: 'bg-red-100 text-red-700',
+  unavailable: 'bg-navy-100 text-navy-900 line-through',
+  past: 'bg-navy-50/50 text-navy-200',
+};
 
 /**
  * جدول توفّر العاملة: تقويم شهري يفصل التواريخ المحجوزة عن المتاحة، مع قائمة
@@ -35,6 +50,11 @@ export function AvailabilityCalendar({
 }) {
   const from = useMemo(() => today(), []);
   const [grid, setGrid] = useState<MonthGrid>(() => gridForDay(highlight?.start || from));
+  // تغيّرت فترة الطلب → يقفز التقويم إلى شهر بدايتها
+  const highlightStart = highlight?.start;
+  useEffect(() => {
+    if (highlightStart) setGrid(gridForDay(highlightStart));
+  }, [highlightStart]);
   const ranges = useMemo(() => bookedRangesOf(workerId, from), [workerId, from]);
   const freeDays = useMemo(() => freeDaysInHorizon(workerId, from), [workerId, from]);
 
@@ -71,18 +91,17 @@ export function AvailabilityCalendar({
           const state = dayState(workerId, iso, from);
           const inRange = Boolean(highlight && iso >= highlight.start && iso <= highlight.end);
           const day = Number(iso.slice(8, 10));
-          const cls =
-            state === 'past'
-              ? 'bg-navy-50/50 text-navy-200'
-              : state === 'booked'
-                ? 'bg-red-100 text-red-700'
-                : 'bg-teal-100 text-teal';
           const ring = inRange ? ' ring-2 ring-gold ring-offset-1' : '';
+          const label = `${dateAr(iso)}: ${STATE_LABEL[state]}${inRange ? ' · ضمن الفترة المطلوبة' : ''}`;
           return (
             <span
               key={iso}
-              className={`${CELL_BASE} ${cls}${ring}`}
-              title={`${dateAr(iso)} · ${state === 'booked' ? 'محجوزة' : state === 'past' ? 'تاريخ سابق' : 'متاحة'}`}
+              role="img"
+              aria-label={label}
+              data-state={state}
+              data-in-range={inRange || undefined}
+              className={`${CELL_BASE} ${STATE_CLASS[state]}${ring}`}
+              title={label}
             >
               {day}
             </span>
@@ -93,6 +112,7 @@ export function AvailabilityCalendar({
       <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-purple">
         <Legend className="bg-teal-100 text-teal" label="متاحة" />
         <Legend className="bg-red-100 text-red-700" label="محجوزة" />
+        <Legend className="bg-navy-100" label="غير متاحة" />
         {highlight && <Legend className="bg-white ring-2 ring-gold" label="المدة المطلوبة" />}
         <span className="num ms-auto">{freeDays} يوم متاح خلال الفترة القادمة</span>
       </div>

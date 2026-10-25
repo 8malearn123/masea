@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { useAuth } from '@/store/auth';
+import { clearDemo, DEMO_ACCOUNTS, demoProfile, saveDemo } from '@/lib/demo';
 import {
   createDraft,
   getClauses,
@@ -11,8 +13,15 @@ import {
   transitionContract,
   updateDraft,
 } from '@/features/contracts/api/contracts.api';
+import { defaultRenewalStart, renewalTerm } from '@/features/contracts/lib/contractRenewal';
+import { today } from '@/features/requests/lib/period';
 
 const ALL = { status: 'all', service: 'all', branch: 'all', search: '' } as const;
+
+afterEach(() => {
+  clearDemo();
+  useAuth.setState({ profile: null });
+});
 
 /** Full rental lifecycle in demo mode — every step must survive a refetch. */
 describe('contract lifecycle (create → approve → sign → activate → complete → renew)', () => {
@@ -105,6 +114,26 @@ describe('contract lifecycle (create → approve → sign → activate → compl
     expect((await getSignatures(c.id)).map((s) => s.signer_type)).toEqual(['customer', 'company']);
 
     await transitionContract(c.id, 'active');
+
+    // renewal = a new draft version of the ACTIVE contract (same term, starts after it ends)
+    const admin = DEMO_ACCOUNTS.find((a) => a.role === 'admin');
+    if (!admin) throw new Error('no demo admin');
+    saveDemo(admin);
+    useAuth.setState({ profile: demoProfile(admin) });
+    const active = await getContract(c.id);
+    if (!active) throw new Error('missing contract');
+    const plan = renewalTerm(active, defaultRenewalStart(active));
+    if (plan.error !== null) throw new Error(plan.error);
+    const renewal = await renewContract(c.id, plan.term.start_date, plan.term.end_date);
+    expect(renewal.status).toBe('draft');
+    expect(renewal.version).toBe(2);
+    expect(renewal.parent_contract_id).toBe(c.id);
+    expect(renewal.start_date).toBe('2026-11-10');
+    // only one open renewal per contract
+    await expect(renewContract(c.id, plan.term.start_date, plan.term.end_date)).rejects.toThrow(
+      'يوجد تجديد قائم',
+    );
+
     await transitionContract(c.id, 'completed');
     expect((await listContracts(ALL)).find((r) => r.id === c.id)?.status).toBe('completed');
     expect((await getHistory(c.id)).map((h) => h.to_status)).toEqual([
@@ -116,16 +145,13 @@ describe('contract lifecycle (create → approve → sign → activate → compl
       'active',
       'completed',
     ]);
-
-    const renewal = await renewContract(c.id);
-    expect(renewal.status).toBe('draft');
-    expect(renewal.version).toBe(2);
-    expect(renewal.parent_contract_id).toBe(c.id);
-    // only one open renewal per contract
-    await expect(renewContract(c.id)).rejects.toThrow('يوجد تجديد قائم');
   });
 
   it('renews a cancelled contract as a new draft starting today', async () => {
+    const admin = DEMO_ACCOUNTS.find((x) => x.role === 'admin');
+    if (!admin) throw new Error('no admin demo account');
+    saveDemo(admin);
+    useAuth.setState({ profile: demoProfile(admin) });
     const c = await createDraft({
       service_code: 'monthly_rental',
       customer_id: 'cust-4',
@@ -137,12 +163,17 @@ describe('contract lifecycle (create → approve → sign → activate → compl
       nationality: 'كينيا',
     });
     await transitionContract(c.id, 'cancelled');
-    const renewal = await renewContract(c.id);
-    const today = new Date().toISOString().slice(0, 10);
+    const cancelled = (await getContract(c.id))!;
+    // the suggested start is today (not after the original end), same 3-month term
+    const start = defaultRenewalStart(cancelled);
+    expect(start).toBe(today());
+    const plan = renewalTerm(cancelled, start);
+    expect(plan.error).toBeNull();
+    const renewal = await renewContract(c.id, plan.term!.start_date, plan.term!.end_date);
     expect(renewal.status).toBe('draft');
     expect(renewal.parent_contract_id).toBe(c.id);
     expect(renewal.version).toBe(2);
-    expect(renewal.start_date).toBe(today);
+    expect(renewal.start_date).toBe(today());
     expect((await getContract(c.id))?.status).toBe('cancelled'); // original untouched
   });
 

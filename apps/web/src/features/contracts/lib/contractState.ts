@@ -110,11 +110,3 @@ export function transitionBlocker(
 export function needsConfirmation(to: ContractStatus): boolean {
   return to === 'cancelled' || to === 'completed';
 }
-
-/**
- * A contract may be renewed as a new draft version once it's live, finished or
- * cancelled (a cancelled contract restarts from today; its own record stays as-is).
- */
-export function isRenewable(status: ContractStatus): boolean {
-  return status === 'active' || status === 'completed' || status === 'cancelled';
-}

@@ -1,28 +1,41 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight,
+  CalendarRange,
   ExternalLink,
   FileDown,
   FileText,
   FileX,
+  GitBranch,
   History,
   Pencil,
-  RefreshCw,
   ScrollText,
   Signature,
   TriangleAlert,
 } from 'lucide-react';
-import { Card, Skeleton, EmptyState, ErrorState, Button, Input, Modal, Select } from '@/shared/ui';
+import {
+  Badge,
+  Card,
+  Skeleton,
+  EmptyState,
+  ErrorState,
+  Button,
+  Input,
+  Modal,
+  Select,
+} from '@/shared/ui';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { sar, dateAr, dateTimeAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
   useContract,
   useContractClauses,
   useContractHistory,
+  useContractLineage,
   useContractSignatures,
-  useRenewContract,
   useTransitionContract,
+  useUpdateContractTerm,
   useUpdateDraft,
   useUpdateMusanedNo,
 } from '@/features/contracts/hooks/useContracts';
@@ -34,15 +47,24 @@ import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { StatusBadge } from '@/features/contracts/components/StatusBadge';
 import { SignContractModal } from '@/features/contracts/components/SignContractModal';
 import { RecruitmentJourney } from '@/features/contracts/components/RecruitmentJourney';
+import { RenewContractButton } from '@/features/contracts/components/RenewContract';
+import { activeRenewalsOf } from '@/features/contracts/lib/contractRenewal';
 import {
   CONTRACT_STATUS_LABEL,
   isEditable,
-  isRenewable,
   needsConfirmation,
   nextStatuses,
   transitionBlocker,
 } from '@/features/contracts/lib/contractState';
 import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
+import {
+  RECRUITMENT_TERM_MONTHS,
+  contractEndDate,
+  contractTermLabel,
+  contractTermUnit,
+  inferTermCount,
+  validateContractTerm,
+} from '@/features/contracts/lib/contractTerm';
 import {
   branchLabel,
   SERVICE_LABEL,
@@ -76,13 +98,12 @@ export default function ContractDetails() {
   const { id = '' } = useParams();
   const { can } = usePermissions();
   const { data: contract, isLoading, isError, refetch } = useContract(id);
+  const { data: lineage = [] } = useContractLineage(id);
   const { data: clauses = [] } = useContractClauses(id);
   const { data: history = [] } = useContractHistory(id);
   const { data: signatures = [] } = useContractSignatures(id);
   const { data: origins } = useServiceOrigins();
   const transition = useTransitionContract(id);
-  const renew = useRenewContract(id);
-  const navigate = useNavigate();
   const [showSign, setShowSign] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [confirmTo, setConfirmTo] = useState<ContractStatus | null>(null);
@@ -109,15 +130,13 @@ export default function ContractDetails() {
   const origin = musaned ? 'musaned' : 'internal';
   const actions = nextStatuses(contract.status, origin).filter(canDo);
   const canEditDraft = isEditable(contract.status) && can('contracts', 'edit');
-  const canRenew = isRenewable(contract.status) && can('contracts', 'create');
   const remaining = contractInsight(contract, new Date()).remaining;
+  const parent = lineage.find((c) => c.id === contract.parent_contract_id) ?? null;
+  const renewals = activeRenewalsOf(contract.id, lineage);
 
   function runTransition(to: ContractStatus) {
     if (needsConfirmation(to)) setConfirmTo(to);
     else transition.mutate(to);
-  }
-  function doRenew() {
-    renew.mutate(undefined, { onSuccess: (created) => navigate(`/contracts/${created.id}`) });
   }
 
   return (
@@ -140,9 +159,29 @@ export default function ContractDetails() {
               {contract.customer_name ?? '—'} ·{' '}
               {contract.service_code ? SERVICE_LABEL[contract.service_code] : '—'}
             </p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-purple">
+              <GitBranch size={13} /> الإصدار <span className="num">{contract.version}</span>
+              {contract.parent_contract_id && (
+                <>
+                  {' '}
+                  — تجديد العقد{' '}
+                  {parent ? (
+                    <Link
+                      to={`/contracts/${parent.id}`}
+                      className="num font-semibold text-navy hover:underline"
+                    >
+                      {parent.contract_no}
+                    </Link>
+                  ) : (
+                    'السابق'
+                  )}
+                </>
+              )}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isDemoMode() && <Badge tone="neutral">بيانات تجريبية</Badge>}
           <StatusBadge status={contract.status} />
           {!musaned && (
             <Button
@@ -181,21 +220,15 @@ export default function ContractDetails() {
             </Row>
             <Row label="الفرع">{branchLabel(contract)}</Row>
             <Row label="تاريخ البداية">{dateAr(contract.start_date)}</Row>
-            <Row label="تاريخ النهاية">{contract.end_date ? dateAr(contract.end_date) : '—'}</Row>
-            {contract.version > 1 && (
-              <Row label="النسخة">
-                <span className="num">
-                  {contract.version}
-                  {contract.parent_contract_id && (
-                    <Link
-                      to={`/contracts/${contract.parent_contract_id}`}
-                      className="mr-2 text-xs text-navy underline"
-                    >
-                      العقد الأصلي
-                    </Link>
-                  )}
-                </span>
-              </Row>
+            <Row label="تاريخ النهاية">
+              {contract.end_date
+                ? dateAr(contract.end_date)
+                : contractTermUnit(contract.service_code)
+                  ? 'غير محدّد'
+                  : 'بلا مدة'}
+            </Row>
+            {contractTermLabel(contract) && (
+              <Row label="مدة العقد">{contractTermLabel(contract)}</Row>
             )}
             {contract.discount_amount > 0 && (
               <>
@@ -221,6 +254,14 @@ export default function ContractDetails() {
             </Row>
             {contract.signed_at && <Row label="تاريخ التوقيع">{dateAr(contract.signed_at)}</Row>}
           </Card>
+
+          {/* نسخة التجديد بمدة الأصل وسعره — لا تُعدَّل مدتها هنا (السعر مرتبط بالمدة) */}
+          {contract.status === 'draft' &&
+            !contract.parent_contract_id &&
+            can('contracts', 'edit') &&
+            contractTermUnit(contract.service_code) && (
+              <TermEditor contract={contract} hasClauses={clauses.length > 0} />
+            )}
 
           {/* Musaned panel (استقدام / نقل كفالة) OR in-system clauses (تأجير) */}
           {musaned ? (
@@ -253,7 +294,20 @@ export default function ContractDetails() {
           {/* Actions */}
           <Card>
             <h2 className="mb-3 text-sm font-bold text-navy">الإجراءات</h2>
-            {actions.length === 0 && !canEditDraft && !canRenew ? (
+            {renewals[0] ? (
+              <Link
+                to={`/contracts/${renewals[0].id}`}
+                className="mb-3 flex items-center gap-1.5 rounded-xl bg-navy-50 px-3 py-2 text-xs font-semibold text-navy hover:underline"
+              >
+                <GitBranch size={14} /> جُدِّد بالعقد{' '}
+                <span className="num">{renewals[0].contract_no}</span>
+              </Link>
+            ) : (
+              <div className="mb-3 flex flex-col">
+                <RenewContractButton contract={contract} existingRenewals={renewals} size="md" />
+              </div>
+            )}
+            {actions.length === 0 && !canEditDraft ? (
               <p className="text-sm text-purple">لا توجد إجراءات متاحة لحالتك ودورك.</p>
             ) : (
               <div className="flex flex-col gap-2">
@@ -287,17 +341,49 @@ export default function ContractDetails() {
                     </div>
                   );
                 })}
-                {canRenew && (
-                  <Button variant="outline" loading={renew.isPending} onClick={doRenew}>
-                    <RefreshCw size={15} />{' '}
-                    {contract.status === 'cancelled'
-                      ? 'تجديد العقد الملغى (عقد جديد)'
-                      : 'تجديد العقد (نسخة جديدة)'}
-                  </Button>
-                )}
               </div>
             )}
           </Card>
+
+          {/* سجل النسخ (الأصل والتجديدات) */}
+          {lineage.length > 1 && (
+            <Card>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
+                <GitBranch size={16} /> سجل النسخ
+              </h2>
+              <ol className="space-y-2">
+                {lineage.map((v) => (
+                  <li
+                    key={v.id}
+                    className={`flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 ${
+                      v.id === contract.id ? 'bg-navy-50' : 'border border-navy-50'
+                    }`}
+                  >
+                    <span className="text-xs text-navy-900">
+                      الإصدار <span className="num font-bold">{v.version}</span> ·{' '}
+                      {v.id === contract.id ? (
+                        <span className="num font-semibold">{v.contract_no}</span>
+                      ) : (
+                        <Link
+                          to={`/contracts/${v.id}`}
+                          className="num font-semibold text-navy hover:underline"
+                        >
+                          {v.contract_no}
+                        </Link>
+                      )}
+                      {v.id === contract.id && ' (المعروض)'}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <span className="num text-[11px] text-purple">
+                        {dateAr(v.start_date)} ← {dateAr(v.end_date)}
+                      </span>
+                      <StatusBadge status={v.status} />
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </Card>
+          )}
 
           {/* Status history */}
           <Card>
@@ -381,8 +467,8 @@ export default function ContractDetails() {
         <div className="space-y-4">
           <p className="text-sm leading-relaxed text-navy-900">
             {confirmTo === 'cancelled'
-              ? 'سيُلغى العقد ولا يمكن إعادة تفعيله، ويمكنك تجديده لاحقاً كعقد جديد (نسخة جديدة) من صفحته.'
-              : 'سيُغلق العقد كمنتهٍ. يمكن تجديده لاحقاً كنسخة جديدة.'}
+              ? 'سيُلغى العقد ولا يمكن إعادة تفعيله، ويمكنك تجديده بعد ذلك كنسخة جديدة من زر «تجديد العقد الملغى».'
+              : 'سيُغلق العقد كمنتهٍ. التجديد (نسخة جديدة) متاح للعقد الساري فقط — جدّده قبل الإنهاء إن لزم.'}
           </p>
           {remaining > 0 && (
             <p className="flex items-center gap-1.5 rounded-xl bg-gold-100 p-3 text-xs text-gold-600">
@@ -411,7 +497,11 @@ export default function ContractDetails() {
   );
 }
 
-/** Edit a DRAFT's dates and branch (validated with Zod, saved via update_contract_draft). */
+/**
+ * Edit a DRAFT's branch (validated with Zod, saved via update_contract_draft).
+ * The term is edited in TermEditor — its end date is computed from the duration
+ * (the price depends on it), so dates are never typed freely here.
+ */
 function EditDraftModal({
   contract,
   onClose,
@@ -420,24 +510,21 @@ function EditDraftModal({
   onClose: () => void;
 }) {
   const update = useUpdateDraft(contract.id);
-  const [form, setForm] = useState({
-    start_date: contract.start_date ?? '',
-    end_date: contract.end_date ?? '',
-    branch: contract.branch_name ?? contract.branch_id ?? '',
-  });
+  const [branch, setBranch] = useState(contract.branch_name ?? contract.branch_id ?? '');
   const [error, setError] = useState<string | null>(null);
   const branchOptions: { value: string; label: string }[] = BRANCHES_AR.map((b) => ({
     value: b,
     label: b,
   }));
-  if (form.branch && !BRANCHES_AR.some((b) => b === form.branch)) {
-    branchOptions.unshift({ value: form.branch, label: form.branch });
+  if (branch && !BRANCHES_AR.some((b) => b === branch)) {
+    branchOptions.unshift({ value: branch, label: branch });
   }
 
   function submit() {
     const parsed = updateDraftInputSchema.safeParse({
-      ...form,
-      end_date: form.end_date || null,
+      start_date: contract.start_date ?? '',
+      end_date: contract.end_date,
+      branch,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'بيانات غير صحيحة');
@@ -450,29 +537,16 @@ function EditDraftModal({
   return (
     <Modal open onClose={onClose} title="تعديل مسودة العقد">
       <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            label="تاريخ البداية"
-            type="date"
-            value={form.start_date}
-            onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-          />
-          <Input
-            label="تاريخ النهاية"
-            type="date"
-            value={form.end_date}
-            onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-          />
-          <Select
-            label="الفرع"
-            value={form.branch}
-            onChange={(e) => setForm({ ...form, branch: e.target.value })}
-            options={branchOptions}
-            placeholder="اختر الفرع"
-          />
-        </div>
+        <Select
+          label="الفرع"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          options={branchOptions}
+          placeholder="اختر الفرع"
+        />
         <p className="text-[11px] text-purple">
-          الخدمة والسعر والخصم تُحدَّد عند الإنشاء — لتغييرها ألغِ المسودة وأنشئ عقداً جديداً.
+          مدة العقد تُعدَّل من بطاقة «تعديل مدة العقد». الخدمة والسعر والخصم تُحدَّد عند الإنشاء —
+          لتغييرها ألغِ المسودة وأنشئ عقداً جديداً.
         </p>
         {error && <p className="text-xs text-red-600">{error}</p>}
         <Button className="w-full" loading={update.isPending} onClick={submit}>
@@ -534,6 +608,85 @@ function MusanedPanel({ contract }: { contract: ContractListItem }) {
         <p className="num text-sm font-semibold text-navy-900">
           {contract.musaned_contract_no ?? 'لم يُسجَّل بعد'}
         </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * تعديل مدة مسودة العقد: تاريخ البداية + المدة، وتاريخ النهاية محسوب من
+ * `contractTerm` (نفس حساب المعالج). للمسودات فقط — العقد المعتمد يُصحَّح بنسخة.
+ * إن كانت للمسودة بنود مُجمّدة فنصّها يتضمّن المدة السابقة، لذا لا يُتاح التعديل
+ * هنا كي لا يختلف نص البنود عن تواريخ العقد.
+ */
+function TermEditor({ contract, hasClauses }: { contract: ContractListItem; hasClauses: boolean }) {
+  const update = useUpdateContractTerm(contract.id);
+  const service = contract.service_code;
+  const unit = contractTermUnit(service);
+  const initialCount =
+    inferTermCount(service, contract.start_date, contract.end_date) ??
+    (service === 'recruitment' ? Math.max(...RECRUITMENT_TERM_MONTHS) : 1);
+  const [start, setStart] = useState(contract.start_date ?? '');
+  const [count, setCount] = useState<number>(initialCount);
+
+  const error = validateContractTerm(service, start, count);
+  const end = contractEndDate(service, start, count);
+  const dirty = start !== (contract.start_date ?? '') || end !== contract.end_date;
+
+  return (
+    <Card>
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
+        <CalendarRange size={16} /> تعديل مدة العقد
+      </h2>
+      {hasClauses ? (
+        <p className="text-sm text-purple">
+          نص بنود هذه المسودة يتضمّن مدتها الحالية، فتعديل التواريخ وحدها يجعل البنود مخالفة للعقد.
+          لتغيير المدة أنشئ مسودة جديدة بالمدة الصحيحة وألغِ هذه.
+        </p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Input
+            label="تاريخ البداية"
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+          {service === 'recruitment' ? (
+            <Select
+              label="مدة العقد (أشهر)"
+              value={String(count)}
+              onChange={(e) => setCount(Number(e.target.value))}
+              options={RECRUITMENT_TERM_MONTHS.map((n) => ({
+                value: String(n),
+                label: `${n.toLocaleString('ar-SA')} شهرًا`,
+              }))}
+            />
+          ) : (
+            <Input
+              label={unit === 'day' ? 'عدد الأيام' : 'عدد الأشهر'}
+              type="number"
+              min={1}
+              step={1}
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+            />
+          )}
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-purple">تاريخ النهاية (محسوب)</p>
+            <p className="py-2.5 text-sm font-semibold text-navy-900">{end ? dateAr(end) : '—'}</p>
+          </div>
+          <div className="flex items-center gap-3 sm:col-span-3">
+            <Button
+              size="sm"
+              disabled={Boolean(error) || !dirty}
+              loading={update.isPending}
+              onClick={() => update.mutate({ start_date: start, end_date: end })}
+            >
+              حفظ المدة
+            </Button>
+            {error && <span className="text-xs text-red-600">{error}</span>}
+          </div>
+        </div>
       )}
     </Card>
   );

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Check, FileText, UserPlus, UserRound } from 'lucide-react';
+import { ArrowRight, CalendarRange, Check, FileText, UserPlus, UserRound } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
-import { sar } from '@/shared/lib/format';
+import { dateAr, sar } from '@/shared/lib/format';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
 import { BRANCHES_AR, type WorkerProfile } from '@/lib/funnel';
 import { usePrice } from '@/hooks/usePricing';
@@ -12,12 +12,17 @@ import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/useP
 import { PromotionPicker } from '@/features/pricing/components/PromotionPicker';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
 import { evaluatePromotion, priceFromBase, ruleFloor, type Promotion } from '@/shared/lib/pricing';
-import { contractEndDate } from '@/features/contracts/lib/contractDates';
 import { createContractInputSchema } from '@/features/contracts/schemas/contract.schema';
 import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins';
 import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { useCreateCustomer, useCustomerSearch } from '@/features/contracts/hooks/useCustomers';
 import { renderClauses } from '@/features/contracts/lib/clauses';
+import {
+  RECRUITMENT_TERM_MONTHS,
+  contractEndDate,
+  contractTermLabel,
+  validateContractTerm,
+} from '@/features/contracts/lib/contractTerm';
 import { SERVICE_LABEL, type ContractServiceCode } from '@/features/contracts/types';
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
 
@@ -102,6 +107,14 @@ export default function ContractWizard() {
   const current = stepKeys[step] ?? 'service';
 
   const service = d.service || 'recruitment';
+  // مدة العقد: أشهر عقد الاستقدام، أو العدد (أشهر/أيام) للتأجير؛ نقل الكفالة بلا مدة.
+  const termCount = d.service === 'recruitment' ? d.contractMonths : d.quantity;
+  const endDate = contractEndDate(d.service || null, d.start_date, termCount);
+  const termLabel = contractTermLabel({
+    service_code: d.service || null,
+    start_date: d.start_date,
+    end_date: endDate,
+  });
   const priceArgs = useMemo(
     () => ({
       nationality: d.nationality || undefined,
@@ -124,6 +137,7 @@ export default function ContractWizard() {
     promotion && listPrice
       ? evaluatePromotion(promotion, service, listPrice.base, new Date(), d.promotionCode)
       : null;
+  const floor = ruleFloor(rules, service, priceArgs);
   const detail = listPrice
     ? priceFromBase(
         service,
@@ -131,23 +145,12 @@ export default function ContractWizard() {
         {
           promotion: promoCheck?.ok ? promotion : null,
           promotionCode: d.promotionCode,
-          floor: ruleFloor(rules, service, priceArgs),
+          floor,
         },
         pricingCfg,
       )
     : null;
   const price = detail ? { base: detail.net, vat: detail.vat, total: detail.total } : undefined;
-  const endDate = contractEndDate(
-    d.start_date,
-    d.service === 'recruitment'
-      ? { unit: 'month', count: d.contractMonths }
-      : d.service === 'monthly_rental'
-        ? { unit: 'month', count: Math.max(d.quantity, 1) }
-        : d.service === 'daily_rental'
-          ? { unit: 'day', count: Math.max(d.quantity, 1) }
-          : null,
-  );
-
   const serviceTemplates = useMemo(
     () => templates.filter((t) => t.service_code === d.service),
     [templates, d.service],
@@ -172,7 +175,8 @@ export default function ContractWizard() {
     if (current === 'service') return d.service ? null : 'اختر نوع الخدمة';
     if (current === 'worker') return d.worker ? null : 'اختر العاملة';
     if (current === 'details') {
-      if (!d.start_date) return 'حدّد تاريخ البداية';
+      const termError = validateContractTerm(d.service || null, d.start_date, termCount);
+      if (termError) return termError;
       if (!d.branch) return 'اختر الفرع';
       if (d.service === 'daily_rental' && !d.task) return 'اختر نوع المهمة';
       if ((d.service === 'monthly_rental' || d.service === 'daily_rental') && !(d.quantity >= 1)) {
@@ -198,6 +202,11 @@ export default function ContractWizard() {
     if (!d.service || !d.customer) return;
     if (!price) {
       toast.error('تعذّر احتساب السعر — حاول مرة أخرى');
+      return;
+    }
+    const termError = validateContractTerm(d.service, d.start_date, termCount);
+    if (termError) {
+      toast.error(termError);
       return;
     }
     if (promotion && !promoCheck?.ok) {
@@ -381,10 +390,10 @@ export default function ContractWizard() {
                 label="مدة العقد (أشهر)"
                 value={String(d.contractMonths)}
                 onChange={(e) => set({ contractMonths: Number(e.target.value) })}
-                options={[
-                  { value: '12', label: '١٢ شهرًا' },
-                  { value: '24', label: '٢٤ شهرًا' },
-                ]}
+                options={RECRUITMENT_TERM_MONTHS.map((n) => ({
+                  value: String(n),
+                  label: `${n.toLocaleString('ar-SA')} شهرًا`,
+                }))}
               />
             )}
             {(d.service === 'monthly_rental' || d.service === 'daily_rental') && (
@@ -392,6 +401,7 @@ export default function ContractWizard() {
                 label={d.service === 'monthly_rental' ? 'عدد الأشهر' : 'عدد الأيام'}
                 type="number"
                 min={1}
+                step={1}
                 value={d.quantity}
                 onChange={(e) => set({ quantity: Number(e.target.value) })}
               />
@@ -401,6 +411,12 @@ export default function ContractWizard() {
               type="date"
               value={d.start_date}
               onChange={(e) => set({ start_date: e.target.value })}
+            />
+            <TermSummary
+              service={d.service || null}
+              start={d.start_date}
+              end={endDate}
+              label={termLabel}
             />
             <Select
               label="الفرع"
@@ -436,7 +452,7 @@ export default function ContractWizard() {
               <PromotionPicker
                 service={service}
                 base={listPrice?.base ?? 0}
-                floor={ruleFloor(rules, service, priceArgs)}
+                floor={floor}
                 value={d.promotion}
                 code={d.promotionCode}
                 onChange={(p, code) => set({ promotion: p, promotionCode: code })}
@@ -487,12 +503,15 @@ export default function ContractWizard() {
                     <span className="text-green-700"> (بعد خصم {sar(detail.discounts)} ر.س)</span>
                   )}
                 </p>
-                {endDate && (
-                  <p className="num mt-1 text-xs text-purple">
-                    من {d.start_date} إلى {endDate}
-                  </p>
-                )}
               </Card>
+              <div className="sm:col-span-2">
+                <TermSummary
+                  service={d.service || null}
+                  start={d.start_date}
+                  end={endDate}
+                  label={termLabel}
+                />
+              </div>
             </div>
             {musaned ? (
               <div className="rounded-xl border border-gold-500/30 bg-gold-100/60 p-4">
@@ -555,6 +574,48 @@ export default function ContractWizard() {
           )}
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** ملخّص مدة العقد: البداية · النهاية المحسوبة · المدة (للقراءة فقط). */
+function TermSummary({
+  service,
+  start,
+  end,
+  label,
+}: {
+  service: ContractServiceCode | null;
+  start: string;
+  end: string | null;
+  label: string | null;
+}) {
+  if (service === 'sponsorship_transfer') {
+    return (
+      <p className="self-end rounded-xl bg-navy-50 p-3 text-xs text-purple">
+        نقل الكفالة إجراء لمرة واحدة — بلا مدة ولا تاريخ نهاية.
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-xl bg-navy-50 p-3 text-sm sm:col-span-2">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-navy">
+        <CalendarRange size={14} /> مدة العقد
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        <TermCell title="تاريخ البداية" value={start ? dateAr(start) : '—'} />
+        <TermCell title="تاريخ النهاية" value={end ? dateAr(end) : '—'} />
+        <TermCell title="المدة" value={label ?? '—'} />
+      </div>
+    </div>
+  );
+}
+
+function TermCell({ title, value }: { title: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] text-purple">{title}</p>
+      <p className="font-semibold text-navy-900">{value}</p>
     </div>
   );
 }

@@ -1,10 +1,10 @@
 import { Building2, Coffee, Home, PartyPopper, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { ErrorState, Select, Skeleton } from '@/shared/ui';
+import { ErrorState, Input, Select, Skeleton } from '@/shared/ui';
 import { useRefList } from '@/features/settings/hooks/useSettings';
 import { activeOnly } from '@/features/settings/api/settings.api';
 import type { PlaceDetails } from '@/features/requests/types';
-import { isOccasion } from '@/features/requests/types';
+import { isOccasion, isOtherOccasion, placeForType } from '@/features/requests/types';
 
 /** أيقونة لكل نوع مستفيد معروف، وأيقونة عامة لما يضيفه الإداري لاحقًا. */
 const TYPE_ICON: Record<string, LucideIcon> = {
@@ -15,8 +15,9 @@ const TYPE_ICON: Record<string, LucideIcon> = {
 };
 
 /**
- * الخطوة الأولى في طلب العاملة: لمن تُقدَّم الخدمة — منزل، منشأة، مقهى/تجاري،
- * مناسبة — ونوع المناسبة عند اختيارها. القائمتان مرجعيتان من الإعدادات.
+ * الخطوة الأولى في طلب العاملة: لمن تُقدَّم الخدمة — منزل، منشأة، مقهى / نشاط
+ * تجاري، مناسبة / فعالية — ونوع المناسبة عند اختيارها (و«أخرى» تفتح حقلًا نصيًا).
+ * القائمتان مرجعيتان من الإعدادات.
  */
 export function BeneficiaryStep({
   place,
@@ -67,12 +68,9 @@ export function BeneficiaryStep({
             <button
               key={t.code}
               type="button"
-              onClick={() =>
-                onChange({
-                  beneficiaryType: t.code,
-                  occasionType: t.code === place.beneficiaryType ? place.occasionType : null,
-                })
-              }
+              aria-pressed={active}
+              // تغيير النوع يمسح بيانات النوع السابق كلها (لا بيانات مخفية في الطلب)
+              onClick={() => onChange(placeForType(place, t.code))}
               className={`flex items-center gap-3 rounded-xl border p-3.5 text-right transition ${
                 active ? 'border-brand bg-brand-50' : 'border-brand-100 hover:border-brand'
               }`}
@@ -102,10 +100,23 @@ export function BeneficiaryStep({
             <Select
               label="نوع المناسبة"
               value={place.occasionType ?? ''}
-              onChange={(e) => onChange({ occasionType: e.target.value || null })}
+              onChange={(e) =>
+                onChange({ occasionType: e.target.value || null, customOccasionType: '' })
+              }
               options={occasionOptions}
               placeholder="اختر نوع المناسبة"
             />
+          )}
+          {isOtherOccasion(place) && (
+            <div className="mt-3">
+              <Input
+                label="اكتب نوع المناسبة"
+                value={place.customOccasionType}
+                maxLength={60}
+                onChange={(e) => onChange({ customOccasionType: e.target.value })}
+                placeholder="مثال: حفل تخرّج، استقبال العيد…"
+              />
+            </div>
           )}
         </div>
       )}

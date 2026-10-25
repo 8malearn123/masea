@@ -10,22 +10,31 @@
 import {
   addDays,
   daysBetween,
+  isValidDay,
   parseDay,
   rangesOverlap,
   today,
   toDay,
 } from '@/features/requests/lib/period';
 
-/** فترة محجوزة في جدول العاملة. */
+/**
+ * فترة مشغولة في جدول العاملة. الفترة **شاملة الطرفين** (start و end من أيام
+ * الحجز) — نفس معنى `computeEndDate` حيث يوم البداية جزء من المدة.
+ */
 export interface BookedRange {
   start: string; // yyyy-mm-dd
-  end: string; // yyyy-mm-dd
+  end: string; // yyyy-mm-dd (شامل)
   reason: string;
-  /** رقم الطلب إن كان الحجز ناتجًا عن طلب داخل النظام. */
+  /** حجز لطلب/عقد (افتراضي)، أو عدم توفّر لسبب آخر (إجازة، فحص طبي). */
+  kind?: 'booking' | 'unavailable';
+  /** رقم الطلب إن كان الحجز ناتجًا عن طلب داخل النظام (لا يُعرض للعميل). */
   request_no?: string;
 }
 
-export type DayState = 'past' | 'booked' | 'available';
+export type DayState = 'past' | 'booked' | 'unavailable' | 'available';
+
+/** أسباب عدم التوفّر التي ليست حجزًا لعميل. */
+const UNAVAILABLE_REASONS = new Set(['إجازة سنوية', 'فحص طبي وتجديد إقامة']);
 
 /** عدد أيام أفق الجدول المعروض للعميل. */
 export const HORIZON_DAYS = 120;
@@ -45,15 +54,62 @@ const SEED_REASONS = [
   'فحص طبي وتجديد إقامة',
 ];
 
-/** حجوزات إضافية أنشأها الـprototype (طلبات العميل) — تُدمج مع المُولّدة. */
+/**
+ * جداول تجريبية مقصودة لعدد قليل من العاملات (تحلّ محل الجدول المُولَّد لهن)
+ * لتظهر الحالات بوضوح في العرض: عاملة متاحة بالكامل، وعاملة لديها حجز قريب،
+ * وعاملة محجوزة بالكامل لفترة طويلة، وحجزا طلبَي العرض الجاهزين في
+ * `requests.api.ts` (نفس الفترات المحسوبة هناك).
+ */
+const DEMO_SCHEDULES: Record<string, (from: string) => BookedRange[]> = {
+  w1: () => [],
+  w2: (from) => [{ start: addDays(from, 3), end: addDays(from, 6), reason: 'تأجير يومي محجوز' }],
+  w6: (from) => [{ start: from, end: addDays(from, 44), reason: 'عقد تأجير شهري قائم' }],
+  w3: () => [
+    {
+      start: '2026-10-01',
+      end: '2026-12-31',
+      reason: 'طلب تأجير شهري',
+      request_no: 'REQ-2A7F41C9',
+    },
+  ],
+  w4: () => [
+    {
+      start: '2026-10-09',
+      end: '2026-10-10',
+      reason: 'طلب تأجير يومي',
+      request_no: 'REQ-93BD5E08',
+    },
+  ],
+};
+
+/** حجوزات إضافية أنشأها الـprototype (طلبات العميل) — تُدمج مع الجدول الأساسي. */
 const EXTRA_BOOKINGS = new Map<string, BookedRange[]>();
 
-/** تسجيل حجز جديد على جدول العاملة (يُستدعى عند تأكيد الطلب). */
-export function addBooking(workerId: string, range: BookedRange): void {
+export type BookingResult =
+  | { ok: true; booking: BookedRange; created: boolean }
+  | { ok: false; reason: 'invalid_range' | 'conflict'; conflict: BookedRange | null };
+
+/**
+ * تسجيل حجز على جدول العاملة (عند تأكيد الطلب). نقطة الحجز الوحيدة:
+ *   - نفس رقم الطلب مرة ثانية → لا حجز جديد (يُعاد الحجز القائم).
+ *   - أي تداخل مع حجز أو عدم توفّر قائم → يُرفض ولا يتغيّر الجدول.
+ */
+export function addBooking(
+  workerId: string,
+  range: BookedRange,
+  from: string = today(),
+): BookingResult {
+  if (!isValidDay(range.start) || !isValidDay(range.end) || range.end < range.start) {
+    return { ok: false, reason: 'invalid_range', conflict: null };
+  }
   const list = EXTRA_BOOKINGS.get(workerId) ?? [];
-  if (list.some((r) => r.request_no && r.request_no === range.request_no)) return;
-  list.push(range);
-  EXTRA_BOOKINGS.set(workerId, list);
+  const same = range.request_no ? list.find((r) => r.request_no === range.request_no) : undefined;
+  if (same) return { ok: true, booking: same, created: false };
+  const conflict = isWorkerAvailable(workerId, range.start, range.end, from).conflicts[0];
+  if (conflict) return { ok: false, reason: 'conflict', conflict };
+  const booking: BookedRange = { kind: 'booking', ...range };
+  EXTRA_BOOKINGS.set(workerId, [...list, booking]);
+  return { ok: true, booking, created: true };
 }
 
 /** الحجوزات المُولَّدة بثبات لعاملة داخل أفق الجدول. */
@@ -67,45 +123,121 @@ function seededRanges(workerId: string, from: string): BookedRange[] {
     const start = addDays(from, cursor);
     const end = addDays(start, length - 1);
     if (daysBetween(from, start) > HORIZON_DAYS) break;
+    const reason =
+      SEED_REASONS[Math.floor(hash01(`${workerId}:r${i}`) * SEED_REASONS.length)] ??
+      SEED_REASONS[0]!;
     ranges.push({
       start,
       end,
-      reason:
-        SEED_REASONS[Math.floor(hash01(`${workerId}:r${i}`) * SEED_REASONS.length)] ??
-        SEED_REASONS[0]!,
+      reason,
+      kind: UNAVAILABLE_REASONS.has(reason) ? 'unavailable' : 'booking',
     });
     cursor += length + 6 + Math.floor(hash01(`${workerId}:g${i}`) * 20);
   }
   return ranges;
 }
 
-/** كل الفترات المحجوزة للعاملة، مرتّبة زمنيًا. */
+/** كل الفترات المشغولة للعاملة، مرتّبة زمنيًا. */
 export function bookedRangesOf(workerId: string, from: string = today()): BookedRange[] {
-  return [...seededRanges(workerId, from), ...(EXTRA_BOOKINGS.get(workerId) ?? [])].sort((a, b) =>
-    a.start < b.start ? -1 : 1,
-  );
+  const base = DEMO_SCHEDULES[workerId]?.(from) ?? seededRanges(workerId, from);
+  return [...base, ...(EXTRA_BOOKINGS.get(workerId) ?? [])]
+    .map((r) => ({ ...r, kind: r.kind ?? 'booking' }))
+    .sort((a, b) => (a.start < b.start ? -1 : 1));
 }
 
 /** حالة يوم واحد في جدول العاملة. */
 export function dayState(workerId: string, iso: string, from: string = today()): DayState {
   if (iso < from) return 'past';
-  return bookedRangesOf(workerId, from).some((r) => iso >= r.start && iso <= r.end)
-    ? 'booked'
-    : 'available';
+  const hit = bookedRangesOf(workerId, from).find((r) => iso >= r.start && iso <= r.end);
+  if (!hit) return 'available';
+  return hit.kind === 'unavailable' ? 'unavailable' : 'booked';
 }
 
-/** الحجز الذي يتعارض مع المدة المطلوبة — null إذا كانت المدة متاحة بالكامل. */
+/**
+ * نتيجة توفّر العاملة لفترة:
+ *   available   — لا تعارض في أي يوم.
+ *   partial     — بعض أيام الفترة مشغولة (تعارض جزئي).
+ *   unavailable — كل أيام الفترة مشغولة.
+ *   unknown     — لا فترة صالحة بعد، فلا يُدّعى التوفّر.
+ */
+export type AvailabilityStatus = 'available' | 'partial' | 'unavailable' | 'unknown';
+
+export interface AvailabilityResult {
+  status: AvailabilityStatus;
+  /** true فقط إذا كانت الفترة صالحة ومتاحة بالكامل. */
+  available: boolean;
+  startDate: string;
+  endDate: string;
+  /** كل الفترات المشغولة المتداخلة مع الفترة المطلوبة، مرتّبة زمنيًا. */
+  conflicts: BookedRange[];
+  /** أيام الفترة المطلوبة (شاملة الطرفين) والمشغول منها. */
+  totalDays: number;
+  busyDays: number;
+  message: string;
+}
+
+export const AVAILABILITY_MESSAGE = {
+  unknown: 'حدد تاريخ البداية والمدة للتحقق من التوفر.',
+  invalid: 'فترة الطلب غير صالحة — راجع تاريخ البداية والمدة.',
+  available: 'العاملة متاحة طوال الفترة المحددة.',
+  unavailable: 'العاملة غير متاحة خلال الفترة المحددة.',
+} as const;
+
+/**
+ * الدالة المركزية لفحص توفّر العاملة لفترة كاملة (شاملة الطرفين). يتداخل حجزان
+ * إذا اشتركا في يوم واحد على الأقل: حجز ينتهي يوم بداية الطلب تعارض، وحجز
+ * ينتهي في اليوم السابق لا يتعارض.
+ */
+export function isWorkerAvailable(
+  workerId: string,
+  startDate: string,
+  endDate: string,
+  from: string = today(),
+): AvailabilityResult {
+  const base = { startDate, endDate, conflicts: [] as BookedRange[], totalDays: 0, busyDays: 0 };
+  if (!startDate || !endDate) {
+    return { ...base, status: 'unknown', available: false, message: AVAILABILITY_MESSAGE.unknown };
+  }
+  if (!isValidDay(startDate) || !isValidDay(endDate) || endDate < startDate) {
+    return { ...base, status: 'unknown', available: false, message: AVAILABILITY_MESSAGE.invalid };
+  }
+  const totalDays = daysBetween(startDate, endDate) + 1;
+  const conflicts = bookedRangesOf(workerId, from).filter((r) =>
+    rangesOverlap(startDate, endDate, r.start, r.end),
+  );
+  // الأيام المشغولة داخل الفترة (اتحاد الفترات المتعارضة، دون عدّ اليوم مرتين)
+  let busyDays = 0;
+  let cursor = '';
+  for (const r of conflicts) {
+    const s = r.start > startDate ? r.start : startDate;
+    const e = r.end < endDate ? r.end : endDate;
+    const from2 = cursor && cursor >= s ? addDays(cursor, 1) : s;
+    if (from2 <= e) busyDays += daysBetween(from2, e) + 1;
+    if (!cursor || e > cursor) cursor = e;
+  }
+  const status: AvailabilityStatus =
+    conflicts.length === 0 ? 'available' : busyDays >= totalDays ? 'unavailable' : 'partial';
+  return {
+    status,
+    available: status === 'available',
+    startDate,
+    endDate,
+    conflicts,
+    totalDays,
+    busyDays,
+    message:
+      status === 'available' ? AVAILABILITY_MESSAGE.available : AVAILABILITY_MESSAGE.unavailable,
+  };
+}
+
+/** أول فترة تتعارض مع المدة المطلوبة — null إذا كانت متاحة أو لا فترة بعد. */
 export function conflictFor(
   workerId: string,
   startDate: string,
   endDate: string,
   from: string = today(),
 ): BookedRange | null {
-  if (!startDate || !endDate) return null;
-  return (
-    bookedRangesOf(workerId, from).find((r) => rangesOverlap(startDate, endDate, r.start, r.end)) ??
-    null
-  );
+  return isWorkerAvailable(workerId, startDate, endDate, from).conflicts[0] ?? null;
 }
 
 export function isFreeBetween(

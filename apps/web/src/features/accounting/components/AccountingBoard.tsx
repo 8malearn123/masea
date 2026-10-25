@@ -304,7 +304,7 @@ function SoonPanel({ label, phase }: { label: string; phase?: string | undefined
   return (
     <Card className="grid min-h-[50vh] place-items-center text-center">
       <div>
-        <Sparkles size={32} className="text-navy-200 mx-auto" />
+        <Sparkles size={32} className="mx-auto text-navy-200" />
         <p className="mt-3 text-lg font-bold text-navy">{label}</p>
         <p className="mt-1 text-sm text-purple">
           هذا القسم قيد التطوير{phase ? ` — ${phase}` : ''}.
@@ -885,7 +885,7 @@ function TrialBalanceScreen() {
       </table>
       <p className="mt-3 text-xs text-purple">
         {Math.round(totalDebit * 100) === Math.round(totalCredit * 100)
-          ? 'الميزان متوازن ✓'
+          ? 'الميزان متوازن.'
           : 'تحذير: الميزان غير متوازن.'}
       </p>
     </Card>

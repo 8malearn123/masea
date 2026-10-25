@@ -18,6 +18,10 @@ export interface ScanEvent {
   lat: number;
   lng: number;
   scanned_at: string;
+  /** مسح رحلة مرتبط بطلب: رقم الطلب ونتيجة تطبيق الخطوة (المرفوض يبقى في السجل). */
+  request_no?: string;
+  outcome?: 'accepted' | 'rejected';
+  reason?: string;
 }
 
 export const SCAN_TYPE_LABEL: Record<string, string> = {

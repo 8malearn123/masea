@@ -1,3 +1,4 @@
+import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { BRAND } from '@masiat/shared';
@@ -7,7 +8,8 @@ import { isServiceCode } from '@/lib/wizardConfig';
 import { emptyDraft } from '@/lib/orderTypes';
 import { useOrderIntent } from '@/store/orderIntent';
 import StepWizard from '@/components/order/StepWizard';
-import { serviceIcon, type ServiceCode } from '@/lib/funnel';
+import { SERVICE_ICON } from '@/lib/serviceIcons';
+import type { ServiceCode } from '@/lib/funnel';
 
 export default function OrderWizard() {
   const [params, setParams] = useSearchParams();
@@ -66,27 +68,22 @@ export default function OrderWizard() {
             <h1 className="text-xl font-bold text-brand">اختر نوع الخدمة</h1>
             <p className="mt-1 text-sm text-brand-dark/60">حدّد الخدمة التي تريد طلبها للبدء.</p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              {services.map((s) => {
-                const Icon = serviceIcon(s.code);
-                return (
-                  <button
-                    key={s.code}
-                    type="button"
-                    onClick={() => chooseService(s.code)}
-                    className="flex items-start gap-3 rounded-xl border border-brand-100 p-4 text-right transition hover:border-brand hover:bg-brand-50"
-                  >
-                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand">
-                      <Icon size={22} />
-                    </span>
-                    <span>
-                      <span className="block font-bold text-brand">{s.name_ar}</span>
-                      <span className="mt-0.5 block text-xs text-brand-dark/60">
-                        {s.tagline_ar}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
+              {services.map((s) => (
+                <button
+                  key={s.code}
+                  type="button"
+                  onClick={() => chooseService(s.code)}
+                  className="flex items-start gap-3 rounded-xl border border-brand-100 p-4 text-right transition hover:border-brand hover:bg-brand-50"
+                >
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand">
+                    <ServiceIcon code={s.code} />
+                  </span>
+                  <span>
+                    <span className="block font-bold text-brand">{s.name_ar}</span>
+                    <span className="mt-0.5 block text-xs text-brand-dark/60">{s.tagline_ar}</span>
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         ) : (
@@ -100,4 +97,9 @@ export default function OrderWizard() {
       </main>
     </div>
   );
+}
+
+function ServiceIcon({ code }: { code: string }) {
+  const Icon = SERVICE_ICON[code as ServiceCode] ?? Sparkles;
+  return <Icon size={22} aria-hidden strokeWidth={1.8} />;
 }

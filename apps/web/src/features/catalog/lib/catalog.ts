@@ -1,6 +1,8 @@
 import { fallbackPrice } from '@/shared/lib/pricing';
 import { ratingSummaryOf } from '@/features/rating/api/rating.api';
 import type { ServiceCode, WorkerProfile } from '@/lib/funnel';
+import { dayState } from '@/features/catalog/lib/availability';
+import { today } from '@/features/requests/lib/period';
 
 /** Customer-facing catalog helpers — enrich the existing worker_profiles with
  *  presentational CV details (skills, rating, prior experience) and per-service
@@ -35,34 +37,26 @@ export const AVAILABILITY_LABEL: Record<Availability, string> = {
   soon: 'قريباً',
 };
 
-/** Deterministic pseudo-random in [0,1) from a string id (stable per worker). */
-function hash01(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 100000;
-  return h / 100000;
+/**
+ * تقييم العاملة: متوسّط تقييمات عملائها الفعلية فقط — null إذا لم تُقيَّم بعد
+ * (لا تقدير افتراضي يُعرض كأنه تقييم حقيقي).
+ */
+export function ratingOf(w: WorkerProfile): number | null {
+  return ratingSummaryOf(w.id).average;
 }
 
-/** تقييم العاملة: متوسّط تقييمات عملائها الفعلية، وإلا تقدير ثابت للعرض. */
-export function ratingOf(w: WorkerProfile): number {
-  const summary = ratingSummaryOf(w.id);
-  if (summary.count > 0) return summary.average;
-  return Math.round((4.4 + hash01(w.id) * 0.5) * 10) / 10; // 4.4–4.9
-}
-
-/** عدد التقييمات المنشورة على العاملة. */
+/** عدد التقييمات المنشورة على العاملة (٠ إذا لم تُقيَّم). */
 export function reviewsOf(w: WorkerProfile): number {
-  const summary = ratingSummaryOf(w.id);
-  if (summary.count > 0) return summary.count;
-  return 8 + Math.floor(hash01(w.id + 'r') * 40);
+  return ratingSummaryOf(w.id).count;
 }
 
-/** Demo availability: most available, a couple reserved/soon (stable per worker). */
+/**
+ * حالة العاملة اليوم من جدول التوفّر نفسه (`availability.ts`) — نفس مصدر التقويم
+ * وفحص الطلب، فلا تظهر «متاحة الآن» لعاملة محجوزة اليوم في جدولها.
+ */
 export function availabilityOf(w: WorkerProfile): Availability {
   if (w.status && w.status !== 'available') return 'reserved';
-  const r = hash01(w.id + 'a');
-  if (r > 0.86) return 'soon';
-  if (r > 0.72) return 'reserved';
-  return 'available';
+  return dayState(w.id, today()) === 'available' ? 'available' : 'reserved';
 }
 
 export interface Skill {
@@ -100,25 +94,6 @@ export function skillsOf(w: WorkerProfile): Skill[] {
   );
 }
 
-export interface PriorExperience {
-  country: string;
-  detail: string;
-  years: number;
-}
-
-export function priorExperienceOf(w: WorkerProfile): PriorExperience[] {
-  const total = w.experience_years || 4;
-  const first = Math.max(2, Math.round(total * 0.6));
-  return [
-    { country: 'السعودية', detail: `${w.profession} · أسرة من 5 أفراد`, years: first },
-    {
-      country: 'الإمارات',
-      detail: `${w.profession} · رعاية منزلية`,
-      years: Math.max(1, total - first),
-    },
-  ];
-}
-
 export interface ServicePrice {
   code: ServiceCode;
   label: string;
@@ -149,18 +124,13 @@ export const NATIONALITIES = [
 ];
 export const PROFESSIONS = ['عاملة منزلية', 'مربية أطفال', 'طباخة', 'سائق'];
 
-/* ---- Personal attributes: real value if present, else stable demo derive ---- */
-export const RELIGIONS = ['مسلمة', 'مسيحية', 'بوذية', 'هندوسية'];
-export const MARITAL_STATUSES = ['عزباء', 'متزوجة', 'مطلّقة', 'أرملة'];
-export const MOTHER_TONGUES = [
-  'الإنجليزية',
-  'الإندونيسية',
-  'الفلبينية',
-  'السواحيلية',
-  'البنغالية',
-  'السنهالية',
-  'الأمهرية',
-];
+/** «سنة واحدة» / «سنتان» / «٥ سنوات» / «١٢ سنة» — صيغة عربية سليمة للعدد. */
+export function yearsLabel(n: number): string {
+  if (n === 1) return 'سنة واحدة';
+  if (n === 2) return 'سنتان';
+  return `${n} ${n >= 3 && n <= 10 ? 'سنوات' : 'سنة'}`;
+}
+
 export const AGE_RANGES: { label: string; min: number; max: number }[] = [
   { label: '٢١–٢٥', min: 21, max: 25 },
   { label: '٢٦–٣٠', min: 26, max: 30 },
@@ -168,42 +138,28 @@ export const AGE_RANGES: { label: string; min: number; max: number }[] = [
   { label: '٣٦–٤٥', min: 36, max: 45 },
 ];
 
-const RELIGION_BY_NATIONALITY: Record<string, string> = {
-  إندونيسيا: 'مسلمة',
-  بنغلاديش: 'مسلمة',
-  الفلبين: 'مسيحية',
-  كينيا: 'مسيحية',
-  أوغندا: 'مسيحية',
-  إثيوبيا: 'مسيحية',
-  سريلانكا: 'بوذية',
-};
-const MOTHER_TONGUE_BY_NATIONALITY: Record<string, string> = {
-  إندونيسيا: 'الإندونيسية',
-  بنغلاديش: 'البنغالية',
-  الفلبين: 'الفلبينية',
-  كينيا: 'السواحيلية',
-  أوغندا: 'الإنجليزية',
-  إثيوبيا: 'الأمهرية',
-  سريلانكا: 'السنهالية',
-};
-
-export function religionOf(w: WorkerProfile): string {
-  return w.religion ?? RELIGION_BY_NATIONALITY[w.nationality] ?? 'مسلمة';
+/**
+ * سمات شخصية من سجل العاملة فقط — لا تُستنتج الديانة أو اللغة الأم من الجنسية،
+ * ولا الحالة الاجتماعية من المعرّف. null = غير متوفر في البيانات.
+ */
+export function religionOf(w: WorkerProfile): string | null {
+  return w.religion?.trim() || null;
 }
 
-export function motherTongueOf(w: WorkerProfile): string {
-  return (
-    w.mother_tongue ??
-    MOTHER_TONGUE_BY_NATIONALITY[w.nationality] ??
-    w.languages.find((l) => l !== 'العربية') ??
-    w.languages[0] ??
-    'الإنجليزية'
-  );
+export function motherTongueOf(w: WorkerProfile): string | null {
+  return w.mother_tongue?.trim() || null;
 }
 
-export function maritalOf(w: WorkerProfile): string {
-  if (w.marital_status) return w.marital_status;
-  return MARITAL_STATUSES[Math.floor(hash01(w.id + 'm') * MARITAL_STATUSES.length)] ?? 'عزباء';
+export function maritalOf(w: WorkerProfile): string | null {
+  return w.marital_status?.trim() || null;
+}
+
+/** القيم الموجودة فعلًا في بيانات العاملات لسمة ما (لخيارات الفلتر). */
+export function attributeOptions(
+  workers: WorkerProfile[],
+  read: (w: WorkerProfile) => string | null,
+): string[] {
+  return [...new Set(workers.map(read).filter((v): v is string => v !== null))].sort();
 }
 
 /** Union of spoken languages across all workers (for the filter list). */

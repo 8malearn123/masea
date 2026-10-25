@@ -1,20 +1,20 @@
 import {
+  AlertTriangle,
   Building2,
   Bus,
   Clock,
-  Contact,
   CreditCard,
   FileText,
   HardHat,
   Home,
   LayoutDashboard,
   Megaphone,
-  Receipt,
+  ReceiptText,
   ScanLine,
   Settings2,
   Star,
   Target,
-  TriangleAlert,
+  UserCog,
   UserRound,
   Users,
   type LucideIcon,
@@ -24,7 +24,6 @@ import type { AppRole } from '@masiat/shared';
 export interface NavItem {
   to: string;
   label: string;
-  /** lucide-react icon (no emoji). */
   icon: LucideIcon;
   roles?: AppRole[]; // undefined = everyone
 }
@@ -43,7 +42,7 @@ export const NAV: NavGroup[] = [
     title: 'العمليات',
     items: [
       { to: '/workers', label: 'العمالة', icon: HardHat },
-      { to: '/customers', label: 'العملاء', icon: Contact },
+      { to: '/customers', label: 'العملاء', icon: Users },
       { to: '/contracts', label: 'العقود', icon: FileText },
       { to: '/drivers', label: 'السائقون', icon: Bus },
       { to: '/scans', label: 'سجل المسح', icon: ScanLine },
@@ -53,7 +52,7 @@ export const NAV: NavGroup[] = [
     title: 'المالية',
     items: [
       { to: '/payments', label: 'المدفوعات', icon: CreditCard },
-      { to: '/penalties', label: 'الغرامات', icon: TriangleAlert },
+      { to: '/penalties', label: 'الغرامات', icon: AlertTriangle },
     ],
   },
   {
@@ -62,10 +61,10 @@ export const NAV: NavGroup[] = [
       {
         to: '/employees',
         label: 'الموظفون',
-        icon: Users,
+        icon: UserCog,
         roles: ['admin', 'hr', 'operations_manager'],
       },
-      { to: '/payroll', label: 'الرواتب', icon: Receipt, roles: ['admin', 'hr', 'accountant'] },
+      { to: '/payroll', label: 'الرواتب', icon: ReceiptText, roles: ['admin', 'hr', 'accountant'] },
       {
         to: '/attendance',
         label: 'الحضور',

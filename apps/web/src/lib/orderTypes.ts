@@ -1,5 +1,5 @@
-import { Banknote, CreditCard, Smartphone, Wallet, type LucideIcon } from 'lucide-react';
 /** Order draft model + shared option lists for the customer wizard. */
+import { CalendarClock, CreditCard, Smartphone, type LucideIcon } from 'lucide-react';
 import type { ServiceCode } from '@/lib/funnel';
 import { buildPeriod } from '@/features/requests/lib/period';
 import { emptyPlaceDetails } from '@/features/requests/types';
@@ -18,7 +18,10 @@ export interface OrderDraft {
   contractMonths: number;
   // rental
   months: number;
+  /** عدد وحدات مدة التأجير اليومي (أيام أو أسابيع بحسب `durationUnit`). */
   days: number;
+  /** وحدة مدة الطلب — من الوحدات المسموحة للخدمة في `DURATION_UNITS`. */
+  durationUnit: PeriodUnit;
   startDate: string;
   taskType: string;
   workerProfileId: string | null;
@@ -55,13 +58,14 @@ export const TASK_TYPES = ['تنظيف', 'طبخ', 'رعاية'] as const;
 export interface PaymentMethodOpt {
   key: string;
   label: string;
+  /** أيقونة lucide (لا إيموجي — CLAUDE.md). */
   icon: LucideIcon;
 }
 export const PAYMENT_METHODS: PaymentMethodOpt[] = [
   { key: 'mada', label: 'مدى / Moyasar', icon: CreditCard },
   { key: 'apple_pay', label: 'Apple Pay', icon: Smartphone },
-  { key: 'stc_pay', label: 'STC Pay', icon: Wallet },
-  { key: 'tamara', label: 'تابي / تمارا (تقسيط)', icon: Banknote },
+  { key: 'stc_pay', label: 'STC Pay', icon: Smartphone },
+  { key: 'tamara', label: 'تابي / تمارا (تقسيط)', icon: CalendarClock },
 ];
 
 /** Post-order tracking stages, per service. */
@@ -83,6 +87,7 @@ export function emptyDraft(service: ServiceCode): OrderDraft {
     contractMonths: 24,
     months: 3,
     days: 1,
+    durationUnit: DURATION_UNITS[service][0] ?? 'month',
     startDate: '',
     taskType: '',
     workerProfileId: null,
@@ -103,9 +108,28 @@ export function emptyDraft(service: ServiceCode): OrderDraft {
   };
 }
 
-/** وحدة قياس مدة الطلب بحسب الخدمة: التأجير اليومي بالأيام، وما عداه بالأشهر. */
-export function periodUnitFor(service: ServiceCode): PeriodUnit {
-  return service === 'daily_rental' ? 'day' : 'month';
+/**
+ * وحدات المدة المتاحة لكل خدمة (الأولى افتراضية). التأجير اليومي بالأيام أو
+ * الأسابيع ويُسعَّر بعدد الأيام الفعلي؛ التأجير الشهري والاستقدام بالأشهر لأن
+ * تسعيرهما شهري؛ نقل الكفالة بلا مدة.
+ */
+export const DURATION_UNITS: Record<ServiceCode, PeriodUnit[]> = {
+  daily_rental: ['day', 'week'],
+  monthly_rental: ['month'],
+  recruitment: ['month'],
+  sponsorship_transfer: [],
+};
+
+/** وحدة مدة المسودة — وحدة غير مسموحة للخدمة تعود لوحدتها الافتراضية. */
+export function periodUnitOf(d: Pick<OrderDraft, 'service' | 'durationUnit'>): PeriodUnit {
+  const allowed = DURATION_UNITS[d.service];
+  return allowed.includes(d.durationUnit) ? d.durationUnit : (allowed[0] ?? 'month');
+}
+
+/** عدد الأيام الفعلي لمدة بالأيام/الأسابيع (أساس تسعير التأجير اليومي). */
+export function durationDays(unit: PeriodUnit, count: number): number {
+  const n = Math.max(Math.floor(count), 1);
+  return unit === 'week' ? n * 7 : n;
 }
 
 /** عدد وحدات المدة في المسودة بحسب الخدمة. */
@@ -128,7 +152,7 @@ export function periodCountOf(d: OrderDraft): number {
  */
 export function draftPeriod(d: OrderDraft): RequestPeriod | null {
   if (d.service === 'sponsorship_transfer' || !d.startDate) return null;
-  return buildPeriod(d.startDate, periodUnitFor(d.service), periodCountOf(d));
+  return buildPeriod(d.startDate, periodUnitOf(d), periodCountOf(d));
 }
 
 /** Pricing params passed to calc_price / fallback. quantity scales by duration. */
@@ -143,7 +167,7 @@ export function priceParams(d: OrderDraft): {
     case 'monthly_rental':
       return { nationality: d.nationality, quantity: Math.max(d.months, 1) };
     case 'daily_rental':
-      return { profession: d.taskType, quantity: Math.max(d.days, 1) };
+      return { profession: d.taskType, quantity: durationDays(periodUnitOf(d), d.days) };
     case 'sponsorship_transfer':
       return { quantity: 1 };
     default:

@@ -46,6 +46,7 @@ declare
   v_amount numeric := 50000;
 begin
   v_period := ensure_period('2026-01-01');
+  -- branches has `name` (0002) — not name_ar (that column belongs to chart_of_accounts)
   for b in select id, name from branches loop
     -- skip if this branch already has an opening entry
     if exists (select 1 from journal_entries

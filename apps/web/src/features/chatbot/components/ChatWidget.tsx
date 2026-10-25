@@ -1,12 +1,58 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Bot, MessageSquare, NotebookPen, Send, UserRound, X } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
-import {
-  CHAT_GREETING,
-  CHAT_SUGGESTIONS,
-  saveCustomerNote,
-} from '@/features/chatbot/api/chatbot.api';
+import { CHAT_GREETING, CHAT_SUGGESTIONS } from '@/features/chatbot/api/chatbot.api';
+import { feedbackConfirmation, submitFeedback } from '@/features/chatbot/services/feedbackService';
 import { answerFor } from '@/features/chatbot/lib/reply';
+import { fabPlacement, type FabPlacement, type Rect } from '@/features/chatbot/lib/fabPosition';
+
+/** تحت هذا العرض يصبح الزر أيقونة ويتفادى العناصر المهمة (نفس نقطة lg في Tailwind). */
+const DESKTOP_MIN = 1024;
+const FAB = { base: 16, size: 48, gap: 8 };
+
+/**
+ * موضع الزر العائم على الجوال: يتفادى العناصر المعلَّمة بـ `data-fab-avoid`
+ * (أزرار التنقل والدفع والشريط السفلي) والحقول الظاهرة. null على الشاشات
+ * الكبيرة (موضع CSS الثابت). أثناء ظهوره على الجوال تُحجز مساحة أسفل الصفحة
+ * (`has-chat-fab`) فيجد دائمًا موضعًا حرًا عند نهاية التمرير.
+ */
+function useFabPlacement(enabled: boolean): FabPlacement | null {
+  const [placement, setPlacement] = useState<FabPlacement | null>(null);
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined') return;
+    document.body.classList.add('has-chat-fab');
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      if (window.innerWidth >= DESKTOP_MIN) return setPlacement(null);
+      const els = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-fab-avoid], input, select, textarea'),
+      ).filter((el) => !el.closest('[data-chat-widget]'));
+      const rects: Rect[] = els.map((el) => el.getBoundingClientRect());
+      const next = fabPlacement(rects, { viewportHeight: window.innerHeight, ...FAB });
+      setPlacement((prev) =>
+        prev && prev.bottom === next.bottom && prev.hidden === next.hidden ? prev : next,
+      );
+    };
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(measure);
+    };
+    schedule();
+    const events = ['scroll', 'resize', 'focusin', 'focusout'] as const;
+    events.forEach((e) => window.addEventListener(e, schedule, { passive: true }));
+    // تغيّر الصفحة (خطوة جديدة في المعالج، فتح قسم) يغيّر مواضع العناصر
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      document.body.classList.remove('has-chat-fab');
+      events.forEach((e) => window.removeEventListener(e, schedule));
+      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [enabled]);
+  return placement;
+}
 
 interface ChatMessage {
   id: number;
@@ -32,6 +78,36 @@ export function ChatWidget() {
     { id: nextId(), from: 'bot', text: CHAT_GREETING, followUps: CHAT_SUGGESTIONS },
   ]);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const wasOpen = useRef(false);
+  const titleId = useId();
+  const fab = useFabPlacement(!open);
+
+  // سياق الطلب من الصفحة الحالية: ملف الطلب أو صفحة التتبّع
+  const { pathname } = useLocation();
+  const [params] = useSearchParams();
+  const contextRequestNo =
+    /^\/order\/request\/([^/]+)/.exec(pathname)?.[1] ??
+    (pathname === '/order/track' ? params.get('no') : null) ??
+    null;
+
+  // الفتح: التركيز على حقل الكتابة · الإغلاق: العودة لزر المساعد
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+    else if (wasOpen.current) launcherRef.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+
+  // Escape يغلق اللوحة
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   useEffect(() => {
     // scrollIntoView غير متاح في كل البيئات (jsdom مثلًا) — التمرير تحسين لا شرط.
@@ -46,23 +122,38 @@ export function ChatWidget() {
     setInput('');
 
     if (mode === 'comment') {
-      const note = saveCustomerNote('comment', text);
-      setMessages((m) => [
-        ...m,
-        { id: nextId(), from: 'user', text },
-        {
-          id: nextId(),
-          from: 'bot',
-          text: `شكرًا لك — سُجّل تعليقك برقم ${note.id} وسيصل فريق خدمة العملاء. تحب تسأل عن شيء آخر؟`,
-          followUps: CHAT_SUGGESTIONS.slice(0, 2),
-        },
-      ]);
+      setMessages((m) => [...m, { id: nextId(), from: 'user', text }]);
       setMode('chat');
+      void submitFeedback({ kind: 'comment', body: text, contextRequestNo })
+        .then((res) =>
+          setMessages((m) => [
+            ...m,
+            {
+              id: nextId(),
+              from: 'bot',
+              text: feedbackConfirmation(res),
+              followUps: CHAT_SUGGESTIONS.slice(0, 2),
+            },
+          ]),
+        )
+        .catch((e: unknown) =>
+          setMessages((m) => [
+            ...m,
+            {
+              id: nextId(),
+              from: 'bot',
+              text: e instanceof Error ? e.message : 'تعذّر تسجيل الملاحظة — حاول مرة أخرى.',
+            },
+          ]),
+        );
       return;
     }
 
     const answer = answerFor(text);
-    if (!answer.intent) saveCustomerNote('inquiry', text); // استفسار لم نغطِّه — يصل للفريق
+    // استفسار لم نغطِّه — يُسجَّل في صندوق ملاحظات العرض (مرتبطًا بالطلب إن عُرف)
+    if (!answer.intent) {
+      void submitFeedback({ kind: 'inquiry', body: text, contextRequestNo }).catch(() => undefined);
+    }
     setMessages((m) => [
       ...m,
       { id: nextId(), from: 'user', text },
@@ -78,12 +169,23 @@ export function ChatWidget() {
   if (!open) {
     return (
       <button
+        ref={launcherRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-24 left-4 z-40 inline-flex items-center gap-2 rounded-full bg-navy px-4 py-3 text-sm font-bold text-white shadow-lg transition hover:bg-navy-700 lg:bottom-6"
+        aria-haspopup="dialog"
+        // الجوال: أيقونة دائرية تتفادى الأزرار والحقول · الشاشات الكبيرة: كما هي
+        style={fab ? { bottom: fab.bottom } : undefined}
+        data-chat-widget
+        data-hidden={fab?.hidden || undefined}
+        tabIndex={fab?.hidden ? -1 : undefined}
+        aria-hidden={fab?.hidden || undefined}
+        className={`fixed bottom-4 left-4 z-40 inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-navy text-sm font-bold text-white shadow-lg transition hover:bg-navy-700 lg:bottom-6 lg:h-auto lg:w-auto lg:px-4 lg:py-3 ${
+          fab?.hidden ? 'pointer-events-none scale-75 opacity-0' : ''
+        }`}
         aria-label="فتح مساعد العملاء"
+        data-testid="chat-fab"
       >
-        <Bot size={18} /> مساعد العملاء
+        <Bot size={20} /> <span className="hidden lg:inline">مساعد العملاء</span>
       </button>
     );
   }
@@ -91,6 +193,10 @@ export function ChatWidget() {
   return (
     <div
       dir="rtl"
+      data-chat-widget
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby={titleId}
       className="fixed bottom-24 left-4 z-40 flex h-[30rem] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-navy-100 lg:bottom-6"
     >
       <header className="flex items-center justify-between bg-navy px-4 py-3 text-white">
@@ -99,11 +205,19 @@ export function ChatWidget() {
             <Bot size={17} />
           </span>
           <span>
-            <span className="block text-sm font-bold">مساعد {BRAND.client.nameAr}</span>
+            <span id={titleId} className="block text-sm font-bold">
+              مساعد {BRAND.client.nameAr}
+            </span>
             <span className="block text-[10px] text-navy-100/80">يجيب فورًا · تجريبي</span>
           </span>
         </span>
-        <button type="button" onClick={() => setOpen(false)} aria-label="إغلاق المساعد">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="إغلاق المساعد"
+          title="إغلاق (Esc)"
+          className="rounded-lg p-1 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+        >
           <X size={18} />
         </button>
       </header>
@@ -151,7 +265,10 @@ export function ChatWidget() {
       <div className="border-t border-navy-100 bg-white p-2.5">
         {mode === 'comment' && (
           <p className="mb-2 flex items-center gap-1.5 rounded-lg bg-gold-100 px-2.5 py-1.5 text-[11px] text-gold-600">
-            <NotebookPen size={12} /> اكتب تعليقك وسيصل فريق خدمة العملاء.
+            <NotebookPen size={12} className="shrink-0" />
+            {contextRequestNo
+              ? `تُسجّل ملاحظتك برقم مرجعي وتُربط بالطلب ${contextRequestNo} (صندوق ملاحظات العرض).`
+              : 'تُسجّل ملاحظتك برقم مرجعي في صندوق ملاحظات العرض. اذكر رقم طلبك (REQ-…) لربطها به.'}
           </p>
         )}
         <div className="flex items-center gap-2">
@@ -161,18 +278,21 @@ export function ChatWidget() {
             className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl transition ${
               mode === 'comment' ? 'bg-gold text-white' : 'bg-navy-50 text-navy hover:bg-navy-100'
             }`}
-            aria-label="كتابة تعليق"
-            title="كتابة تعليق"
+            aria-label="كتابة ملاحظة"
+            aria-pressed={mode === 'comment'}
+            title="كتابة ملاحظة"
           >
             <MessageSquare size={16} />
           </button>
           <input
+            ref={inputRef}
+            aria-label={mode === 'comment' ? 'نص الملاحظة' : 'سؤالك للمساعد'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') send(input);
             }}
-            placeholder={mode === 'comment' ? 'اكتب تعليقك…' : 'اكتب سؤالك…'}
+            placeholder={mode === 'comment' ? 'اكتب ملاحظتك…' : 'اكتب سؤالك…'}
             className="flex-1 rounded-xl border border-navy-100 px-3 py-2 text-sm outline-none focus:border-navy"
           />
           <button

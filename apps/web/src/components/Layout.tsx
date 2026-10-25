@@ -18,6 +18,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { ErrorBoundary } from '@/app/ErrorBoundary';
 import { Spinner } from '@/shared/ui';
 import { MODULE_GROUPS, type ModuleCode, type ModuleNav } from '@/lib/permissions';
+import { MODULE_ICON } from '@/lib/moduleIcons';
 import { HR_SECTIONS } from '@/features/hr/sections';
 
 const COLLAPSED_KEY = 'masea_nav_collapsed';
@@ -66,7 +67,7 @@ export default function Layout() {
   const byCode = new Map<ModuleCode, ModuleNav>(modules.map((m) => [m.module, m]));
 
   const renderModule = (m: ModuleNav) => {
-    const Icon = m.icon;
+    const Icon = MODULE_ICON[m.module];
     return (
       <div key={m.module}>
         <NavLink

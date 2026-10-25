@@ -35,7 +35,7 @@ function Gauge({ label, actual, target }: { label: string; actual: number; targe
         />
       </div>
       <p className={`mt-1 text-[11px] ${met ? 'text-green-600' : 'text-purple'}`}>
-        {met ? 'تم تحقيق المستهدف ✓' : `إنجاز ${pct}٪ من المستهدف`}
+        {met ? 'تم تحقيق المستهدف' : `إنجاز ${pct}٪ من المستهدف`}
       </p>
     </div>
   );

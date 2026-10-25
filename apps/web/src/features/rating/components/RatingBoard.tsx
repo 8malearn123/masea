@@ -180,10 +180,14 @@ export default function RatingBoard() {
       </div>
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="متوسط التقييم" value={`${avg.toFixed(1)} ★`} tone="text-gold-600" />
+        <Kpi label="متوسط التقييم (من 5)" value={avg.toFixed(1)} tone="text-gold-600" />
         <Kpi label="عدد التقييمات" value={String(ratings.length)} />
-        <Kpi label="تقييمات إيجابية (4★+)" value={String(promoters)} tone="text-green-600" />
-        <Kpi label="تقييمات سلبية (2★-)" value={String(detractors)} tone="text-red-600" />
+        <Kpi
+          label="تقييمات إيجابية (4 نجوم فأكثر)"
+          value={String(promoters)}
+          tone="text-green-600"
+        />
+        <Kpi label="تقييمات سلبية (نجمتان فأقل)" value={String(detractors)} tone="text-red-600" />
       </div>
       {counts.pending > 0 && (
         <p className="mb-5 flex items-center gap-1.5 rounded-xl bg-gold-100 px-3 py-2 text-xs text-gold-600">

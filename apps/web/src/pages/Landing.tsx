@@ -1,17 +1,18 @@
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { BRAND, BRANCHES } from '@masiat/shared';
+import { NAV } from '@/nav';
 import {
   CreditCard,
   FileText,
   HardHat,
   LayoutDashboard,
   MapPin,
+  Sparkles,
   Star,
   Users,
   Zap,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { BRAND, BRANCHES } from '@masiat/shared';
-import { NAV } from '@/nav';
 
 /* ---------- helpers ---------- */
 const toArabic = (s: number | string) =>
@@ -127,7 +128,7 @@ function DashboardMock() {
               key={i}
               className={`mb-1.5 flex items-center gap-2 rounded-lg px-2 py-1.5 ${i === 0 ? 'bg-white/15' : ''}`}
             >
-              <E size={11} className="text-white" />
+              <E size={11} aria-hidden />
               <span className="h-1.5 w-10 rounded bg-white/25" />
             </div>
           ))}
@@ -235,7 +236,10 @@ export default function Landing() {
                 استكشف الوحدات
               </a>
             </div>
-            <p className="mt-5 text-xs text-navy-100/80">جرّب فورًا بحساب تجريبي — بدون تسجيل</p>
+            <p className="mt-5 text-xs text-navy-100/80">
+              <Sparkles size={12} aria-hidden className="me-1 inline align-[-1px]" /> جرّب فورًا
+              بحساب تجريبي — بدون تسجيل
+            </p>
           </div>
 
           <div className="animate-fade-up" style={{ animationDelay: '0.15s' }}>
@@ -274,7 +278,7 @@ export default function Landing() {
               className={`card transition duration-300 hover:-translate-y-1 hover:shadow-xl ${p.cls}`}
             >
               <div className="grid h-12 w-12 place-items-center rounded-xl bg-navy text-white">
-                <p.icon size={22} />
+                <p.icon size={22} aria-hidden />
               </div>
               <h3 className="mt-4 text-lg font-bold">{p.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-purple">{p.text}</p>
@@ -330,7 +334,7 @@ export default function Landing() {
                 {group.items.map((item) => (
                   <li key={item.to} className="flex items-center gap-3 text-sm">
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-navy-50 text-navy">
-                      <item.icon size={16} />
+                      <item.icon size={16} aria-hidden />
                     </span>
                     {item.label}
                   </li>
@@ -367,7 +371,7 @@ export default function Landing() {
                   key={b}
                   className="rounded-xl bg-white/10 px-6 py-3 text-sm font-semibold ring-1 ring-white/20 transition hover:bg-white/20"
                 >
-                  <MapPin size={14} className="ml-1 inline" /> {b}
+                  <MapPin size={14} aria-hidden className="me-1 inline align-[-2px]" /> {b}
                 </span>
               ))}
             </div>

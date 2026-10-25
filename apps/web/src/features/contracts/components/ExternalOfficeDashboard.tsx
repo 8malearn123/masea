@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, ClipboardList, Inbox, Loader, PackageCheck } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ClipboardList, Loader, PackageCheck, Inbox } from 'lucide-react';
 import { Badge, Card, EmptyState, Skeleton } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
 import { useContracts } from '@/features/contracts/hooks/useContracts';

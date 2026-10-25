@@ -1,10 +1,10 @@
 -- =============================================================
--- Masiat Alsharq ERP — 0055 Discount coupons + renewing cancelled contracts
+-- Masiat Alsharq ERP — 0056 Discount coupons + renewing cancelled contracts
 -- 1) كوبون الخصم: خصم مُعرّف مسبقاً في `promotions` (0051) لا يظهر في قائمة
 --    الخصومات، ولا يُطبَّق إلا بإدخال رمزه (requires_code). يُتحقّق من الرمز في
 --    الـ backend؛ لا خصم مفتوح.
--- 2) العقد الملغى يمكن تجديده: renew_contract() يُنشئ مسودة نسخة جديدة مرتبطة
---    بالعقد الأصلي (يبدأ من اليوم)، كما في العقد النشط/المنتهي.
+-- 2) العقد الملغى يمكن تجديده: renew_contract() (0055) يقبل الملغى أيضاً ويُنشئ
+--    مسودة نسخة جديدة مرتبطة بالأصل بنفس مدته، دون شرط البدء بعد نهاية الأصل.
 -- يُبنى فوق: promotions, evaluate_promotion, calc_price, create_contract_draft,
 -- renew_contract — لا جداول جديدة.
 -- =============================================================
@@ -267,60 +267,141 @@ end $$;
 grant execute on function create_contract_draft(jsonb, jsonb) to authenticated;
 
 -- ---------- 2) renewal also from a CANCELLED contract ----------
-create or replace function renew_contract(p_contract_id uuid)
+-- يحلّ محلّ renew_contract(uuid, date, date) من 0055 بنفس التوقيع والقواعد،
+-- مع فرقين فقط: يقبل العقد الملغى، ولا يُشترط أن تبدأ نسخته بعد نهاية الأصل.
+create or replace function renew_contract(
+  p_contract_id uuid,
+  p_start_date  date,
+  p_end_date    date
+)
 returns contracts
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_old   contracts;
-  v_row   contracts;
-  v_start date;
-  v_end   date;
+  v_parent   contracts;
+  v_unit     text;
+  v_count    integer;
+  v_existing text;
+  v_version  integer;
+  v_row      contracts;
 begin
-  select * into v_old from contracts where id = p_contract_id;
-  if not found then raise exception 'العقد غير موجود'; end if;
   if not has_perm('contracts', 'create') then
-    raise exception 'لا تملك صلاحية إنشاء العقود';
+    raise exception 'لا تملك صلاحية إنشاء العقود وتجديدها';
   end if;
-  if v_old.status not in ('active', 'completed', 'cancelled') then
-    raise exception 'يُجدَّد العقد النشط أو المنتهي أو الملغى فقط';
+
+  -- قفل الأصل: طلبات التجديد المتزامنة لنفس العقد تُنفَّذ واحدًا تلو الآخر
+  select * into v_parent from contracts where id = p_contract_id for update;
+
+  -- نفس شرط القراءة في contracts_read (0037) — لا نكشف وجود عقد خارج الصلاحية.
+  -- coalesce: RLS تعامل NULL كرفض، أما IF NOT (NULL) فلا ترفض — فنحوّله صراحةً.
+  if not found or not coalesce(
+    has_perm('contracts', 'view') and (
+      is_cross_branch()
+      or v_parent.assigned_office_id = auth.uid()
+      or (get_my_role() <> 'external_office'
+          and (v_parent.branch_id = get_my_branch() or v_parent.branch_id is null))
+    ), false
+  ) then
+    raise exception 'العقد غير موجود';
   end if;
-  if not (is_cross_branch() or v_old.branch_id = get_my_branch()) then
+
+  -- نفس شرط الإنشاء في contracts_insert (0016): النسخة في فرع الأصل
+  if not coalesce(is_cross_branch() or v_parent.branch_id = get_my_branch(), false) then
     raise exception 'هذا العقد خارج نطاق فرعك';
   end if;
-  if exists (select 1 from contracts where parent_contract_id = v_old.id and status <> 'cancelled') then
-    raise exception 'يوجد تجديد قائم لهذا العقد';
+
+  if v_parent.status not in ('active', 'cancelled') then
+    raise exception 'التجديد متاح للعقود السارية أو الملغاة فقط';
   end if;
 
-  -- a cancelled contract restarts today; a live/finished one continues after its end
-  v_start := case when v_old.status = 'cancelled' then current_date
-                  else greatest(coalesce(v_old.end_date + 1, current_date), current_date) end;
-  v_end   := case when v_old.end_date is not null and v_old.start_date is not null
-                  then v_start + (v_old.end_date - v_old.start_date) else null end;
+  v_unit := case v_parent.service_code
+    when 'recruitment'    then 'month'
+    when 'monthly_rental' then 'month'
+    when 'daily_rental'   then 'day'
+    else null
+  end;
+  if v_unit is null then
+    raise exception 'هذه الخدمة بلا مدة — لا تُجدَّد';
+  end if;
+  if v_parent.start_date is null or v_parent.end_date is null then
+    raise exception 'تاريخ نهاية العقد الأصلي غير محدد';
+  end if;
 
+  -- مدة الأصل (عدد الأيام/الأشهر) من تاريخَيه
+  if v_unit = 'day' then
+    v_count := v_parent.end_date - v_parent.start_date + 1;
+  else
+    select n into v_count
+    from generate_series(1, 600) as n
+    where contract_term_end(v_parent.start_date, 'month', n) = v_parent.end_date
+    limit 1;
+  end if;
+  if v_count is null or v_count < 1 then
+    raise exception 'تعذّر تحديد مدة العقد الأصلي من تاريخَي بدايته ونهايته';
+  end if;
+
+  -- تواريخ النسخة الجديدة: بعد نهاية الأصل، وبنفس مدته بالضبط
+  if p_start_date is null or p_end_date is null then
+    raise exception 'حدّد تاريخ بداية ونهاية النسخة الجديدة';
+  end if;
+  -- الملغى يُجدَّد كعقد جديد متى احتاجه العميل؛ الساري يبدأ تجديده بعد نهايته
+  if v_parent.status <> 'cancelled' and p_start_date <= v_parent.end_date then
+    raise exception 'تبدأ النسخة الجديدة بعد نهاية العقد الأصلي';
+  end if;
+  if p_end_date <> contract_term_end(p_start_date, v_unit, v_count) then
+    raise exception 'تاريخ نهاية النسخة الجديدة لا يطابق مدة العقد الأصلي';
+  end if;
+
+  -- تجديد قائم واحد فقط لكل عقد (يُعاد التجديد إن أُلغيت النسخة)
+  select contract_no into v_existing
+  from contracts
+  where parent_contract_id = v_parent.id and status <> 'cancelled'
+  limit 1;
+  if found then
+    raise exception 'يوجد تجديد قائم لهذا العقد: %', coalesce(v_existing, '');
+  end if;
+
+  -- الإصدار التالي: أكبر إصدار في الأصل وتجديداته (ومنها الملغاة) + ١
+  select greatest(v_parent.version, coalesce(max(version), 0)) + 1
+    into v_version
+  from contracts
+  where parent_contract_id = v_parent.id;
+
+  -- النسخة الجديدة: بيانات الأصل التجارية فقط؛ لا توقيع/سداد/مساند/مراحل استقدام
+  -- السعر: من السعر قبل الخصم (gross_amount، 0052) — الخصم يُستهلك مرة واحدة
   insert into contracts (
-    contract_no, service_code, template_id, customer_id, worker_id, branch_id,
-    start_date, end_date, gross_amount, discount_amount, promotion_id, base_amount,
-    pricing_params, status, version, parent_contract_id, created_by
+    contract_no, customer_id, worker_id, branch_id, service_type, service_code,
+    template_id, start_date, end_date, gross_amount, discount_amount, promotion_id,
+    base_amount, pricing_params, payment_method,
+    status, version, parent_contract_id, created_by
   ) values (
-    generate_contract_no(), v_old.service_code, v_old.template_id, v_old.customer_id,
-    v_old.worker_id, v_old.branch_id, v_start, v_end,
-    coalesce(v_old.gross_amount, v_old.base_amount), 0, null,
-    coalesce(v_old.gross_amount, v_old.base_amount),
-    v_old.pricing_params, 'draft', v_old.version + 1, v_old.id, auth.uid()
-  ) returning * into v_row;
+    generate_contract_no(), v_parent.customer_id, v_parent.worker_id, v_parent.branch_id,
+    v_parent.service_type, v_parent.service_code, v_parent.template_id,
+    p_start_date, p_end_date,
+    coalesce(v_parent.gross_amount, v_parent.base_amount), 0, null,
+    coalesce(v_parent.gross_amount, v_parent.base_amount), v_parent.pricing_params,
+    v_parent.payment_method,
+    'draft', v_version, v_parent.id, auth.uid()
+  )
+  returning * into v_row;
 
+  -- لقطة البنود: نصوص الأصل مع تاريخ البداية الجديد (المدة والمبلغ كما هما)
   insert into contract_clauses (contract_id, sort_order, body)
-  select v_row.id, sort_order, body from contract_clauses where contract_id = v_old.id;
+  select v_row.id, cc.sort_order,
+         replace(cc.body, v_parent.start_date::text, p_start_date::text)
+  from contract_clauses cc
+  where cc.contract_id = v_parent.id;
 
   insert into contract_status_history (contract_id, from_status, to_status, changed_by)
   values (v_row.id, null, 'draft', auth.uid());
 
   insert into audit_log (user_id, action, table_name, record_id, new_data)
   values (auth.uid(), 'contract.renew', 'contracts', v_row.id,
-          jsonb_build_object('parent', v_old.id, 'version', v_row.version,
-                             'from_status', v_old.status::text));
+          jsonb_build_object('parent', v_parent.id, 'version', v_row.version,
+                             'from_status', v_parent.status::text));
+
   return v_row;
 end $$;
 
-grant execute on function renew_contract(uuid) to authenticated;
+revoke all on function renew_contract(uuid, date, date) from public, anon;
+grant execute on function renew_contract(uuid, date, date) to authenticated;
