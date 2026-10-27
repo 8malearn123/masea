@@ -1,4 +1,5 @@
 import type { CallStatus } from '@/features/call-center/types';
+import { loyaltyPointsByPhone } from '@/features/loyalty/data/engine';
 
 export interface DirectoryWorker {
   name: string;
@@ -36,7 +37,7 @@ const DIRECTORY: DirectoryCustomer[] = [
     segment: 'عميل أفراد',
     city: 'نجران',
     member_since: '2023-05-10',
-    loyalty_points: 540,
+    loyalty_points: 0, // from the loyalty ledger (withLoyalty)
     open_contracts: 1,
     worker: {
       name: 'ماريا سانتوس',
@@ -56,7 +57,7 @@ const DIRECTORY: DirectoryCustomer[] = [
     segment: 'عميل مميّز',
     city: 'جازان',
     member_since: '2022-11-01',
-    loyalty_points: 1280,
+    loyalty_points: 0, // from the loyalty ledger (withLoyalty)
     open_contracts: 2,
     worker: {
       name: 'سيتي نورهاليزا',
@@ -77,7 +78,7 @@ const DIRECTORY: DirectoryCustomer[] = [
     segment: 'عميل أفراد',
     city: 'شرورة',
     member_since: '2024-01-15',
-    loyalty_points: 210,
+    loyalty_points: 0, // from the loyalty ledger (withLoyalty)
     open_contracts: 0,
     worker: {
       name: 'غريس وانجيرو',
@@ -94,7 +95,7 @@ const DIRECTORY: DirectoryCustomer[] = [
     segment: 'عميل أفراد',
     city: 'نجران',
     member_since: '2023-09-20',
-    loyalty_points: 760,
+    loyalty_points: 0, // from the loyalty ledger (withLoyalty)
     open_contracts: 1,
     worker: {
       name: 'نيلوكا فرناندو',
@@ -114,7 +115,7 @@ const DIRECTORY: DirectoryCustomer[] = [
     segment: 'عميل شركات',
     city: 'حبونا',
     member_since: '2021-07-01',
-    loyalty_points: 3400,
+    loyalty_points: 0, // from the loyalty ledger (withLoyalty)
     open_contracts: 4,
     worker: null,
     history: [
@@ -132,11 +133,17 @@ function digits(phone: string): string {
 export function lookupCustomer(phone: string): DirectoryCustomer | null {
   const key = digits(phone);
   if (key.length < 9) return null;
-  return DIRECTORY.find((c) => digits(c.phone) === key) ?? null;
+  const c = DIRECTORY.find((x) => digits(x.phone) === key);
+  return c ? withLoyalty(c) : null;
+}
+
+/** Points come from the loyalty ledger (one source) — 0 if not a member. */
+function withLoyalty(c: DirectoryCustomer): DirectoryCustomer {
+  return { ...c, history: [...c.history], loyalty_points: loyaltyPointsByPhone(c.phone) ?? 0 };
 }
 
 export function listDirectory(): DirectoryCustomer[] {
-  return DIRECTORY.map((c) => ({ ...c, history: [...c.history] }));
+  return DIRECTORY.map(withLoyalty);
 }
 
 /**

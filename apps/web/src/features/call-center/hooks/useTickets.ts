@@ -52,7 +52,11 @@ export function useUpdateTicketStatus() {
       if (ctx?.prev) qc.setQueryData(KEY, ctx.prev);
       toast.error(e.message || 'تعذّر تحديث التذكرة');
     },
-    onSuccess: () => toast.success('تم تحديث حالة التذكرة'),
+    onSuccess: (_v, { status }) => {
+      // a resolved ticket closes its call
+      if (status === 'resolved') void qc.invalidateQueries({ queryKey: ['call-center', 'calls'] });
+      toast.success('تم تحديث حالة التذكرة');
+    },
   });
 }
 

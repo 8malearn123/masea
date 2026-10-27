@@ -100,6 +100,8 @@ export function useCreateContract() {
         old ? [created, ...old.filter((c) => c.id !== created.id)] : old,
       );
       void qc.invalidateQueries({ queryKey: LIST_KEY });
+      // a consumed discount changes its usage count
+      if (created.promotion_id) void qc.invalidateQueries({ queryKey: ['pricing'] });
     },
   });
 }

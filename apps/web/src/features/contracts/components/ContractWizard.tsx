@@ -1,9 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getQuoteRecord } from '@/shared/lib/quotesLedger';
 import { convertQuoteToContract } from '@/features/crm/api/crm.api';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CalendarRange, Check, FileText, UserPlus, UserRound } from 'lucide-react';
+import {
+  ArrowRight,
+  CalendarRange,
+  Check,
+  CircleAlert,
+  FileText,
+  UserPlus,
+  UserRound,
+} from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
@@ -14,7 +22,15 @@ import { useContractTemplates, useCreateContract } from '@/features/contracts/ho
 import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import { PromotionPicker } from '@/features/pricing/components/PromotionPicker';
 import { PriceBreakdown } from '@/components/PriceBreakdown';
-import { evaluatePromotion, priceFromBase, ruleFloor, type Promotion } from '@/shared/lib/pricing';
+import {
+  evaluatePromotion,
+  findByCode,
+  priceFromBase,
+  ruleFloor,
+  type Promotion,
+} from '@/shared/lib/pricing';
+import { usePromotions } from '@/features/pricing/hooks/usePromotions';
+import { usePermissions } from '@/hooks/usePermissions';
 import { createContractInputSchema } from '@/features/contracts/schemas/contract.schema';
 import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins';
 import { isMusaned } from '@/features/contracts/lib/contractOrigin';
@@ -105,6 +121,41 @@ export default function ContractWizard() {
   });
   const fromQuote = params.get('quote');
   const qc = useQueryClient();
+  const quote = useMemo(() => (fromQuote ? getQuoteRecord(fromQuote) : null), [fromQuote]);
+  const { meta, branchLabel } = usePermissions();
+  // branch-scoped roles create contracts for their own branch only (RLS contracts_read)
+  const ownBranch = !meta?.crossBranch && branchLabel ? branchLabel : null;
+  const branchOptions = ownBranch ? [ownBranch] : [...BRANCHES_AR];
+  useEffect(() => {
+    if (ownBranch && d.branch !== ownBranch) set({ branch: ownBranch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownBranch]);
+
+  // the quote's coupon is applied once the managed discounts are loaded
+  const couponParam = params.get('coupon');
+  const { data: promotions } = usePromotions();
+  const couponDone = useRef(false);
+  useEffect(() => {
+    if (couponDone.current || !couponParam || !promotions) return;
+    couponDone.current = true;
+    const found = findByCode(promotions, couponParam);
+    if (found) set({ promotion: found, promotionCode: couponParam.toUpperCase() });
+    else toast.error(`كوبون العرض ${couponParam} لم يعد صالحًا`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponParam, promotions]);
+
+  // what differs from the quote (the contract is re-priced on what it says)
+  const quoteWarnings: string[] = [];
+  if (quote) {
+    if (quote.nationality && d.nationality && d.nationality !== quote.nationality)
+      quoteWarnings.push(
+        `جنسية العاملة المختارة (${d.nationality}) تختلف عن العرض (${quote.nationality}) — السعر يُحتسب على العاملة المختارة.`,
+      );
+    if (d.service === 'recruitment' && quote.quantity > 1)
+      quoteWarnings.push(
+        `العرض لعدد ${quote.quantity} — عقد الاستقدام لعاملة واحدة؛ أنشئ عقدًا لكل عاملة.`,
+      );
+  }
   const [step, setStep] = useState(0);
 
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
@@ -308,6 +359,21 @@ export default function ContractWizard() {
         </ol>
       </Card>
 
+      {quote && (
+        <Card className="border-gold-200 bg-gold-50/40 mb-4">
+          <p className="text-sm text-navy">
+            من عرض السعر <span className="num font-bold">QT-{quote.quote_no}</span>
+            {quote.customer_name ? ` · ${quote.customer_name}` : ''} — يُعاد احتساب السعر هنا من
+            قائمة الأسعار الحالية.
+          </p>
+          {quoteWarnings.map((w) => (
+            <p key={w} className="mt-1.5 flex items-start gap-1.5 text-xs text-gold-600">
+              <CircleAlert size={14} className="mt-0.5 shrink-0" /> {w}
+            </p>
+          ))}
+        </Card>
+      )}
+
       <Card>
         {current === 'service' && (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -451,8 +517,9 @@ export default function ContractWizard() {
               label="الفرع"
               value={d.branch}
               onChange={(e) => set({ branch: e.target.value })}
-              options={BRANCHES_AR.map((b) => ({ value: b, label: b }))}
+              options={branchOptions.map((b) => ({ value: b, label: b }))}
               placeholder="اختر الفرع"
+              disabled={Boolean(ownBranch)}
             />
             {musaned && (
               <div className="sm:col-span-2">
@@ -472,7 +539,15 @@ export default function ContractWizard() {
         )}
 
         {current === 'customer' && (
-          <CustomerStep selected={d.customer} onSelect={(c) => set({ customer: c })} />
+          <CustomerStep
+            selected={d.customer}
+            onSelect={(c) => set({ customer: c })}
+            suggested={
+              quote?.customer_name
+                ? { full_name: quote.customer_name, phone: quote.customer_phone ?? '' }
+                : null
+            }
+          />
         )}
 
         {current === 'pricing' && (
@@ -652,13 +727,20 @@ function TermCell({ title, value }: { title: string; value: string }) {
 function CustomerStep({
   selected,
   onSelect,
+  suggested,
 }: {
   selected: CustomerLite | null;
   onSelect: (c: CustomerLite) => void;
+  /** customer named on the quote — searched first, prefilled if created */
+  suggested: { full_name: string; phone: string } | null;
 }) {
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(selected ? '' : (suggested?.full_name ?? ''));
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ full_name: '', phone: '', city: '' });
+  const [form, setForm] = useState({
+    full_name: suggested?.full_name ?? '',
+    phone: suggested?.phone ?? '',
+    city: '',
+  });
   const { data: results = [] } = useCustomerSearch(q);
   const createCustomer = useCreateCustomer();
 

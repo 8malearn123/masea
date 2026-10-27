@@ -59,6 +59,8 @@ import type { AlertState } from '@/features/accounting/data/alerts';
 import { yearClosingEntry } from '@/features/accounting/data/periodClose';
 import { mulMoney, sumMoney, toHalala } from '@/features/accounting/data/money';
 import { applyCreditToSale, settleCustomerSale } from '@/shared/lib/salesLedger';
+import { isDemoMode } from '@/shared/lib/demoBackend';
+import { awardPaymentPoints } from '@/features/loyalty/data/engine';
 import type { RoleCode } from '@/lib/permissions';
 import type { EntryAttachment, JournalEntry, JournalLine } from '@/features/accounting/types';
 
@@ -823,6 +825,8 @@ export async function recordCollection(
   if (!isPeriodOpen(periods, date)) throw new Error('الفترة مقفلة');
   const r = settleCustomerSale(invoiceId, amount, { method, paid_at: date });
   if (!r) throw new Error('الفاتورة مسددة بالكامل أو ملغاة');
+  // loyalty points on payment — the 0059 payments trigger does this server-side
+  if (isDemoMode()) awardPaymentPoints(r.customer_name, r.amount, r.id);
   recordAudit({
     actor,
     action: 'collect',

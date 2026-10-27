@@ -3,8 +3,14 @@ import { useAuth } from '@/store/auth';
 import { loadDemo } from '@/lib/demo';
 import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { evaluatePromotion, findByCode, priceFromBase, ruleFloor } from '@/shared/lib/pricing';
-import { listPromotions } from '@/features/pricing/api/promotions.api';
+import {
+  evaluatePromotion,
+  findByCode,
+  priceFromBase,
+  ruleFloor,
+  type PricingConfig,
+} from '@/shared/lib/pricing';
+import { countPromotionUse, listPromotions } from '@/features/pricing/api/promotions.api';
 import { getPricingConfig, listPricingRules } from '@/features/pricing/api/pricing.api';
 import { managedBase } from '@/features/pricing/lib/engine';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
@@ -693,6 +699,8 @@ async function localDraft(
     flight_no: null,
   };
   FALLBACK.unshift(item);
+  // the discount is consumed (create_contract_draft does the same server-side)
+  if (item.promotion_id) countPromotionUse(item.promotion_id);
   FALLBACK_CLAUSES[id] = (input.clauses ?? []).map((body, i) => ({
     id: `cl-${id}-${i}`,
     contract_id: id,
@@ -791,7 +799,8 @@ export async function renewContract(
 ): Promise<ContractListItem> {
   parseTerm(start_date, end_date);
 
-  if (isDemoMode()) return renewDemoContract(parentId, start_date, end_date);
+  if (isDemoMode())
+    return renewDemoContract(parentId, start_date, end_date, await getPricingConfig());
 
   const { data, error } = await supabase.rpc('renew_contract', {
     p_contract_id: parentId,
@@ -806,7 +815,12 @@ export async function renewContract(
   return full ?? { ...row, customer_name: null, worker_name: null };
 }
 
-function renewDemoContract(parentId: string, start: string, end: string): ContractListItem {
+function renewDemoContract(
+  parentId: string,
+  start: string,
+  end: string,
+  cfg: PricingConfig,
+): ContractListItem {
   const profile = useAuth.getState().profile;
   if (!roleCan(profile?.role as RoleCode | undefined, 'contracts', 'create')) {
     throw new Error('لا تملك صلاحية إنشاء العقود وتجديدها');
@@ -828,7 +842,8 @@ function renewDemoContract(parentId: string, start: string, end: string): Contra
 
   // الخصم المعرّف مسبقًا يُستهلك مرة واحدة — النسخة تُسعَّر من السعر قبل الخصم
   const gross = parent.gross_amount ?? parent.base_amount;
-  const price = priceFromBase(parent.service_code ?? 'monthly_rental', gross);
+  // managed VAT rate (pricing settings), same as a new contract
+  const price = priceFromBase(parent.service_code ?? 'monthly_rental', gross, {}, cfg);
   const now = new Date();
   const renewal: ContractListItem = {
     ...parent,

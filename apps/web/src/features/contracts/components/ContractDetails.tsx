@@ -246,7 +246,13 @@ export default function ContractDetails() {
             <Row label={contract.discount_amount > 0 ? 'الصافي الخاضع للضريبة' : 'المبلغ الأساسي'}>
               <span className="num">{sar(contract.base_amount)} ر.س</span>
             </Row>
-            <Row label="ضريبة القيمة المضافة (١٥٪)">
+            <Row
+              label={`ضريبة القيمة المضافة${
+                contract.base_amount > 0
+                  ? ` (${Math.round((contract.vat_amount / contract.base_amount) * 1000) / 10}٪)`
+                  : ''
+              }`}
+            >
               <span className="num">{sar(contract.vat_amount)} ر.س</span>
             </Row>
             <Row label="الإجمالي">
@@ -512,7 +518,13 @@ function EditDraftModal({
   const update = useUpdateDraft(contract.id);
   const [branch, setBranch] = useState(contract.branch_name ?? contract.branch_id ?? '');
   const [error, setError] = useState<string | null>(null);
-  const branchOptions: { value: string; label: string }[] = BRANCHES_AR.map((b) => ({
+  // branch-scoped roles keep contracts in their own branch (RLS contracts_read) —
+  // moving one elsewhere would make it vanish from their own list
+  const { meta, branchLabel } = usePermissions();
+  const ownBranch = !meta?.crossBranch && branchLabel ? branchLabel : null;
+  const branchOptions: { value: string; label: string }[] = (
+    ownBranch ? [ownBranch] : [...BRANCHES_AR]
+  ).map((b) => ({
     value: b,
     label: b,
   }));
@@ -544,6 +556,7 @@ function EditDraftModal({
           options={branchOptions}
           placeholder="اختر الفرع"
         />
+        {ownBranch && <p className="text-[11px] text-purple">عقود فرعك تبقى في فرع {ownBranch}.</p>}
         <p className="text-[11px] text-purple">
           مدة العقد تُعدَّل من بطاقة «تعديل مدة العقد». الخدمة والسعر والخصم تُحدَّد عند الإنشاء —
           لتغييرها ألغِ المسودة وأنشئ عقداً جديداً.

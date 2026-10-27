@@ -1,5 +1,6 @@
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { awardPaymentPoints } from '@/features/loyalty/data/engine';
 import { listCustomerSales, settleCustomerSale, type CustomerSale } from '@/shared/lib/salesLedger';
 import type { Invoice } from '@/features/payments/types';
 
@@ -42,7 +43,10 @@ export async function recordPayment(
   amount: number,
 ): Promise<{ reference_no: string }> {
   const reference_no = genRef();
-  settleCustomerSale(invoiceId, amount, { method, reference_no }); // shared ledger + journal
+  const receipt = settleCustomerSale(invoiceId, amount, { method, reference_no }); // shared ledger + journal
+  // loyalty points on payment — the 0059 payments trigger does this server-side
+  if (receipt && isDemoMode())
+    awardPaymentPoints(receipt.customer_name, receipt.amount, receipt.id);
   // Demo invoice → no backend round-trip needed.
   if (isDemoId(invoiceId)) return { reference_no };
   const { error } = await supabase.from('payments').insert({

@@ -304,3 +304,12 @@ export async function disableCouponPromotion(code: string): Promise<void> {
   const existing = findByCode(await listPromotions(), code);
   if (existing?.is_active) await updatePromotion(existing.id, { is_active: false });
 }
+
+/**
+ * Demo mirror of create_contract_draft's `usage_count + 1` — a discount used
+ * on a contract counts towards its usage limit.
+ */
+export function countPromotionUse(id: string): void {
+  const local = STORE.find((p) => p.id === id);
+  if (local) local.usage_count += 1;
+}
