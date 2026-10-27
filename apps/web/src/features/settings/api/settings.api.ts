@@ -201,6 +201,14 @@ const CONFIG: ConfigItem[] = [
     sort_order: 25,
   },
   {
+    key: 'pricing_coupon_expiry_alert_days',
+    label_ar: 'تنبيه قرب انتهاء الكوبونات قبل',
+    grp: 'التسعير',
+    value: 14,
+    unit: 'يوم',
+    sort_order: 30,
+  },
+  {
     key: 'acc_reminder_after_days',
     label_ar: 'تذكير العميل بعد تأخر',
     grp: 'المحاسبة',

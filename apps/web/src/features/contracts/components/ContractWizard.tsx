@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { linkQuoteContract } from '@/shared/lib/quotesLedger';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CalendarRange, Check, FileText, UserPlus, UserRound } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
@@ -83,13 +84,24 @@ export default function ContractWizard() {
 
   const [d, setD] = useState<Draft>(() => {
     const s = params.get('service');
-    return s === 'recruitment' ||
-      s === 'monthly_rental' ||
-      s === 'daily_rental' ||
-      s === 'sponsorship_transfer'
-      ? { ...EMPTY, service: s }
-      : EMPTY;
+    if (
+      s !== 'recruitment' &&
+      s !== 'monthly_rental' &&
+      s !== 'daily_rental' &&
+      s !== 'sponsorship_transfer'
+    )
+      return EMPTY;
+    // prefill from an accepted quote (التسعير ← تحويل إلى عقد); price is re-computed here
+    const qty = Number(params.get('quantity'));
+    return {
+      ...EMPTY,
+      service: s,
+      nationality: params.get('nationality') ?? EMPTY.nationality,
+      task: params.get('task') ?? EMPTY.task,
+      quantity: Number.isInteger(qty) && qty > 0 ? qty : EMPTY.quantity,
+    };
   });
+  const fromQuote = params.get('quote');
   const [step, setStep] = useState(0);
 
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
@@ -237,6 +249,8 @@ export default function ContractWizard() {
     }
     create.mutate(parsed.data, {
       onSuccess: (created) => {
+        if (fromQuote)
+          linkQuoteContract(fromQuote, created.contract_no ?? created.id, 'معالج العقود');
         toast.success(
           musaned
             ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'

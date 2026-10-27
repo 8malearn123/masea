@@ -1,4 +1,12 @@
 import { supabase } from '@/shared/lib/supabase';
+import {
+  addQuoteRecord,
+  getQuoteRecord,
+  linkQuoteContract,
+  listQuoteRecords,
+  setQuoteRecordStatus,
+  type QuoteRecord,
+} from '@/shared/lib/quotesLedger';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import type {
   ActivityKind,
@@ -147,21 +155,21 @@ const DEMO_ACTIVITIES: LeadActivity[] = [
   },
 ];
 
-const DEMO_QUOTES: Quote[] = [
-  {
-    id: 'quote-1',
-    lead_id: 'lead-3',
-    customer_name: 'سعد الوادعي',
-    service_code: 'recruitment',
-    base_amount: 15500,
-    vat_amount: 2325,
-    total_amount: 17825,
-    status: 'sent',
-    valid_until: iso(7).slice(0, 10),
-    contract_id: null,
-    created_at: iso(-2),
-  },
-];
+// Quotes live in the SHARED ledger (shared/lib/quotesLedger) — the Pricing
+// module reads/writes the same records.
+const toCrmQuote = (q: QuoteRecord): Quote => ({
+  id: q.id,
+  lead_id: q.lead_id,
+  customer_name: q.customer_name,
+  service_code: q.service_code as Quote['service_code'],
+  base_amount: q.base_amount,
+  vat_amount: q.vat_amount,
+  total_amount: q.total_amount,
+  status: q.status,
+  valid_until: q.valid_until,
+  contract_id: q.contract_id,
+  created_at: q.created_at,
+});
 
 const DEMO_TARGET: SalesTarget = {
   month: new Date().getMonth() + 1,
@@ -197,8 +205,9 @@ export async function listActivities(leadId?: string): Promise<LeadActivity[]> {
 }
 
 export async function listQuotes(leadId?: string): Promise<Quote[]> {
-  const rows = leadId ? DEMO_QUOTES.filter((q) => q.lead_id === leadId) : DEMO_QUOTES;
-  return [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const all = listQuoteRecords();
+  const rows = leadId ? all.filter((q) => q.lead_id === leadId) : all.filter((q) => q.lead_id);
+  return rows.map(toCrmQuote).sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export async function getMyTarget(): Promise<SalesTarget> {
@@ -334,27 +343,38 @@ export interface QuoteInput {
 }
 
 export async function createQuote(input: QuoteInput): Promise<Quote> {
-  const row: Quote = {
-    id: `quote-${++seq}`,
-    ...input,
-    status: 'sent',
-    contract_id: null,
-    created_at: new Date().toISOString(),
-  };
   if (input.lead_id && !isDemoId(input.lead_id)) {
     const { error } = await supabase.from('quotes').insert({ ...input, status: 'sent' });
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   }
-  DEMO_QUOTES.unshift(row);
+  const lead = input.lead_id ? DEMO_LEADS.find((l) => l.id === input.lead_id) : undefined;
+  const rec = addQuoteRecord(
+    {
+      lead_id: input.lead_id,
+      customer_name: input.customer_name,
+      customer_phone: lead?.phone ?? null,
+      service_code: input.service_code,
+      nationality: null,
+      profession: null,
+      quantity: 1,
+      base_amount: input.base_amount,
+      vat_amount: input.vat_amount,
+      total_amount: input.total_amount,
+      valid_until: input.valid_until,
+      notes: null,
+      assigned_to: null,
+      parent_id: null,
+      snapshot: null,
+      status: 'sent',
+    },
+    'مسار المبيعات',
+  );
   // sending a quote moves the lead to the "quoted" stage
-  if (input.lead_id) {
-    const lead = DEMO_LEADS.find((l) => l.id === input.lead_id);
-    if (lead && (lead.stage_code === 'new' || lead.stage_code === 'contacted')) {
-      lead.stage_code = 'quoted';
-      lead.updated_at = new Date().toISOString();
-    }
+  if (lead && (lead.stage_code === 'new' || lead.stage_code === 'contacted')) {
+    lead.stage_code = 'quoted';
+    lead.updated_at = new Date().toISOString();
   }
-  return row;
+  return toCrmQuote(rec);
 }
 
 export async function setQuoteStatus(id: string, status: Quote['status']): Promise<void> {
@@ -363,8 +383,7 @@ export async function setQuoteStatus(id: string, status: Quote['status']): Promi
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
     if (!error) return;
   }
-  const row = DEMO_QUOTES.find((q) => q.id === id);
-  if (row) row.status = status;
+  if (getQuoteRecord(id)) setQuoteRecordStatus(id, status, 'مسار المبيعات');
 }
 
 /** Convert a lead to a customer (reuses the customers table via the RPC). */
@@ -383,16 +402,15 @@ export async function convertLead(leadId: string): Promise<void> {
 
 /** Accept a quote and mark it converted to a contract (lead → won). */
 export async function convertQuoteToContract(quoteId: string): Promise<void> {
-  const q = DEMO_QUOTES.find((x) => x.id === quoteId);
-  if (q) {
-    q.status = 'accepted';
-    q.contract_id = q.contract_id ?? `contract-${++seq}`;
-    if (q.lead_id) {
-      const lead = DEMO_LEADS.find((l) => l.id === q.lead_id);
-      if (lead) {
-        lead.stage_code = 'won';
-        lead.updated_at = new Date().toISOString();
-      }
+  const q = getQuoteRecord(quoteId);
+  if (!q) return;
+  if (q.status !== 'accepted') setQuoteRecordStatus(quoteId, 'accepted', 'مسار المبيعات');
+  if (!q.contract_id) linkQuoteContract(quoteId, `contract-${++seq}`, 'مسار المبيعات');
+  if (q.lead_id) {
+    const lead = DEMO_LEADS.find((l) => l.id === q.lead_id);
+    if (lead) {
+      lead.stage_code = 'won';
+      lead.updated_at = new Date().toISOString();
     }
   }
 }

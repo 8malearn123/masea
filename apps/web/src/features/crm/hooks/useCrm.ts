@@ -48,6 +48,7 @@ export function useCreateQuote() {
     mutationFn: (input) => createQuote(input),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
+      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
       void qc.invalidateQueries({ queryKey: LEADS_KEY });
       toast.success('تم إنشاء عرض السعر');
     },
@@ -62,6 +63,7 @@ export function useSetQuoteStatus() {
     mutationFn: ({ id, status }) => setQuoteStatus(id, status),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
+      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
       toast.success('تم تحديث حالة العرض');
     },
     onError: (e) => toast.error(e.message || 'تعذّر التحديث'),
@@ -75,6 +77,7 @@ export function useConvertQuoteToContract() {
     mutationFn: (quoteId) => convertQuoteToContract(quoteId),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
+      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
       void qc.invalidateQueries({ queryKey: LEADS_KEY });
       toast.success('تم تحويل العرض إلى عقد');
     },

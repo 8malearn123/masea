@@ -10,24 +10,26 @@ export interface PricingRule {
   /** Floor price — the base may never be quoted below this after discounts. */
   min_price: number | null;
   is_active: boolean;
+  updated_at?: string | null;
+  updated_by?: string | null;
 }
 
-export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
-
-/** A price quote generated from the calculator (supabase `quotes`). */
-export interface PricingQuote {
+/** A price change (pricing_rule_changes, 0058) — old → new with reason & effective date. */
+export interface PricingRuleChange {
   id: string;
-  service_code: string;
-  customer_name: string | null;
-  customer_phone: string | null;
-  base_amount: number;
-  vat_amount: number;
-  total_amount: number;
-  status: QuoteStatus;
-  valid_until: string | null;
-  notes: string | null;
-  created_at: string;
+  rule_id: string;
+  old_base: number | null;
+  new_base: number;
+  old_min: number | null;
+  new_min: number | null;
+  effective_from: string;
+  reason: string;
+  changed_by: string;
+  changed_at: string;
 }
+
+export type { QuoteRecord as PricingQuote, QuoteStatus } from '@/shared/lib/quotesLedger';
+import type { QuoteStatus } from '@/shared/lib/quotesLedger';
 
 export const QUOTE_STATUS_LABEL: Record<QuoteStatus, string> = {
   draft: 'مسودة',
@@ -37,12 +39,28 @@ export const QUOTE_STATUS_LABEL: Record<QuoteStatus, string> = {
   expired: 'منتهٍ',
 };
 
+export type PricingOp = 'calculation' | 'quote' | 'contract';
+export const PRICING_OP_LABEL: Record<PricingOp, string> = {
+  calculation: 'حساب',
+  quote: 'عرض سعر',
+  contract: 'عقد',
+};
+
 export interface PricingLogEntry {
   id: string;
   service_code: string;
   params: Record<string, unknown>;
   result: PriceDetail;
   created_at: string;
+  /** recorded from 0058 onward — null on historical rows (never back-filled) */
+  op_type?: PricingOp | null;
+  reference?: string | null;
+  user_name?: string | null;
+}
+
+export interface ConfigMeta {
+  updated_at: string | null;
+  updated_by: string | null;
 }
 
 export const PRICING_SERVICE_LABEL: Record<string, string> = {
