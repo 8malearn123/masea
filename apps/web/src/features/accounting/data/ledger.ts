@@ -153,6 +153,7 @@ export function balances(
 
 /* ------------------------------ general ledger --------------------------- */
 export interface GlRow {
+  key: string; // entry:line — unique row id
   entry_id: string;
   entry_no: number;
   date: string;
@@ -208,6 +209,7 @@ export function generalLedger(
     dr += toHalala(s.line.debit);
     cr += toHalala(s.line.credit);
     rows.push({
+      key: `${s.entry.id}:${s.entry.lines.indexOf(s.line)}`,
       entry_id: s.entry.id,
       entry_no: s.entry.entry_no,
       date: s.entry.entry_date,

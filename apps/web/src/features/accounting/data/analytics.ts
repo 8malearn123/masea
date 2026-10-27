@@ -35,8 +35,8 @@ import type {
 export interface DashboardFilter {
   from: string;
   to: string;
-  branch?: string; // 'all' | branch | 'head'
-  costCenter?: string; // 'all' | project/department code
+  branch?: string | undefined; // 'all' | branch | 'head'
+  costCenter?: string | undefined; // 'all' | project/department code
 }
 
 export interface DocStat {

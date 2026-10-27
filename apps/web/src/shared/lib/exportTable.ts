@@ -13,6 +13,8 @@ export interface ExportTable {
   footer?: Cell[];
 }
 
+const BOM = String.fromCharCode(0xfeff);
+
 const xmlEsc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -55,7 +57,7 @@ export function buildCsv(t: ExportTable): string {
   const lines = [t.headers, ...t.rows, ...(t.footer ? [t.footer] : [])].map((r) =>
     r.map(q).join(','),
   );
-  return `﻿${lines.join('\n')}`;
+  return `${BOM}${lines.join('\n')}`;
 }
 
 const fmt = (c: Cell) =>

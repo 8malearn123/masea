@@ -76,7 +76,7 @@ function normDate(s: string): string {
  */
 export function parseStatementCsv(text: string): StatementLine[] {
   const rows = text
-    .replace(/^﻿/, '')
+    .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .map((r) => r.trim())
     .filter(Boolean);
@@ -189,7 +189,9 @@ export interface ReconciliationReport {
   adjustedBook: number;
   adjustedBank: number;
   difference: number;
-  reconciled: boolean;
+  reconciled: boolean; // adjusted balances agree
+  /** reconciled AND every bank-side item is recorded in the books */
+  complete: boolean;
 }
 
 /**
@@ -234,6 +236,8 @@ export function reconciliationReport(
     adjustedBank,
     difference,
     reconciled: toHalala(difference) === 0,
+    complete:
+      toHalala(difference) === 0 && unrecordedCredits.length + unrecordedDebits.length === 0,
   };
 }
 

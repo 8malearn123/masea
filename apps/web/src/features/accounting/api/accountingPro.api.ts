@@ -548,13 +548,13 @@ const STATEMENTS = new Map<string, BankStatement>([
       imported_at: '2026-06-30T12:00:00Z',
       closing_balance: 0, // computed below from the seed lines
       lines: [
-        {
-          id: 'st-1',
+        ...BRANCHES_AR.map((b, i) => ({
+          id: `st-o${i + 1}`,
           date: '2026-01-01',
-          description: 'رصيد افتتاحي محول',
+          description: `إيداع رأس المال — فرع ${b}`,
           reference: 'OPEN',
-          amount: 200000,
-        },
+          amount: 50000,
+        })),
         {
           id: 'st-a1',
           date: '2026-01-10',
