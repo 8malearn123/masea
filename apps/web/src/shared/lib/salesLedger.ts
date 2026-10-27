@@ -192,10 +192,62 @@ export function voidCustomerSale(id: string): void {
   if (s) s.status = 'void';
 }
 
+/** A collection recorded after seeding — posted to the journal by Accounting
+ *  (DR cash/bank/gateway · CR ذمم العملاء) so the AR subledger equals GL 1120. */
+export interface CustomerReceipt {
+  id: string;
+  sale_id: string;
+  customer_name: string;
+  branch: string | null;
+  amount: number;
+  method: string;
+  reference_no: string;
+  paid_at: string; // YYYY-MM-DD
+}
+const RECEIPTS: CustomerReceipt[] = [];
+let receiptSeq = 0;
+
+export function listCustomerReceipts(): CustomerReceipt[] {
+  return RECEIPTS.map((r) => ({ ...r }));
+}
+
 /** Record a collection against a customer invoice (keeps statuses in sync). */
-export function settleCustomerSale(id: string, amount: number): void {
+export function settleCustomerSale(
+  id: string,
+  amount: number,
+  meta: { method?: string; reference_no?: string; paid_at?: string } = {},
+): CustomerReceipt | null {
   const s = SALES.find((x) => x.id === id);
-  if (!s) return;
-  s.amount_paid = Math.min(s.total, s.amount_paid + amount);
+  if (!s || s.status === 'void') return null;
+  const applied = Math.max(0, Math.min(amount, Math.round((s.total - s.amount_paid) * 100) / 100));
+  if (applied <= 0) return null;
+  s.amount_paid = Math.round((s.amount_paid + applied) * 100) / 100;
   s.status = saleStatus(s.amount_paid, s.total);
+  receiptSeq += 1;
+  const r: CustomerReceipt = {
+    id: `rcpt-${receiptSeq}`,
+    sale_id: s.id,
+    customer_name: s.customer_name,
+    branch: s.branch,
+    amount: applied,
+    method: meta.method ?? 'cash',
+    reference_no: meta.reference_no ?? `RCPT-${receiptSeq}`,
+    paid_at: meta.paid_at ?? new Date().toISOString().slice(0, 10),
+  };
+  RECEIPTS.unshift(r);
+  return r;
+}
+
+/**
+ * Settle part of an invoice by a sales CREDIT NOTE (return / price correction):
+ * reduces the open balance without a cash receipt. The note itself is posted by
+ * Accounting (DR مردودات 4900 + DR ضريبة مخرجات / CR ذمم العملاء).
+ */
+export function applyCreditToSale(id: string, amount: number): number {
+  const s = SALES.find((x) => x.id === id);
+  if (!s || s.status === 'void') return 0;
+  const applied = Math.max(0, Math.min(amount, Math.round((s.total - s.amount_paid) * 100) / 100));
+  s.amount_paid = Math.round((s.amount_paid + applied) * 100) / 100;
+  s.status = saleStatus(s.amount_paid, s.total);
+  return applied;
 }

@@ -12,7 +12,44 @@ export interface Account {
   is_postable: boolean;
   normal_balance: NormalBalance;
   is_active?: boolean; // soft-delete / disable (default active)
+  /** تصنيف القوائم المالية — يُعدَّل من دليل الحسابات؛ الافتراضي يُشتق من الرمز. */
+  fs_class?: FsClass;
+  /** تصنيف قائمة التدفقات النقدية للحساب المقابل للنقد. */
+  cf_class?: CfClass;
 }
+
+/** Statement line a postable account rolls into (editable per account). */
+export type FsClass =
+  | 'current_asset'
+  | 'non_current_asset'
+  | 'current_liability'
+  | 'non_current_liability'
+  | 'equity'
+  | 'revenue'
+  | 'cost_of_sales'
+  | 'operating_expense'
+  | 'other_income'
+  | 'other_expense';
+export type CfClass = 'cash' | 'operating' | 'investing' | 'financing';
+
+export const FS_CLASS_LABEL: Record<FsClass, string> = {
+  current_asset: 'أصول متداولة',
+  non_current_asset: 'أصول غير متداولة',
+  current_liability: 'التزامات متداولة',
+  non_current_liability: 'التزامات غير متداولة',
+  equity: 'حقوق الملكية',
+  revenue: 'إيرادات النشاط',
+  cost_of_sales: 'تكلفة الإيرادات',
+  operating_expense: 'مصروفات تشغيلية',
+  other_income: 'إيرادات أخرى',
+  other_expense: 'مصروفات أخرى',
+};
+export const CF_CLASS_LABEL: Record<CfClass, string> = {
+  cash: 'نقد وما في حكمه',
+  operating: 'أنشطة تشغيلية',
+  investing: 'أنشطة استثمارية',
+  financing: 'أنشطة تمويلية',
+};
 
 /* ---------------------------- accounting periods --------------------------- */
 export type PeriodStatus = 'open' | 'closed';
@@ -87,6 +124,50 @@ export interface JournalLine {
   debit: number;
   credit: number;
   description?: string;
+  /** line-level cost center (branch) — overrides the header branch (allocations). */
+  branch?: string | null;
+}
+
+/** Entry lifecycle. Only `posted` entries reach the ledger/reports. */
+export type EntryStatus = 'draft' | 'pending' | 'approved' | 'posted' | 'void';
+export type EntryKind =
+  | 'manual'
+  | 'auto'
+  | 'recurring'
+  | 'reversing'
+  | 'opening'
+  | 'adjusting'
+  | 'closing';
+
+export const ENTRY_STATUS_LABEL: Record<EntryStatus, string> = {
+  draft: 'مسودة',
+  pending: 'بانتظار الاعتماد',
+  approved: 'معتمد',
+  posted: 'مُرحَّل',
+  void: 'ملغى',
+};
+export const ENTRY_STATUS_TONE: Record<EntryStatus, BadgeTone> = {
+  draft: 'neutral',
+  pending: 'gold',
+  approved: 'navy',
+  posted: 'success',
+  void: 'danger',
+};
+export const ENTRY_KIND_LABEL: Record<EntryKind, string> = {
+  manual: 'يدوي',
+  auto: 'آلي',
+  recurring: 'متكرر',
+  reversing: 'عكسي',
+  opening: 'افتتاحي',
+  adjusting: 'تصحيحي/تسوية',
+  closing: 'إقفال',
+};
+
+export interface EntryAttachment {
+  id: string;
+  name: string;
+  size: number;
+  uploaded_at: string;
 }
 
 export interface JournalEntry {
@@ -98,8 +179,17 @@ export interface JournalEntry {
   reference: string | null;
   source_type: JournalSource;
   source_id?: string;
-  status: 'posted' | 'void';
+  status: EntryStatus;
   lines: JournalLine[];
+  kind?: EntryKind;
+  cost_center?: string | null; // project / department code (beside the branch)
+  created_by?: string;
+  approved_by?: string;
+  posted_at?: string;
+  reversal_of?: string; // id of the entry this one reverses
+  reversed_by?: string; // id of the reversing entry
+  idempotency_key?: string;
+  attachments?: EntryAttachment[];
 }
 
 /* ----------------------- operational events (sources) ---------------------- */
@@ -387,7 +477,17 @@ export interface FixedAsset {
   branch: string | null;
   accumulated_dep: number;
   status: 'active' | 'disposed';
+  /** default straight-line; declining = double-declining balance (2 ÷ life). */
+  method?: DepMethod;
+  disposed_at?: string;
+  disposal_proceeds?: number;
 }
+
+export type DepMethod = 'straight_line' | 'declining_balance';
+export const DEP_METHOD_LABEL: Record<DepMethod, string> = {
+  straight_line: 'القسط الثابت',
+  declining_balance: 'القسط المتناقص (ضعف المعدل)',
+};
 
 /* ============================ banks — Phase 5 ============================ */
 export interface BankAccount {

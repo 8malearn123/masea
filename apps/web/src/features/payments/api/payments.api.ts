@@ -42,7 +42,7 @@ export async function recordPayment(
   amount: number,
 ): Promise<{ reference_no: string }> {
   const reference_no = genRef();
-  settleCustomerSale(invoiceId, amount); // reflect collection in the shared ledger
+  settleCustomerSale(invoiceId, amount, { method, reference_no }); // shared ledger + journal
   // Demo invoice → no backend round-trip needed.
   if (isDemoId(invoiceId)) return { reference_no };
   const { error } = await supabase.from('payments').insert({

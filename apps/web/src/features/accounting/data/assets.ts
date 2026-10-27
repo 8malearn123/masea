@@ -2,8 +2,12 @@ import type { FixedAsset, JournalEntry, JournalLine } from '@/features/accountin
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** Straight-line monthly depreciation for an asset. */
+/** Monthly depreciation: straight-line (default) or double-declining balance on NBV. */
 export function monthlyDepreciation(a: FixedAsset): number {
+  if (a.method === 'declining_balance') {
+    const rate = 2 / a.useful_life_years / 12;
+    return round2(Math.max(a.cost - a.accumulated_dep, 0) * rate);
+  }
   return round2((a.cost - a.salvage_value) / (a.useful_life_years * 12));
 }
 
@@ -61,5 +65,140 @@ export function buildDepreciationEntry(assets: FixedAsset[], period: string): Jo
       { account_code: '5900', debit: total, credit: 0, description: 'مصروف الإهلاك' },
       { account_code: '1290', debit: 0, credit: total, description: 'مجمع الإهلاك' },
     ],
+  };
+}
+
+/** Year-by-year schedule (projection) until the asset reaches its salvage value. */
+export function depreciationSchedule(
+  a: FixedAsset,
+): { year: number; depreciation: number; accumulated: number; nbv: number }[] {
+  const rows: { year: number; depreciation: number; accumulated: number; nbv: number }[] = [];
+  let sim: FixedAsset = { ...a, accumulated_dep: 0, status: 'active' };
+  const start = Number(a.acquisition_date.slice(0, 4));
+  for (let y = 0; y < a.useful_life_years + 1 && remainingDepreciable(sim) > 0; y++) {
+    let dep = 0;
+    for (let m = 0; m < 12; m++) {
+      const d = periodDepreciation(sim);
+      dep = round2(dep + d);
+      sim = { ...sim, accumulated_dep: round2(sim.accumulated_dep + d) };
+    }
+    rows.push({
+      year: start + y,
+      depreciation: dep,
+      accumulated: sim.accumulated_dep,
+      nbv: netBookValue(sim),
+    });
+  }
+  return rows;
+}
+
+/**
+ * Disposal / sale: DR proceeds (bank) + DR مجمع الإهلاك / CR asset cost, with the
+ * difference to أرباح (4600) or خسائر (5960) استبعاد الأصول.
+ */
+export function buildDisposalEntry(
+  a: FixedAsset,
+  input: { date: string; proceeds: number; pay_code: string },
+  seq: number,
+): JournalEntry {
+  if (a.status !== 'active') throw new Error('الأصل مستبعد بالفعل');
+  const nbv = netBookValue(a);
+  const gain = round2(input.proceeds - nbv);
+  const lines: JournalLine[] = [
+    ...(input.proceeds > 0
+      ? [
+          {
+            account_code: input.pay_code,
+            debit: input.proceeds,
+            credit: 0,
+            description: 'متحصلات البيع',
+          },
+        ]
+      : []),
+    ...(a.accumulated_dep > 0
+      ? [
+          {
+            account_code: '1290',
+            debit: a.accumulated_dep,
+            credit: 0,
+            description: 'إقفال مجمع الإهلاك',
+          },
+        ]
+      : []),
+    { account_code: a.asset_code, debit: 0, credit: a.cost, description: 'استبعاد تكلفة الأصل' },
+    ...(gain > 0
+      ? [{ account_code: '4600', debit: 0, credit: gain, description: 'ربح الاستبعاد' }]
+      : gain < 0
+        ? [{ account_code: '5960', debit: -gain, credit: 0, description: 'خسارة الاستبعاد' }]
+        : []),
+  ];
+  return {
+    id: `je-disp-${a.id}`,
+    entry_no: 9700 + seq,
+    entry_date: input.date,
+    branch: a.branch,
+    description: `${input.proceeds > 0 ? 'بيع' : 'استبعاد'} أصل ثابت: ${a.name}`,
+    reference: `DISP-${a.id}`,
+    source_type: 'adjustment',
+    status: 'posted',
+    kind: 'auto',
+    lines,
+  };
+}
+
+/** Branch transfer: moves cost and accumulated depreciation between cost centers. */
+export function buildTransferEntry(
+  a: FixedAsset,
+  toBranch: string | null,
+  date: string,
+  seq: number,
+): JournalEntry {
+  if (a.status !== 'active') throw new Error('لا يُنقل أصل مستبعد');
+  if (toBranch === a.branch) throw new Error('الأصل في هذا الفرع بالفعل');
+  const lines: JournalLine[] = [
+    {
+      account_code: a.asset_code,
+      debit: a.cost,
+      credit: 0,
+      branch: toBranch,
+      description: 'استلام الأصل',
+    },
+    {
+      account_code: a.asset_code,
+      debit: 0,
+      credit: a.cost,
+      branch: a.branch,
+      description: 'تسليم الأصل',
+    },
+    ...(a.accumulated_dep > 0
+      ? [
+          {
+            account_code: '1290',
+            debit: a.accumulated_dep,
+            credit: 0,
+            branch: a.branch,
+            description: 'نقل مجمع الإهلاك',
+          },
+          {
+            account_code: '1290',
+            debit: 0,
+            credit: a.accumulated_dep,
+            branch: toBranch,
+            description: 'نقل مجمع الإهلاك',
+          },
+        ]
+      : []),
+  ];
+  return {
+    id: `je-xfer-${a.id}-${seq}`,
+    entry_no: 9800 + seq,
+    entry_date: date,
+    branch: null,
+    description: `نقل أصل «${a.name}» إلى ${toBranch ?? 'المركز الرئيسي'}`,
+    reference: `AXFER-${a.id}`,
+    source_type: 'adjustment',
+    status: 'posted',
+    kind: 'auto',
+    lines,
   };
 }

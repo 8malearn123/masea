@@ -151,6 +151,63 @@ const CONFIG: ConfigItem[] = [
     unit: 'شهر',
     sort_order: 11,
   },
+  // المحاسبة (0057) — عتبات التنبيهات والرقابة تُدار من هنا لا من الكود.
+  {
+    key: 'acc_low_cash_threshold',
+    label_ar: 'حد انخفاض السيولة',
+    grp: 'المحاسبة',
+    value: 50000,
+    unit: 'ريال',
+    sort_order: 20,
+  },
+  {
+    key: 'acc_bill_due_alert_days',
+    label_ar: 'تنبيه استحقاق فواتير الموردين قبل',
+    grp: 'المحاسبة',
+    value: 7,
+    unit: 'يوم',
+    sort_order: 21,
+  },
+  {
+    key: 'acc_budget_alert_pct',
+    label_ar: 'نسبة استهلاك الموازنة للتنبيه',
+    grp: 'المحاسبة',
+    value: 90,
+    unit: '٪',
+    sort_order: 22,
+  },
+  {
+    key: 'acc_anomaly_multiplier',
+    label_ar: 'معامل اكتشاف القيود غير المعتادة (× المتوسط)',
+    grp: 'المحاسبة',
+    value: 3,
+    unit: 'ضعف',
+    sort_order: 23,
+  },
+  {
+    key: 'acc_require_sod',
+    label_ar: 'فصل مهام الإنشاء والاعتماد (1 = مفعّل)',
+    grp: 'المحاسبة',
+    value: 1,
+    unit: null,
+    sort_order: 24,
+  },
+  {
+    key: 'acc_bank_match_days',
+    label_ar: 'فارق الأيام المسموح في المطابقة البنكية',
+    grp: 'المحاسبة',
+    value: 3,
+    unit: 'يوم',
+    sort_order: 25,
+  },
+  {
+    key: 'acc_reminder_after_days',
+    label_ar: 'تذكير العميل بعد تأخر',
+    grp: 'المحاسبة',
+    value: 7,
+    unit: 'يوم',
+    sort_order: 26,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;
