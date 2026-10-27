@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import type { Promotion } from '@/shared/lib/pricing';
+import { findByCode, type Promotion } from '@/shared/lib/pricing';
 
 /**
  * Predefined discounts (supabase `promotions`, 0020 + 0051). The only source of
@@ -159,6 +159,62 @@ const STORE: Promotion[] = [
   },
 ];
 
+// Coupons of the seeded loyalty campaigns (features/loyalty) — loyalty coupons
+// are promotions too, so the calculator, quotes and contracts honor them.
+STORE.push(
+  {
+    id: 'pm-cm1',
+    name: 'حملة: عرض الصيف — خصم التجديد',
+    code: 'MAS-SUMMER15-A7K2',
+    description: 'كوبون حملة تسويقية من قسم الولاء والتسويق.',
+    discount_pct: 15,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: null,
+    starts_at: '2026-06-01T00:00:00Z',
+    ends_at: '2026-08-31T00:00:00Z',
+    usage_limit: null,
+    usage_count: 42,
+    is_active: true,
+    requires_code: true,
+  },
+  {
+    id: 'pm-cm3',
+    name: 'حملة: برنامج أحضر صديقًا',
+    code: 'MAS-REF10-M4X8',
+    description: 'كوبون حملة تسويقية من قسم الولاء والتسويق.',
+    discount_pct: 10,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: null,
+    starts_at: '2026-01-01T00:00:00Z',
+    ends_at: '2026-12-31T00:00:00Z',
+    usage_limit: null,
+    usage_count: 27,
+    is_active: true,
+    requires_code: true,
+  },
+  {
+    id: 'pm-cm4',
+    name: 'حملة: عرض رمضان',
+    code: 'MAS-RAMADAN20-B2C1',
+    description: 'كوبون حملة تسويقية من قسم الولاء والتسويق.',
+    discount_pct: 20,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: null,
+    starts_at: '2026-02-18T00:00:00Z',
+    ends_at: '2026-03-20T00:00:00Z',
+    usage_limit: null,
+    usage_count: 65,
+    is_active: false,
+    requires_code: true,
+  },
+);
+
 const COLUMNS =
   'id, name, code, description, discount_pct, discount_amount, service_codes, min_base_amount, max_discount_amount, starts_at, ends_at, usage_limit, usage_count, is_active, requires_code';
 
@@ -225,4 +281,26 @@ export async function updatePromotion(
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', id);
   if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+}
+
+/**
+ * Create or update the coupon promotion that carries `row.code` — the bridge
+ * that makes loyalty coupons (campaigns, wheel wins) real discounts in the
+ * calculator, quotes and contracts. One code ↔ one promotion.
+ */
+export async function upsertCouponPromotion(
+  row: Omit<Promotion, 'id' | 'usage_count'> & { code: string },
+): Promise<Promotion> {
+  const existing = findByCode(await listPromotions(), row.code);
+  if (existing) {
+    await updatePromotion(existing.id, row);
+    return { ...existing, ...row };
+  }
+  return createPromotion(row);
+}
+
+/** Disable the coupon promotion of `code` (soft — history is kept). */
+export async function disableCouponPromotion(code: string): Promise<void> {
+  const existing = findByCode(await listPromotions(), code);
+  if (existing?.is_active) await updatePromotion(existing.id, { is_active: false });
 }

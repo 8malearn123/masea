@@ -1,6 +1,13 @@
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { DEFAULT_PRICING_CONFIG, type PriceDetail, type PricingConfig } from '@/shared/lib/pricing';
+import {
+  DEFAULT_PRICING_CONFIG,
+  type PriceArgs,
+  type PriceDetail,
+  type PricingConfig,
+} from '@/shared/lib/pricing';
+import type { PriceBreakdown, ServiceCode } from '@/lib/funnel';
+import { managedBase } from '@/features/pricing/lib/engine';
 import type {
   ConfigMeta,
   PricingLogEntry,
@@ -257,6 +264,17 @@ export async function getPricingConfig(): Promise<PricingConfig> {
     /* fall through to local config */
   }
   return { ...CONFIG };
+}
+
+/**
+ * List price of an order (before discounts) from the managed rules and the
+ * managed VAT rate — the demo stand-in for calc_price used by every screen.
+ */
+export async function managedPrice(service: ServiceCode, args: PriceArgs): Promise<PriceBreakdown> {
+  const [rules, cfg] = await Promise.all([listPricingRules(), getPricingConfig()]);
+  const base = managedBase(rules, service, args);
+  const vat = Math.round(base * cfg.vat_rate * 100) / 100;
+  return { base, vat, total: Math.round((base + vat) * 100) / 100 };
 }
 
 export async function updatePricingConfig(

@@ -43,6 +43,18 @@ export function resolveRule(
   return match ?? null;
 }
 
+/**
+ * List base for an order from the managed price list (unit price × quantity).
+ * The single base used by the calculator, contracts, CRM and the call center;
+ * the seed mirror is used only when no managed rule exists.
+ */
+export function managedBase(rules: PricingRule[], service: ServiceCode, args: PriceArgs): number {
+  const q = Math.max(args.quantity, 1);
+  const rule = resolveRule(rules, service, args);
+  const unit = rule ? rule.base_price : fallbackBase(service, { ...args, quantity: 1 });
+  return round2(unit * q);
+}
+
 export interface CalcInput {
   service: ServiceCode;
   nationality: string;
@@ -125,7 +137,7 @@ export function calculate(
   const unitPrice = rule
     ? rule.base_price
     : round2(fallbackBase(i.service, { ...args, quantity: 1 }));
-  const base = round2(unitPrice * args.quantity);
+  const base = managedBase(rules, i.service, args);
   const floor = round2((rule?.min_price ?? 0) * args.quantity);
   const errs = validateCalc(i);
   const safe = Object.keys(errs).length === 0;

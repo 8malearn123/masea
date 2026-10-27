@@ -82,6 +82,8 @@ export interface CreateQuoteInput {
   valid_days: number;
   notes: string | null;
   parent_id?: string | null;
+  /** Sales lead the quote belongs to (shown in the lead file) */
+  lead_id?: string | null;
 }
 
 export function validateQuoteMeta(
@@ -136,7 +138,15 @@ export async function createQuote(
     });
     if (!error && data) {
       const q = data as unknown as QuoteRecord & { price_snapshot?: unknown };
-      return { ...q, snapshot: q.price_snapshot ?? snapshot, assigned_to: ctx.actor };
+      if (input.lead_id && !isDemoId(input.lead_id)) {
+        await supabase.from('quotes').update({ lead_id: input.lead_id }).eq('id', q.id);
+      }
+      return {
+        ...q,
+        lead_id: input.lead_id ?? q.lead_id,
+        snapshot: q.price_snapshot ?? snapshot,
+        assigned_to: ctx.actor,
+      };
     }
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   } catch (e) {
@@ -145,7 +155,7 @@ export async function createQuote(
   }
   const rec = addQuoteRecord(
     {
-      lead_id: null,
+      lead_id: input.lead_id ?? null,
       customer_name: input.customer_name.trim(),
       customer_phone: input.customer_phone?.trim() || null,
       service_code: input.calc.service,

@@ -1,14 +1,26 @@
 import { useMemo, useState } from 'react';
-import { BadgeCheck, Check, FileText, MessageCircle, Phone, Send, UserCheck } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import {
+  BadgeCheck,
+  Check,
+  FileSignature,
+  FileText,
+  MessageCircle,
+  Phone,
+  Send,
+  UserCheck,
+} from 'lucide-react';
 import { Badge, Button, Input, Modal, Select } from '@/shared/ui';
 import { dateTimeAr, sar } from '@/shared/lib/format';
-import { fallbackPrice } from '@/shared/lib/pricing';
-import type { ServiceCode as FunnelServiceCode } from '@/lib/funnel';
+import { usePermissions } from '@/hooks/usePermissions';
+import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
+import { canMoveTo, quoteContractPath } from '@/shared/lib/quotesLedger';
+import { calculate, EMPTY_CALC, type CalcInput } from '@/features/pricing/lib/engine';
+import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import {
   useActivities,
   useAddActivity,
   useConvertLead,
-  useConvertQuoteToContract,
   useCreateQuote,
   useQuotes,
   useSetQuoteStatus,
@@ -32,9 +44,14 @@ const KIND_OPTS = (Object.entries(ACTIVITY_LABEL) as [ActivityKind, string][]).m
 const SERVICE_OPTS = (Object.entries(SERVICE_LABEL) as [ServiceCode, string][]).map(
   ([value, label]) => ({ value, label }),
 );
-const QUOTE_STATUS_OPTS = (Object.entries(QUOTE_STATUS_LABEL) as [QuoteStatus, string][]).map(
-  ([value, label]) => ({ value, label }),
-);
+/** Current status + the moves the quote lifecycle allows (no invalid options). */
+function quoteStatusOpts(from: QuoteStatus) {
+  return (Object.entries(QUOTE_STATUS_LABEL) as [QuoteStatus, string][])
+    .filter(([to]) => to === from || canMoveTo(from, to))
+    .map(([value, label]) => ({ value, label }));
+}
+const NAT_OPTS = NATIONALITIES.map((n) => ({ value: n, label: n }));
+const TASK_OPTS = TASK_TYPES.map((t) => ({ value: t, label: t }));
 
 /** wa.me link with a Saudi number normalized to international format. */
 function waLink(phone: string | null, text: string): string {
@@ -59,7 +76,12 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
   const convertLead = useConvertLead();
   const createQuote = useCreateQuote();
   const setQuoteStatus = useSetQuoteStatus();
-  const convertQuote = useConvertQuoteToContract();
+  const navigate = useNavigate();
+  const { can, fullName } = usePermissions();
+  const canEdit = can('leads', 'edit');
+  const canLog = can('leads', 'create');
+  const { data: rules = [], isLoading: rulesLoading } = usePricingRules();
+  const { data: cfg } = usePricingConfig();
 
   // follow-up form
   const [kind, setKind] = useState<ActivityKind>('call');
@@ -68,14 +90,28 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
 
   // quick quote form
   const [service, setService] = useState<ServiceCode>(lead.service_code ?? 'recruitment');
+  const [nationality, setNationality] = useState(EMPTY_CALC.nationality);
+  const [task, setTask] = useState(EMPTY_CALC.profession);
   const [qty, setQty] = useState('1');
-  const price = useMemo(
-    () => fallbackPrice(service as FunnelServiceCode, { quantity: Math.max(1, Number(qty) || 1) }),
-    [service, qty],
+  const calc: CalcInput = {
+    ...EMPTY_CALC,
+    service,
+    nationality,
+    profession: task,
+    quantity: Number(qty),
+  };
+  // same engine as the calculator: managed price list + managed VAT
+  const result = useMemo(
+    () => (cfg ? calculate(calc, rules, cfg) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [service, nationality, task, qty, rules, cfg],
   );
+  const price = result?.detail;
+  const quoteBlocker = !price ? 'جارٍ تحميل قائمة الأسعار…' : (result.blockers[0] ?? null);
+  const canLogActivity = Boolean(note.trim() || followUp);
 
   function logActivity() {
-    if (!note.trim() && !followUp) return;
+    if (!canLogActivity) return;
     addActivity.mutate(
       {
         lead_id: lead.id,
@@ -93,18 +129,16 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
   }
 
   function sendQuote() {
+    if (!cfg || quoteBlocker) return;
     createQuote.mutate({
-      lead_id: lead.id,
-      customer_name: lead.full_name,
-      service_code: service,
-      base_amount: price.base,
-      vat_amount: price.vat,
-      total_amount: price.total,
-      valid_until: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10),
+      input: { lead_id: lead.id, calc, valid_days: 7 },
+      rules,
+      cfg,
+      actor: fullName,
     });
   }
 
-  const quoteText = `عرض سعر من ماسية الشرق للاستقدام\nالخدمة: ${SERVICE_LABEL[service]}\nالإجمالي شامل الضريبة: ${sar(price.total)} ر.س\nصالح حتى 7 أيام.`;
+  const quoteText = `عرض سعر من ماسية الشرق للاستقدام\nالخدمة: ${SERVICE_LABEL[service]}\nالإجمالي شامل الضريبة: ${sar(price?.total ?? 0)} ر.س\nصالح حتى 7 أيام.`;
 
   return (
     <div className="space-y-4">
@@ -142,14 +176,16 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
               <BadgeCheck size={13} /> عميل
             </span>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              loading={convertLead.isPending}
-              onClick={() => convertLead.mutate(lead.id)}
-            >
-              <UserCheck size={14} /> تحويل لعميل
-            </Button>
+            canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                loading={convertLead.isPending}
+                onClick={() => convertLead.mutate(lead.id)}
+              >
+                <UserCheck size={14} /> تحويل لعميل
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -176,15 +212,19 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
               onChange={(e) => setNote(e.target.value)}
               placeholder="ملاحظة المتابعة"
             />
-            <Button
-              variant="primary"
-              size="sm"
-              className="w-full"
-              loading={addActivity.isPending}
-              onClick={logActivity}
-            >
-              تسجيل المتابعة
-            </Button>
+            {canLog && (
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full"
+                disabled={!canLogActivity}
+                title={canLogActivity ? undefined : 'اكتب ملاحظة أو حدّد موعد تذكير'}
+                loading={addActivity.isPending}
+                onClick={logActivity}
+              >
+                تسجيل المتابعة
+              </Button>
+            )}
           </div>
           <ol className="mt-3 space-y-2">
             {activities.length === 0 && <p className="text-xs text-purple">لا يوجد سجل بعد.</p>}
@@ -223,39 +263,77 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
               value={service}
               onChange={(e) => setService(e.target.value as ServiceCode)}
               options={SERVICE_OPTS}
+              aria-label="الخدمة"
             />
+            {service === 'daily_rental' ? (
+              <Select
+                value={task}
+                onChange={(e) => setTask(e.target.value)}
+                options={TASK_OPTS}
+                aria-label="المهمة"
+              />
+            ) : (
+              <Select
+                value={nationality}
+                onChange={(e) => setNationality(e.target.value)}
+                options={NAT_OPTS}
+                aria-label="الجنسية"
+              />
+            )}
             <Input
               value={qty}
               onChange={(e) => setQty(e.target.value)}
               inputMode="numeric"
-              placeholder="الكمية"
+              placeholder={
+                service === 'daily_rental'
+                  ? 'عدد الأيام'
+                  : service === 'monthly_rental'
+                    ? 'عدد الأشهر'
+                    : 'العدد'
+              }
+              aria-label="الكمية"
+              className="col-span-2"
             />
           </div>
           <div className="mt-2 rounded-lg bg-navy-50 p-2.5 text-[13px]">
             <div className="flex justify-between">
-              <span className="text-purple">الأساسي</span>
-              <span className="num">{sar(price.base)}</span>
+              <span className="text-purple">الصافي قبل الضريبة</span>
+              <span className="num">{price ? sar(price.net) : '—'}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-purple">ضريبة ١٥٪</span>
-              <span className="num">{sar(price.vat)}</span>
+              <span className="text-purple">
+                ضريبة القيمة المضافة{' '}
+                {cfg && <span className="num">({Math.round(cfg.vat_rate * 10000) / 100}٪)</span>}
+              </span>
+              <span className="num">{price ? sar(price.vat) : '—'}</span>
             </div>
             <div className="mt-1 flex justify-between border-t border-navy-100 pt-1 font-bold text-navy">
               <span>الإجمالي</span>
-              <span className="num text-gold-600">{sar(price.total)} ر.س</span>
+              <span className="num text-gold-600">{price ? `${sar(price.total)} ر.س` : '—'}</span>
             </div>
+            <p className="mt-1 text-[11px] text-purple">
+              من قائمة الأسعار المعتمدة في قسم التسعير.
+            </p>
           </div>
+          {quoteBlocker && !rulesLoading && price && (
+            <p role="alert" className="mt-1.5 text-[11px] text-red-600">
+              {quoteBlocker}
+            </p>
+          )}
           <div className="mt-2 flex gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              className="flex-1"
-              loading={createQuote.isPending}
-              onClick={sendQuote}
-            >
-              <Send size={14} /> إنشاء العرض
-            </Button>
-            {lead.phone && (
+            {canEdit && (
+              <Button
+                variant="primary"
+                size="sm"
+                className="flex-1"
+                disabled={Boolean(quoteBlocker)}
+                loading={createQuote.isPending}
+                onClick={sendQuote}
+              >
+                <Send size={14} /> إنشاء العرض
+              </Button>
+            )}
+            {lead.phone && price && (
               <a
                 href={waLink(lead.phone, quoteText)}
                 target="_blank"
@@ -279,14 +357,24 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
                     <Select
                       value={q.status}
                       onChange={(e) =>
-                        setQuoteStatus.mutate({ id: q.id, status: e.target.value as QuoteStatus })
+                        setQuoteStatus.mutate({
+                          id: q.id,
+                          status: e.target.value as QuoteStatus,
+                          actor: fullName,
+                        })
                       }
-                      options={QUOTE_STATUS_OPTS}
+                      options={quoteStatusOpts(q.status)}
+                      disabled={!canEdit || quoteStatusOpts(q.status).length < 2}
+                      aria-label="حالة العرض"
                       className="flex-1"
                     />
-                    {!q.contract_id && (
-                      <Button variant="outline" size="sm" onClick={() => convertQuote.mutate(q.id)}>
-                        تحويل لعقد
+                    {q.status === 'accepted' && !q.contract_id && can('contracts', 'create') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate(quoteContractPath(q, q.coupon_code))}
+                      >
+                        <FileSignature size={14} /> تحويل لعقد
                       </Button>
                     )}
                     {q.contract_id && <Badge tone="success">تم التعاقد</Badge>}

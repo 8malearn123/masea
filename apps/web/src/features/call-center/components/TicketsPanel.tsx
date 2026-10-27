@@ -35,7 +35,8 @@ function Kpi({
 }
 
 export function TicketsPanel() {
-  const { fullName } = usePermissions();
+  const { can, fullName } = usePermissions();
+  const editable = can('call_center', 'edit');
   const { data: tickets = [], isLoading, isError, refetch } = useTickets();
   const updateStatus = useUpdateTicketStatus();
   const addUpdate = useAddTicketUpdate();
@@ -154,6 +155,8 @@ export function TicketsPanel() {
               <label className="mb-1 block text-xs font-medium text-purple">تغيير الحالة</label>
               <select
                 value={current.status}
+                disabled={!editable}
+                aria-label="تغيير الحالة"
                 onChange={(e) =>
                   updateStatus.mutate({ id: current.id, status: e.target.value as TicketStatus })
                 }
@@ -186,34 +189,37 @@ export function TicketsPanel() {
               </ul>
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-purple">إضافة متابعة</label>
-              <textarea
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                rows={2}
-                placeholder="تحديث للعميل أو ملاحظة داخلية…"
-                className="w-full rounded-xl border border-navy-100 bg-white px-3 py-2 text-xs outline-none focus:border-navy"
-              />
-              <div className="mt-2 flex justify-end">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  loading={addUpdate.isPending}
-                  onClick={sendReply}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <MessageSquarePlus size={14} /> إضافة
-                  </span>
-                </Button>
+            {editable && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-purple">إضافة متابعة</label>
+                <textarea
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  rows={2}
+                  placeholder="تحديث للعميل أو ملاحظة داخلية…"
+                  className="w-full rounded-xl border border-navy-100 bg-white px-3 py-2 text-xs outline-none focus:border-navy"
+                />
+                <div className="mt-2 flex justify-end">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={!reply.trim()}
+                    loading={addUpdate.isPending}
+                    onClick={sendReply}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <MessageSquarePlus size={14} /> إضافة
+                    </span>
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center justify-between gap-2 border-t border-navy-50 pt-3">
               <Button variant="ghost" size="sm" onClick={() => setActive(null)}>
                 إغلاق النافذة
               </Button>
-              {current.status !== 'resolved' && (
+              {editable && current.status !== 'resolved' && (
                 <Button
                   variant="primary"
                   size="sm"

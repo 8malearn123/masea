@@ -11,4 +11,9 @@ describe('isIgnorableWriteError', () => {
     expect(isIgnorableWriteError('لا يمكن تأكيد التوقيع قبل توقيع الطرفين')).toBe(false);
     expect(isIgnorableWriteError('new row violates row-level security policy')).toBe(false);
   });
+
+  it('a permission refusal is a false success only outside demo mode', () => {
+    // the test env has no Supabase credentials → demo mode
+    expect(isIgnorableWriteError('permission denied for table leads')).toBe(true);
+  });
 });

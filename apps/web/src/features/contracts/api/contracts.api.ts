@@ -3,16 +3,10 @@ import { useAuth } from '@/store/auth';
 import { loadDemo } from '@/lib/demo';
 import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import {
-  DEFAULT_PRICING_CONFIG,
-  evaluatePromotion,
-  fallbackBase,
-  findByCode,
-  priceFromBase,
-  ruleFloor,
-} from '@/shared/lib/pricing';
+import { evaluatePromotion, findByCode, priceFromBase, ruleFloor } from '@/shared/lib/pricing';
 import { listPromotions } from '@/features/pricing/api/promotions.api';
-import { listPricingRules } from '@/features/pricing/api/pricing.api';
+import { getPricingConfig, listPricingRules } from '@/features/pricing/api/pricing.api';
+import { managedBase } from '@/features/pricing/lib/engine';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
 import { addDays, addMonths, computeEndDate } from '@/features/requests/lib/period';
 import type { PeriodUnit } from '@/features/requests/types';
@@ -640,11 +634,14 @@ async function localDraft(
   const promotion =
     promotions.find((p) => p.id === input.promotion_id) ??
     (code ? findByCode(promotions, code) : null);
-  const base = fallbackBase(input.service_code, {
+  const args = {
     nationality: input.nationality,
     profession: input.profession,
     quantity: input.quantity ?? 1,
-  });
+  };
+  const [rules, cfg] = await Promise.all([listPricingRules(), getPricingConfig()]);
+  // managed price list (same base as the calculator) — never code prices
+  const base = managedBase(rules, input.service_code, args);
   if (wantsDiscount) {
     if (!promotion) throw new Error('لا يمكن تطبيق الخصم: رمز الكوبون غير صحيح');
     const check = evaluatePromotion(promotion, input.service_code, base, new Date(), code);
@@ -657,13 +654,9 @@ async function localDraft(
       promotion,
       promotionCode: code,
       // managed floor (pricing_rules.min_price × qty) — same as calc_price
-      floor: ruleFloor(await listPricingRules(), input.service_code, {
-        nationality: input.nationality,
-        profession: input.profession,
-        quantity: input.quantity ?? 1,
-      }),
+      floor: ruleFloor(rules, input.service_code, args),
     },
-    DEFAULT_PRICING_CONFIG,
+    cfg,
   );
   const id = `local-${Date.now()}-${++localSeq}`;
   const item: ContractListItem = {

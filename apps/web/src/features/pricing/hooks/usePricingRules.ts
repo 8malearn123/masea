@@ -47,6 +47,7 @@ function useRuleMutation<T>(fn: (v: T) => Promise<unknown>, ok: string) {
     mutationFn: fn,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['pricing'] });
+      void qc.invalidateQueries({ queryKey: ['price'] });
       toast.success(ok);
     },
     onError: (e) => toast.error(e.message || 'تعذّر الحفظ'),
@@ -87,6 +88,7 @@ export function useUpdatePricingConfig() {
     mutationFn: ({ cfg, actor }) => updatePricingConfig(cfg, actor),
     onSuccess: (_v, { cfg }) => {
       qc.setQueryData<PricingConfig>(CONFIG_KEY, cfg);
+      void qc.invalidateQueries({ queryKey: ['price'] });
       void qc.invalidateQueries({ queryKey: ['pricing', 'config-meta'] });
       toast.success('تم حفظ إعدادات التسعير');
     },

@@ -29,7 +29,8 @@ function Kpi({
 
 const RANK: Record<RiskLevel, number> = { high: 0, medium: 1, low: 2 };
 
-export function RetentionPanel({ onCall }: { onCall: (phone: string) => void }) {
+/** `onCall` is omitted for view-only roles — no retention-call button then. */
+export function RetentionPanel({ onCall }: { onCall?: ((phone: string) => void) | undefined }) {
   const { data: tickets = [] } = useTickets();
 
   const rows = useMemo(() => {
@@ -108,11 +109,13 @@ export function RetentionPanel({ onCall }: { onCall: (phone: string) => void }) 
                   </div>
                 </div>
               </div>
-              <Button variant="primary" size="sm" onClick={() => onCall(c.phone)}>
-                <span className="flex items-center gap-1.5">
-                  <PhoneCall size={14} /> مكالمة احتفاظ
-                </span>
-              </Button>
+              {onCall && (
+                <Button variant="primary" size="sm" onClick={() => onCall(c.phone)}>
+                  <span className="flex items-center gap-1.5">
+                    <PhoneCall size={14} /> مكالمة احتفاظ
+                  </span>
+                </Button>
+              )}
             </div>
           </Card>
         ))}

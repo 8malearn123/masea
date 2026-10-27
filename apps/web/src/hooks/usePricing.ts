@@ -1,13 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { queryKeys } from '@/shared/lib/queryKeys';
-import { fallbackPrice, type PriceArgs } from '@/shared/lib/pricing';
+import type { PriceArgs } from '@/shared/lib/pricing';
+import { managedPrice } from '@/features/pricing/api/pricing.api';
 import type { PriceBreakdown, ServiceCode } from '@/lib/funnel';
 
 /**
  * Pricing for an order. The backend `calc_price` RPC is the source of truth;
- * the seed-mirrored fallback (shared/lib/pricing) is used only until the
- * 0011/0012 migrations are applied.
+ * until it is reachable the managed price list and VAT setting are used
+ * (`managedPrice`) — never prices written in code.
  */
 export function usePrice(service: ServiceCode, args: PriceArgs, enabled: boolean) {
   return useQuery<PriceBreakdown>({
@@ -25,7 +26,7 @@ export function usePrice(service: ServiceCode, args: PriceArgs, enabled: boolean
       } catch {
         /* RPC not available yet — fall back below */
       }
-      return fallbackPrice(service, args);
+      return managedPrice(service, args);
     },
   });
 }

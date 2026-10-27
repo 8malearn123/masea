@@ -27,7 +27,9 @@ import {
 import { Badge, Button, Input, Select, useToast } from '@/shared/ui';
 import type { BadgeTone } from '@/shared/ui/Badge';
 import { dateAr, sar } from '@/shared/lib/format';
-import { calcPriceDetail } from '@/shared/lib/pricing';
+import { DEFAULT_PRICING_CONFIG } from '@/shared/lib/pricing';
+import { calculate, EMPTY_CALC } from '@/features/pricing/lib/engine';
+import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import type { ServiceCode } from '@/lib/funnel';
 import { NATIONALITIES, TASK_TYPES, emptyDraft } from '@/lib/orderTypes';
 import { useCreateRequest } from '@/hooks/useCreateRequest';
@@ -148,11 +150,20 @@ export function IncomingCallConsole({
   const chatEnd = useRef<HTMLDivElement>(null);
   const busy = add.isPending || createTicket.isPending || createRequest.isPending;
 
-  const dealDetail = calcPriceDetail(deal.service, {
-    nationality: deal.nationality,
-    profession: deal.service === 'daily_rental' ? deal.profession : undefined,
-    quantity: Math.max(deal.quantity, 1),
-  });
+  // same engine as the pricing calculator: managed price list + managed VAT
+  const { data: priceRules = [], isLoading: pricesLoading } = usePricingRules();
+  const { data: priceCfg } = usePricingConfig();
+  const dealDetail = calculate(
+    {
+      ...EMPTY_CALC,
+      service: deal.service,
+      nationality: deal.nationality,
+      profession: deal.profession,
+      quantity: Math.max(deal.quantity, 1),
+    },
+    priceRules,
+    priceCfg ?? DEFAULT_PRICING_CONFIG,
+  ).detail;
 
   const openTickets = customer
     ? tickets.filter((t) => samePhone(t.phone, customer.phone) && t.status !== 'resolved').length
@@ -367,7 +378,7 @@ export function IncomingCallConsole({
   // pricing engine, a service_request (order) is created, then the call is
   // logged as a sale linked to that order number.
   function closeDeal() {
-    if (!phone.trim()) return;
+    if (!phone.trim() || pricesLoading || !priceCfg) return;
     const total = dealDetail.total;
     const draft = {
       ...emptyDraft(deal.service),
@@ -382,7 +393,7 @@ export function IncomingCallConsole({
     createRequest.mutate(
       {
         draft,
-        price: { base: dealDetail.base, vat: dealDetail.vat, total },
+        price: { base: dealDetail.net, vat: dealDetail.vat, total },
         serviceName: SERVICE_LABEL[deal.service],
       },
       {
@@ -938,9 +949,17 @@ export function IncomingCallConsole({
               <div className="mt-2 flex items-center justify-between gap-2">
                 <span className="text-xs text-purple">
                   الإجمالي (شامل الضريبة):{' '}
-                  <span className="num font-bold text-navy">{sar(dealDetail.total)} ر.س</span>
+                  <span className="num font-bold text-navy">
+                    {pricesLoading || !priceCfg ? '—' : `${sar(dealDetail.total)} ر.س`}
+                  </span>
                 </span>
-                <Button variant="primary" size="md" loading={busy} onClick={closeDeal}>
+                <Button
+                  variant="primary"
+                  size="md"
+                  loading={busy}
+                  disabled={pricesLoading || !priceCfg}
+                  onClick={closeDeal}
+                >
                   <span className="flex items-center justify-center gap-1.5">
                     <CheckCircle2 size={15} /> تأكيد البيع وإنشاء الطلب
                   </span>

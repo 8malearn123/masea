@@ -1,13 +1,20 @@
 import { supabase } from '@/shared/lib/supabase';
 import {
-  addQuoteRecord,
   getQuoteRecord,
   linkQuoteContract,
   listQuoteRecords,
+  quoteCoupon,
   setQuoteRecordStatus,
   type QuoteRecord,
 } from '@/shared/lib/quotesLedger';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import type { PricingConfig } from '@/shared/lib/pricing';
+import type { CalcInput } from '@/features/pricing/lib/engine';
+import type { PricingRule } from '@/features/pricing/types';
+import {
+  createQuote as createPricingQuote,
+  setQuoteStatus as setPricingQuoteStatus,
+} from '@/features/pricing/api/quotes.api';
 import type {
   ActivityKind,
   Lead,
@@ -162,6 +169,10 @@ const toCrmQuote = (q: QuoteRecord): Quote => ({
   lead_id: q.lead_id,
   customer_name: q.customer_name,
   service_code: q.service_code as Quote['service_code'],
+  nationality: q.nationality,
+  profession: q.profession,
+  quantity: q.quantity,
+  coupon_code: quoteCoupon(q),
   base_amount: q.base_amount,
   vat_amount: q.vat_amount,
   total_amount: q.total_amount,
@@ -333,43 +344,32 @@ export async function toggleActivityDone(id: string, done: boolean): Promise<voi
 
 /* ---------------------------- quotes + conversion ------------------------- */
 export interface QuoteInput {
-  lead_id: string | null;
-  customer_name: string | null;
-  service_code: Quote['service_code'];
-  base_amount: number;
-  vat_amount: number;
-  total_amount: number;
-  valid_until: string | null;
+  lead_id: string;
+  calc: CalcInput;
+  valid_days: number;
 }
 
-export async function createQuote(input: QuoteInput): Promise<Quote> {
-  if (input.lead_id && !isDemoId(input.lead_id)) {
-    const { error } = await supabase.from('quotes').insert({ ...input, status: 'sent' });
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-  }
-  const lead = input.lead_id ? DEMO_LEADS.find((l) => l.id === input.lead_id) : undefined;
-  const rec = addQuoteRecord(
+/**
+ * Quick quote from a lead — the same pricing path as the calculator
+ * (managed rules, validation, frozen snapshot), linked to the lead.
+ */
+export async function createQuote(
+  input: QuoteInput,
+  ctx: { rules: PricingRule[]; cfg: PricingConfig; actor: string },
+): Promise<Quote> {
+  const lead = DEMO_LEADS.find((l) => l.id === input.lead_id);
+  const rec = await createPricingQuote(
     {
-      lead_id: input.lead_id,
-      customer_name: input.customer_name,
+      calc: input.calc,
+      customer_name: lead?.full_name ?? '',
       customer_phone: lead?.phone ?? null,
-      service_code: input.service_code,
-      nationality: null,
-      profession: null,
-      quantity: 1,
-      base_amount: input.base_amount,
-      vat_amount: input.vat_amount,
-      total_amount: input.total_amount,
-      valid_until: input.valid_until,
+      valid_days: input.valid_days,
       notes: null,
-      assigned_to: null,
-      parent_id: null,
-      snapshot: null,
-      status: 'sent',
+      lead_id: input.lead_id,
     },
-    'مسار المبيعات',
+    ctx,
   );
-  // sending a quote moves the lead to the "quoted" stage
+  // a quote on the lead moves it to the "quoted" stage
   if (lead && (lead.stage_code === 'new' || lead.stage_code === 'contacted')) {
     lead.stage_code = 'quoted';
     lead.updated_at = new Date().toISOString();
@@ -377,13 +377,13 @@ export async function createQuote(input: QuoteInput): Promise<Quote> {
   return toCrmQuote(rec);
 }
 
-export async function setQuoteStatus(id: string, status: Quote['status']): Promise<void> {
-  if (!isDemoId(id)) {
-    const { error } = await supabase.from('quotes').update({ status }).eq('id', id);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
-  }
-  if (getQuoteRecord(id)) setQuoteRecordStatus(id, status, 'مسار المبيعات');
+/** Lifecycle-guarded status change — same path as Pricing (set_quote_status). */
+export async function setQuoteStatus(
+  id: string,
+  status: Quote['status'],
+  actor: string,
+): Promise<void> {
+  await setPricingQuoteStatus(id, status, actor);
 }
 
 /** Convert a lead to a customer (reuses the customers table via the RPC). */
@@ -400,12 +400,17 @@ export async function convertLead(leadId: string): Promise<void> {
   }
 }
 
-/** Accept a quote and mark it converted to a contract (lead → won). */
-export async function convertQuoteToContract(quoteId: string): Promise<void> {
+/**
+ * After the contract wizard created a REAL contract from a quote: accept the
+ * quote, link it to the contract and mark the lead won. Refuses a quote that
+ * is already linked (one quote → one contract).
+ */
+export async function convertQuoteToContract(quoteId: string, contractRef: string): Promise<void> {
   const q = getQuoteRecord(quoteId);
   if (!q) return;
-  if (q.status !== 'accepted') setQuoteRecordStatus(quoteId, 'accepted', 'مسار المبيعات');
-  if (!q.contract_id) linkQuoteContract(quoteId, `contract-${++seq}`, 'مسار المبيعات');
+  if (q.contract_id) throw new Error('هذا العرض مرتبط بعقد مسبقًا');
+  if (q.status !== 'accepted') setQuoteRecordStatus(quoteId, 'accepted', 'معالج العقود');
+  linkQuoteContract(quoteId, contractRef, 'معالج العقود');
   if (q.lead_id) {
     const lead = DEMO_LEADS.find((l) => l.id === q.lead_id);
     if (lead) {

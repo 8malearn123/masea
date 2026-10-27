@@ -22,9 +22,11 @@ describe('loyalty engine (ledger mirror of 0020)', () => {
     expect(() => redeemPoints(10_000_000)).toThrow();
   });
 
-  it('redeem reduces points and returns SAR value (100 pts = 1 ر.س)', () => {
+  it('redeem reduces points and credits the SAR value to the wallet (100 pts = 1 ر.س)', () => {
     expect(redeemPoints(1000)).toBe(10);
     expect(getAccount().points_balance).toBe(17000);
+    expect(getAccount().wallet_balance).toBe(260); // 250 + 10
+    expect(getAccount().wallet_ledger[0]).toMatchObject({ type: 'credit', amount: 10 });
   });
 
   it('award_points applies the tier multiplier (silver ×1.25)', () => {

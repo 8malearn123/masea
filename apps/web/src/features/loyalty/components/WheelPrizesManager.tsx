@@ -10,7 +10,8 @@ import { WHEEL_COLORS } from '@/features/loyalty/data/engine';
 import { WheelPrizeFormModal } from '@/features/loyalty/components/WheelPrizeFormModal';
 import { PRIZE_TYPE_LABEL, type WheelPrize } from '@/features/loyalty/types';
 
-export function WheelPrizesManager() {
+/** `editable` = loyalty.manage (same rule as the wheel_prizes RLS policy). */
+export function WheelPrizesManager({ editable }: { editable: boolean }) {
   const { data: prizes = [] } = useWheelPrizes();
   const update = useUpdateWheelPrize();
   const remove = useRemoveWheelPrize();
@@ -27,9 +28,11 @@ export function WheelPrizesManager() {
         <h2 className="flex items-center gap-2 text-sm font-bold text-navy">
           <Sparkles size={16} className="text-gold-600" /> جوائز عجلة الحظ
         </h2>
-        <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-          <Plus size={14} /> إضافة جائزة
-        </Button>
+        {editable && (
+          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+            <Plus size={14} /> إضافة جائزة
+          </Button>
+        )}
       </div>
 
       <div
@@ -71,43 +74,51 @@ export function WheelPrizesManager() {
                 )}
               </div>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => update.mutate({ id: p.id, patch: { active: !p.active } })}
-                className="rounded-lg p-1.5 text-purple transition hover:bg-navy-50 hover:text-navy"
-                aria-label={p.active ? 'تعطيل' : 'تفعيل'}
-                title={p.active ? 'تعطيل' : 'تفعيل'}
-              >
-                {p.active ? <Eye size={14} /> : <EyeOff size={14} />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(p)}
-                className="rounded-lg p-1.5 text-purple transition hover:bg-navy-50 hover:text-navy"
-                aria-label="تعديل"
-                title="تعديل"
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm(`حذف جائزة "${p.label}"؟`)) remove.mutate(p.id);
-                }}
-                className="rounded-lg p-1.5 text-red-500 transition hover:bg-red-50"
-                aria-label="حذف"
-                title="حذف"
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
+            {editable && (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => update.mutate({ id: p.id, patch: { active: !p.active } })}
+                  className="rounded-lg p-1.5 text-purple transition hover:bg-navy-50 hover:text-navy"
+                  aria-label={p.active ? 'تعطيل' : 'تفعيل'}
+                  title={p.active ? 'تعطيل' : 'تفعيل'}
+                >
+                  {p.active ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(p)}
+                  className="rounded-lg p-1.5 text-purple transition hover:bg-navy-50 hover:text-navy"
+                  aria-label="تعديل"
+                  title="تعديل"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(`حذف جائزة "${p.label}"؟`)) remove.mutate(p.id);
+                  }}
+                  className="rounded-lg p-1.5 text-red-500 transition hover:bg-red-50"
+                  aria-label="حذف"
+                  title="حذف"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
 
-      <WheelPrizeFormModal prize={null} open={creating} onClose={() => setCreating(false)} />
       <WheelPrizeFormModal
+        key={creating ? 'new-open' : 'new'}
+        prize={null}
+        open={creating}
+        onClose={() => setCreating(false)}
+      />
+      <WheelPrizeFormModal
+        key={editing?.id ?? 'none'}
         prize={editing}
         open={editing !== null}
         onClose={() => setEditing(null)}

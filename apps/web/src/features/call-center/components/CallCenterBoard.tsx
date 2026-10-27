@@ -244,7 +244,7 @@ export default function CallCenterBoard() {
       </div>
 
       {view === 'tickets' && <TicketsPanel />}
-      {view === 'retention' && <RetentionPanel onCall={openConsoleFor} />}
+      {view === 'retention' && <RetentionPanel onCall={editable ? openConsoleFor : undefined} />}
       {view === 'feedback' && <FeedbackInbox />}
 
       {view === 'calls' && (
@@ -321,7 +321,7 @@ export default function CallCenterBoard() {
         agents={agents.length ? agents : DEFAULT_AGENTS}
       />
       <IncomingCallConsole
-        open={console_}
+        open={console_ && editable}
         onClose={() => {
           setConsole(false);
           setConsolePhone('');

@@ -6,7 +6,10 @@ import {
   listCampaigns,
   listLoyaltyTxns,
   listReferrals,
+  issueWheelCoupon,
   removeCampaign,
+  retireCampaignCoupon,
+  syncCampaignCoupon,
   updateCampaign,
 } from '@/features/loyalty/api/loyalty.api';
 import {
@@ -62,9 +65,14 @@ export function useAddCampaign() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<Campaign, Error, CampaignInput>({
-    mutationFn: async (input) => addCampaign(input),
+    mutationFn: async (input) => {
+      const c = addCampaign(input);
+      await syncCampaignCoupon(c);
+      return c;
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['pricing'] });
       toast.success('تمت إضافة الحملة');
     },
     onError: (e) => toast.error(e.message || 'تعذّرت إضافة الحملة'),
@@ -75,9 +83,15 @@ export function useUpdateCampaign() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<Campaign, Error, { id: string; patch: Partial<CampaignInput> }>({
-    mutationFn: async ({ id, patch }) => updateCampaign(id, patch),
+    mutationFn: async ({ id, patch }) => {
+      const previous = (await listCampaigns()).find((c) => c.id === id)?.coupon_code ?? null;
+      const c = updateCampaign(id, patch);
+      await syncCampaignCoupon(c, previous);
+      return c;
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['pricing'] });
     },
     onError: (e) => toast.error(e.message || 'تعذّر تعديل الحملة'),
   });
@@ -87,9 +101,12 @@ export function useRemoveCampaign() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<void, Error, string>({
-    mutationFn: async (id) => removeCampaign(id),
+    mutationFn: async (id) => {
+      await retireCampaignCoupon(removeCampaign(id).coupon_code);
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });
+      void qc.invalidateQueries({ queryKey: ['pricing'] });
       toast.success('تم حذف الحملة');
     },
     onError: (e) => toast.error(e.message || 'تعذّر حذف الحملة'),
@@ -138,9 +155,14 @@ export function useSpinWheel(customerId?: string) {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<WheelPrize, Error, void>({
-    mutationFn: async () => spinWheel(customerId),
+    mutationFn: async () => {
+      const prize = spinWheel(customerId);
+      await issueWheelCoupon(prize, getAccount(customerId).customer_name);
+      return prize;
+    },
     onSuccess: (prize) => {
       void qc.invalidateQueries({ queryKey: ACCOUNT_KEY });
+      void qc.invalidateQueries({ queryKey: ['pricing'] });
       void qc.invalidateQueries({ queryKey: ['loyalty', 'customers'] });
       toast.success(
         prize.prize_type === 'none' ? 'حظ أوفر المرة القادمة!' : `مبروك! ربحت: ${prize.label}`,

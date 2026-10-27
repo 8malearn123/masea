@@ -39,6 +39,11 @@ export interface Quote {
   lead_id: string | null;
   customer_name: string | null;
   service_code: ServiceCode;
+  nationality: string | null;
+  profession: string | null;
+  quantity: number;
+  /** coupon frozen in the price snapshot (carried into the contract) */
+  coupon_code: string | null;
   base_amount: number;
   vat_amount: number;
   total_amount: number;

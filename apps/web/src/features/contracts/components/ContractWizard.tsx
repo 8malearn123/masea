@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { linkQuoteContract } from '@/shared/lib/quotesLedger';
+import { useQueryClient } from '@tanstack/react-query';
+import { getQuoteRecord } from '@/shared/lib/quotesLedger';
+import { convertQuoteToContract } from '@/features/crm/api/crm.api';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CalendarRange, Check, FileText, UserPlus, UserRound } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
@@ -102,6 +104,7 @@ export default function ContractWizard() {
     };
   });
   const fromQuote = params.get('quote');
+  const qc = useQueryClient();
   const [step, setStep] = useState(0);
 
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
@@ -247,10 +250,22 @@ export default function ContractWizard() {
       toast.error(parsed.error.issues[0]?.message ?? 'بيانات العقد غير مكتملة');
       return;
     }
+    // one quote → one contract (the quote may have been converted meanwhile)
+    if (fromQuote && getQuoteRecord(fromQuote)?.contract_id) {
+      toast.error('عرض السعر هذا مرتبط بعقد مسبقًا — لا يمكن تحويله مرة أخرى');
+      return;
+    }
     create.mutate(parsed.data, {
       onSuccess: (created) => {
-        if (fromQuote)
-          linkQuoteContract(fromQuote, created.contract_no ?? created.id, 'معالج العقود');
+        if (fromQuote) {
+          // accept + link the quote, mark the sales lead won
+          void convertQuoteToContract(fromQuote, created.contract_no ?? created.id)
+            .catch(() => undefined)
+            .finally(() => {
+              void qc.invalidateQueries({ queryKey: ['pricing'] });
+              void qc.invalidateQueries({ queryKey: ['crm'] });
+            });
+        }
         toast.success(
           musaned
             ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'

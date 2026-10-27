@@ -296,7 +296,17 @@ export function redeemPoints(points: number, customerId: string = PRIMARY_ID): n
     description: 'استبدال نقاط',
     at: new Date().toISOString(),
   });
-  return round2(points / LOYALTY_CONFIG.redeem_points_per_riyal);
+  // the SAR value lands in the wallet in the same operation
+  const value = round2(points / LOYALTY_CONFIG.redeem_points_per_riyal);
+  store.wallet.push({
+    id: `wl-${Date.now()}`,
+    type: 'credit',
+    amount: value,
+    source: 'redeem',
+    description: `استبدال ${points} نقطة`,
+    at: new Date().toISOString(),
+  });
+  return value;
 }
 
 /** award_points mirror — points × tier multiplier; bumps spend & tier. */
@@ -334,6 +344,13 @@ export function spinWheel(customerId: string = PRIMARY_ID): WheelPrize {
     }
   }
   store.spins_used += 1;
+  // a coupon prize gets a code of its own per win (never one code for everyone)
+  if (
+    (prize.prize_type === 'discount' || prize.prize_type === 'free_service') &&
+    prize.coupon_code
+  ) {
+    prize = { ...prize, coupon_code: generateCouponCode(prize.prize_type, prize.value) };
+  }
   if (prize.prize_type === 'points') {
     store.points.push({
       id: `p-${Date.now()}`,

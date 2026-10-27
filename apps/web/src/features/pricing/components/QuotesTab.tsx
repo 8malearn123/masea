@@ -32,7 +32,7 @@ import { dateAr, dateTimeAr } from '@/shared/lib/format';
 import { exportExcel } from '@/shared/lib/exportTable';
 import { usePermissions } from '@/hooks/usePermissions';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
-import { effectiveStatus, canMoveTo } from '@/shared/lib/quotesLedger';
+import { effectiveStatus, canMoveTo, quoteContractPath } from '@/shared/lib/quotesLedger';
 import type { PricingConfig } from '@/shared/lib/pricing';
 import {
   logPdf,
@@ -453,12 +453,7 @@ function QuoteDrawer({
     );
   }
   function toContract() {
-    const p = new URLSearchParams({ service: x.service_code, quote: x.id });
-    if (x.nationality) p.set('nationality', x.nationality);
-    if (x.profession) p.set('task', x.profession);
-    if (x.quantity > 1) p.set('quantity', String(x.quantity));
-    if (snap?.inputs.couponCode) p.set('coupon', snap.inputs.couponCode);
-    navigate(`/contracts/new?${p.toString()}`);
+    navigate(quoteContractPath(x, snap?.inputs.couponCode));
   }
 
   const days = x.valid_until

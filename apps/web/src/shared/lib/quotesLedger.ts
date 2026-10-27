@@ -262,6 +262,28 @@ export function linkQuoteContract(id: string, contractId: string, actor: string)
   addEvent(id, 'converted', actor, contractId);
 }
 
+/**
+ * Contract-wizard link for a quote (service, nationality/task, quantity,
+ * coupon) — the one path from Pricing and Sales into a real contract.
+ */
+export function quoteContractPath(
+  q: Pick<QuoteRecord, 'id' | 'service_code' | 'nationality' | 'profession' | 'quantity'>,
+  coupon?: string | null,
+): string {
+  const p = new URLSearchParams({ service: q.service_code, quote: q.id });
+  if (q.nationality) p.set('nationality', q.nationality);
+  if (q.profession) p.set('task', q.profession);
+  if (q.quantity > 1) p.set('quantity', String(q.quantity));
+  if (coupon) p.set('coupon', coupon);
+  return `/contracts/new?${p.toString()}`;
+}
+
+/** Coupon code frozen in a quote's snapshot (null for legacy quotes). */
+export function quoteCoupon(q: Pick<QuoteRecord, 'snapshot'>): string | null {
+  const s = q.snapshot as { inputs?: { couponCode?: string | null } } | null;
+  return s?.inputs?.couponCode ?? null;
+}
+
 export function addEvent(
   quoteId: string,
   type: QuoteEventType,
