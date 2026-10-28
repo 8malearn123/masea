@@ -214,10 +214,22 @@ export default function ContractDetails() {
                 <span className="inline-flex items-center gap-1 text-navy">
                   <ExternalLink size={13} /> منصة مساند
                 </span>
+              ) : contract.terms_accepted_at ? (
+                <span className="text-navy">
+                  موافقة إلكترونية على الشروط
+                  {contract.source_request_no && (
+                    <>
+                      {' · '}الطلب <span className="num">{contract.source_request_no}</span>
+                    </>
+                  )}
+                </span>
               ) : (
                 'داخلي (النظام)'
               )}
             </Row>
+            {contract.terms_accepted_at && (
+              <Row label="تاريخ موافقة العميل">{dateTimeAr(contract.terms_accepted_at)}</Row>
+            )}
             <Row label="الفرع">{branchLabel(contract)}</Row>
             <Row label="تاريخ البداية">{dateAr(contract.start_date)}</Row>
             <Row label="تاريخ النهاية">
@@ -246,7 +258,13 @@ export default function ContractDetails() {
             <Row label={contract.discount_amount > 0 ? 'الصافي الخاضع للضريبة' : 'المبلغ الأساسي'}>
               <span className="num">{sar(contract.base_amount)} ر.س</span>
             </Row>
-            <Row label="ضريبة القيمة المضافة (١٥٪)">
+            <Row
+              label={`ضريبة القيمة المضافة${
+                contract.base_amount > 0
+                  ? ` (${Math.round((contract.vat_amount / contract.base_amount) * 1000) / 10}٪)`
+                  : ''
+              }`}
+            >
               <span className="num">{sar(contract.vat_amount)} ر.س</span>
             </Row>
             <Row label="الإجمالي">
@@ -269,7 +287,8 @@ export default function ContractDetails() {
           ) : (
             <Card>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-                <ScrollText size={16} /> بنود العقد
+                <ScrollText size={16} />{' '}
+                {contract.terms_accepted_at ? 'الشروط التي وافق عليها العميل' : 'بنود العقد'}
               </h2>
               {clauses.length === 0 ? (
                 <p className="text-sm text-purple">لا توجد بنود مُجمّدة لهذا العقد.</p>
@@ -512,7 +531,13 @@ function EditDraftModal({
   const update = useUpdateDraft(contract.id);
   const [branch, setBranch] = useState(contract.branch_name ?? contract.branch_id ?? '');
   const [error, setError] = useState<string | null>(null);
-  const branchOptions: { value: string; label: string }[] = BRANCHES_AR.map((b) => ({
+  // branch-scoped roles keep contracts in their own branch (RLS contracts_read) —
+  // moving one elsewhere would make it vanish from their own list
+  const { meta, branchLabel } = usePermissions();
+  const ownBranch = !meta?.crossBranch && branchLabel ? branchLabel : null;
+  const branchOptions: { value: string; label: string }[] = (
+    ownBranch ? [ownBranch] : [...BRANCHES_AR]
+  ).map((b) => ({
     value: b,
     label: b,
   }));
@@ -544,6 +569,7 @@ function EditDraftModal({
           options={branchOptions}
           placeholder="اختر الفرع"
         />
+        {ownBranch && <p className="text-[11px] text-purple">عقود فرعك تبقى في فرع {ownBranch}.</p>}
         <p className="text-[11px] text-purple">
           مدة العقد تُعدَّل من بطاقة «تعديل مدة العقد». الخدمة والسعر والخصم تُحدَّد عند الإنشاء —
           لتغييرها ألغِ المسودة وأنشئ عقداً جديداً.

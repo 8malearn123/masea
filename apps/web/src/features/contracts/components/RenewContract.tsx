@@ -4,6 +4,7 @@ import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { Badge, Button, Input, Modal, useToast } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { isDemoMode } from '@/shared/lib/demoBackend';
+import { usePricingConfig } from '@/features/pricing/hooks/usePricingRules';
 import { priceFromBase } from '@/shared/lib/pricing';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useContractLineage, useRenewContract } from '@/features/contracts/hooks/useContracts';
@@ -67,9 +68,12 @@ function RenewContractModal({
 
   const plan = renewalTerm(contract, start);
   // نفس تسعير renew_contract: من السعر قبل الخصم (الخصم المعرّف مسبقًا لا ينتقل)
+  const { data: pricingCfg } = usePricingConfig();
   const renewalTotal = priceFromBase(
     contract.service_code ?? 'monthly_rental',
     contract.gross_amount ?? contract.base_amount,
+    {},
+    pricingCfg,
   ).total;
   const version = lineage
     ? nextVersion(

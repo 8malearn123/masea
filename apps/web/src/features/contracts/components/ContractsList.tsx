@@ -470,7 +470,14 @@ function ContractTable({
     {
       key: 'service_code',
       header: 'الخدمة',
-      cell: (r) => (r.service_code ? SERVICE_LABEL[r.service_code] : '—'),
+      cell: (r) => (
+        <div>
+          <span>{r.service_code ? SERVICE_LABEL[r.service_code] : '—'}</span>
+          {r.terms_accepted_at && (
+            <span className="mt-0.5 block text-[11px] text-teal">موافقة إلكترونية على الشروط</span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'branch_id',

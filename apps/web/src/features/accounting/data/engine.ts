@@ -187,16 +187,22 @@ export interface FinancialSnapshot {
 
 /** Headline figures for the accountant dashboard — all from the journal. */
 export function financialSnapshot(entries: JournalEntry[]): FinancialSnapshot {
-  const rows = trialBalance(entries);
-  const revenueAccts = rows.filter((r) => r.type === 'revenue');
-  // revenue accounts are credit-normal; contra (4900) is debit-normal → already signed
-  const revenue = round2(revenueAccts.reduce((s, r) => s + r.balance, 0));
-  const expenses = sumByPrefix(rows, ['5']);
+  // P&L excludes closing entries (they zero revenue/expense into retained earnings)
+  const rows = trialBalance(entries.filter((e) => !(e.reference ?? '').startsWith('CLOSE-')));
+  // natural sign by TYPE: contra-revenue 4900 (debit-normal) must REDUCE revenue
+  const revenue = round2(
+    rows.filter((r) => r.type === 'revenue').reduce((s, r) => s + r.credit - r.debit, 0),
+  );
+  const expenses = round2(
+    rows.filter((r) => r.type === 'expense').reduce((s, r) => s + r.debit - r.credit, 0),
+  );
   const receivables = sumByPrefix(rows, ['1120']);
-  const cash = sumByPrefix(rows, ['1111', '1112', '1113', '1131', '1132']);
+  // every leaf under النقدية والبنوك (111x — incl. newly added banks) + gateways (113x)
+  const cash = sumByPrefix(rows, ['111', '113']);
   const vatPayable = round2(sumByPrefix(rows, ['2120']) - sumByPrefix(rows, ['1140']));
-  const totalDebit = round2(rows.reduce((s, r) => s + r.debit, 0));
-  const totalCredit = round2(rows.reduce((s, r) => s + r.credit, 0));
+  const all = trialBalance(entries);
+  const totalDebit = round2(all.reduce((s, r) => s + r.debit, 0));
+  const totalCredit = round2(all.reduce((s, r) => s + r.credit, 0));
   return {
     revenue,
     expenses,

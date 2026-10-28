@@ -378,6 +378,23 @@ export const CHART: Account[] = [
     is_postable: true,
     normal_balance: 'debit',
   },
+  // 0057 — accounts for asset disposal (other income / other expense)
+  {
+    code: '4600',
+    name_ar: 'أرباح بيع واستبعاد الأصول',
+    type: 'revenue',
+    parent_code: '4000',
+    is_postable: true,
+    normal_balance: 'credit',
+  },
+  {
+    code: '5960',
+    name_ar: 'خسائر بيع واستبعاد الأصول',
+    type: 'expense',
+    parent_code: '5000',
+    is_postable: true,
+    normal_balance: 'debit',
+  },
 ];
 
 const BY_CODE = new Map(CHART.map((a) => [a.code, a]));

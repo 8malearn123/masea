@@ -23,6 +23,9 @@ import {
 } from '@/features/requests/services/types';
 import { buildServiceDetails } from '@/features/requests/types';
 import { draftPeriod } from '@/lib/orderTypes';
+import { acceptedTerms } from '@/features/requests/lib/orderTerms';
+import { contractFromAcceptedTerms } from '@/features/contracts/api/contracts.api';
+import { configValue, listConfig } from '@/features/settings/api/settings.api';
 import type { ServiceCode } from '@/lib/funnel';
 
 const REQUEST_NO_RE = /^REQ-[0-9A-F]{8}$/;
@@ -99,6 +102,25 @@ export function createMockRequestService(): RequestService {
       payment_method: draft.paymentMethod,
     });
 
+    // تأجير يومي وافق فيه العميل على الشروط → عقد موقّع تلقائيًا (مرآة 0060)
+    let contract: { id: string; contract_no: string | null } | null = null;
+    const terms = acceptedTerms(draft, serviceName, price.total);
+    if (draft.service === 'daily_rental' && terms && period) {
+      const enabled = configValue(await listConfig(), 'contract_auto_terms_daily', 1) === 1;
+      if (enabled) {
+        const c = contractFromAcceptedTerms({
+          request_no: requestNo,
+          customer_name: draft.customerName.trim() || 'عميل',
+          branch: draft.branch || null,
+          start_date: period.startDate,
+          end_date: period.endDate,
+          amounts: { base: price.base, vat: price.vat, total: price.total },
+          ...terms,
+        });
+        contract = { id: c.id, contract_no: c.contract_no };
+      }
+    }
+
     // لوحة العمليات التجريبية
     addLocalOrder({
       request_no: requestNo,
@@ -106,6 +128,7 @@ export function createMockRequestService(): RequestService {
       service_code: draft.service as ServiceCode,
       branch: draft.branch || null,
       total_amount: price.total,
+      contract,
     });
 
     // التقاط الصفقة في مسار المبيعات (مصدر: الموقع)

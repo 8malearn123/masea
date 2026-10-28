@@ -116,6 +116,10 @@ export const contractSchema = z.object({
   visa_number: z.string().nullable().default(null),
   expected_arrival_date: z.string().nullable().default(null),
   flight_no: z.string().nullable().default(null),
+  // Contract created from the customer's acceptance of the order terms (0060):
+  // when they accepted, and the order (service_requests.request_no) it came from.
+  terms_accepted_at: z.string().nullable().default(null),
+  source_request_no: z.string().nullable().default(null),
 });
 export type Contract = z.infer<typeof contractSchema>;
 

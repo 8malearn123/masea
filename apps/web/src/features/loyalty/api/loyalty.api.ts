@@ -4,7 +4,12 @@ import type {
   CampaignType,
   LoyaltyTxn,
   Referral,
+  WheelPrize,
 } from '@/features/loyalty/types';
+import {
+  disableCouponPromotion,
+  upsertCouponPromotion,
+} from '@/features/pricing/api/promotions.api';
 
 const TXNS: LoyaltyTxn[] = [
   {
@@ -170,11 +175,69 @@ export function updateCampaign(id: string, patch: Partial<CampaignInput>): Campa
   return { ...campaign };
 }
 
-export function removeCampaign(id: string): void {
+export function removeCampaign(id: string): Campaign {
   const idx = CAMPAIGNS.findIndex((c) => c.id === id);
   if (idx === -1) throw new Error('الحملة غير موجودة');
-  CAMPAIGNS.splice(idx, 1);
+  const [removed] = CAMPAIGNS.splice(idx, 1);
   persistCampaigns();
+  return { ...removed! };
+}
+
+/**
+ * A campaign's coupon is a real discount: mirror it into `promotions` so the
+ * pricing calculator, quotes and contracts accept it. Cashback is not a price
+ * discount, so its code is never a price coupon. A replaced code is disabled.
+ */
+export async function syncCampaignCoupon(c: Campaign, previousCode?: string | null): Promise<void> {
+  if (previousCode && previousCode !== c.coupon_code) await disableCouponPromotion(previousCode);
+  if (!c.coupon_code) return;
+  if (c.type === 'cashback') {
+    await disableCouponPromotion(c.coupon_code);
+    return;
+  }
+  await upsertCouponPromotion({
+    name: `حملة: ${c.name}`,
+    code: c.coupon_code,
+    description: 'كوبون حملة تسويقية من قسم الولاء والتسويق.',
+    discount_pct: c.discount_pct,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: null,
+    starts_at: c.start_at || null,
+    ends_at: c.end_at || null,
+    usage_limit: null,
+    is_active: c.is_active,
+    requires_code: true,
+  });
+}
+
+/**
+ * A discount won on the wheel becomes a single-use coupon promotion, so the
+ * customer can actually use it in a quote or contract.
+ */
+export async function issueWheelCoupon(prize: WheelPrize, customerName: string): Promise<void> {
+  if (prize.prize_type !== 'discount' || !prize.coupon_code) return;
+  await upsertCouponPromotion({
+    name: `عجلة الحظ: ${prize.label} — ${customerName}`,
+    code: prize.coupon_code,
+    description: 'جائزة عجلة الحظ — استخدام واحد.',
+    discount_pct: prize.value,
+    discount_amount: null,
+    service_codes: [],
+    min_base_amount: null,
+    max_discount_amount: null,
+    starts_at: null,
+    ends_at: null,
+    usage_limit: 1,
+    is_active: true,
+    requires_code: true,
+  });
+}
+
+/** Campaign removed → its coupon stops working (the promotion is kept, disabled). */
+export async function retireCampaignCoupon(code: string | null): Promise<void> {
+  if (code) await disableCouponPromotion(code);
 }
 
 const REFERRALS: Referral[] = [

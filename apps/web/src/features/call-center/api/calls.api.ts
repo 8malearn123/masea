@@ -82,12 +82,47 @@ export async function listCalls(): Promise<CallLog[]> {
   return STORE.map((c) => ({ ...c }));
 }
 
-export async function updateCallStatus(id: string, status: CallStatus): Promise<void> {
+/**
+ * Status change. «معاودة اتصال» needs the callback time (future); any other
+ * status clears it.
+ */
+export async function updateCallStatus(
+  id: string,
+  status: CallStatus,
+  callbackAt: string | null = null,
+): Promise<void> {
+  if (status === 'callback') {
+    if (!callbackAt) throw new Error('حدّد موعد معاودة الاتصال');
+    if (new Date(callbackAt).getTime() <= Date.now())
+      throw new Error('موعد معاودة الاتصال يجب أن يكون في المستقبل');
+  }
+  const callback_at = status === 'callback' ? callbackAt : null;
   const row = STORE.find((c) => c.id === id);
-  if (row) row.status = status;
+  if (row) Object.assign(row, { status, callback_at });
   if (isDemoId(id)) return; // demo row — local store is the source of truth
-  const { error } = await supabase.from('call_logs').update({ status }).eq('id', id);
+  const { error } = await supabase.from('call_logs').update({ status, callback_at }).eq('id', id);
   if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+}
+
+/** Resolving a ticket closes the call(s) that opened it. */
+export async function resolveCallsForTicket(ticketNo: string): Promise<void> {
+  for (const c of STORE) {
+    if (c.ticket_no === ticketNo && c.status !== 'resolved') {
+      await updateCallStatus(c.id, 'resolved');
+    }
+  }
+}
+
+/** Callbacks whose time has passed — the agent's overdue queue. */
+export function overdueCallbacks(calls: CallLog[], now = new Date()): CallLog[] {
+  return calls
+    .filter(
+      (c) =>
+        c.status === 'callback' &&
+        c.callback_at &&
+        new Date(c.callback_at).getTime() < now.getTime(),
+    )
+    .sort((a, b) => (a.callback_at ?? '').localeCompare(b.callback_at ?? ''));
 }
 
 export async function addCall(input: NewCallInput): Promise<CallLog> {

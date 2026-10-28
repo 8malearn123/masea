@@ -1,6 +1,30 @@
 import { useState } from 'react';
-import { BadgePercent, Pencil, Plus, Power } from 'lucide-react';
-import { Badge, Button, Card, Input, Modal, Select, Table, type Column } from '@/shared/ui';
+import {
+  BadgePercent,
+  CalendarClock,
+  CircleSlash,
+  FlaskConical,
+  Info,
+  Pencil,
+  Plus,
+  Power,
+  Repeat,
+} from 'lucide-react';
+import {
+  Badge,
+  Button,
+  Card,
+  Drawer,
+  Input,
+  Select,
+  StatTile,
+  Table,
+  type Column,
+} from '@/shared/ui';
+import { evaluatePromotion } from '@/shared/lib/pricing';
+import { useConfig } from '@/features/settings/hooks/useSettings';
+import { configValue } from '@/features/settings/api/settings.api';
+import { FilterSelect, SearchBox, Toolbar } from '@/features/pricing/components/shared';
 import { dateAr, sar } from '@/shared/lib/format';
 import type { Promotion } from '@/shared/lib/pricing';
 import {
@@ -13,7 +37,6 @@ import {
   useSavePromotion,
   useTogglePromotion,
 } from '@/features/pricing/hooks/usePromotions';
-import { promotionValueLabel } from '@/features/pricing/components/PromotionPicker';
 import { PRICING_SERVICE_LABEL } from '@/features/pricing/types';
 
 const EMPTY: PromotionInput = {
@@ -59,11 +82,33 @@ function conditionsOf(p: Promotion): string {
       ? 'كل الخدمات'
       : p.service_codes.map((s) => PRICING_SERVICE_LABEL[s] ?? s).join('، '),
   );
-  if (p.min_base_amount != null) parts.push(`حد أدنى ${sar(p.min_base_amount)} ر.س`);
-  if (p.usage_limit != null) parts.push(`حتى ${p.usage_limit} استخدام`);
-  if (p.ends_at) parts.push(`حتى ${dateAr(p.ends_at)}`);
+  if (p.min_base_amount != null) parts.push(`حد أدنى للطلب ${sar(p.min_base_amount)} ر.س`);
+  if (p.requires_code) parts.push('بإدخال الرمز فقط');
   return parts.join(' · ');
 }
+
+export type PromoState = 'active' | 'scheduled' | 'expired' | 'exhausted' | 'disabled';
+export const PROMO_STATE: Record<
+  PromoState,
+  { label: string; tone: 'success' | 'navy' | 'gold' | 'danger' | 'neutral' }
+> = {
+  active: { label: 'نشط', tone: 'success' },
+  scheduled: { label: 'مجدول', tone: 'navy' },
+  expired: { label: 'منتهٍ', tone: 'gold' },
+  exhausted: { label: 'استُنفد', tone: 'danger' },
+  disabled: { label: 'معطّل', tone: 'neutral' },
+};
+export function promoState(p: Promotion, now = new Date()): PromoState {
+  if (!p.is_active) return 'disabled';
+  if (p.ends_at && now > new Date(p.ends_at)) return 'expired';
+  if (p.usage_limit != null && p.usage_count >= p.usage_limit) return 'exhausted';
+  if (p.starts_at && now < new Date(p.starts_at)) return 'scheduled';
+  return 'active';
+}
+const validityOf = (p: Promotion) =>
+  p.starts_at || p.ends_at
+    ? `${p.starts_at ? dateAr(p.starts_at) : '—'} ← ${p.ends_at ? dateAr(p.ends_at) : 'مفتوح'}`
+    : 'بلا تاريخ انتهاء';
 
 /**
  * Discount catalogue (CRUD) — the ONLY place discounts are defined. Contracts,
@@ -72,27 +117,65 @@ function conditionsOf(p: Promotion): string {
 export function DiscountsManager({ editable }: { editable: boolean }) {
   const { data = [], isLoading, isError, refetch } = usePromotions();
   const toggle = useTogglePromotion();
+  const { data: cfgItems = [] } = useConfig();
+  const soonDays = configValue(cfgItems, 'pricing_coupon_expiry_alert_days', 14);
   const [editing, setEditing] = useState<Promotion | 'new' | null>(null);
+  const [q, setQ] = useState('');
+  const [state, setState] = useState<'all' | PromoState | 'soon'>('all');
+  const now = new Date();
+  const soonLimit = new Date(now.getTime() + soonDays * 86400000);
+  const isSoon = (p: Promotion) =>
+    promoState(p, now) === 'active' && !!p.ends_at && new Date(p.ends_at) <= soonLimit;
+  const kpi = {
+    active: data.filter((p) => promoState(p, now) === 'active').length,
+    expired: data.filter((p) => promoState(p, now) === 'expired').length,
+    uses: data.reduce((n, p) => n + p.usage_count, 0),
+    soon: data.filter(isSoon).length,
+  };
+  const rows = data.filter(
+    (p) =>
+      (state === 'all' || (state === 'soon' ? isSoon(p) : promoState(p, now) === state)) &&
+      (!q.trim() || `${p.name} ${p.code ?? ''}`.toUpperCase().includes(q.trim().toUpperCase())),
+  );
 
   const columns: Column<Promotion>[] = [
     {
       key: 'name',
-      header: 'الخصم',
+      header: 'اسم الخصم',
+      sortValue: (p) => p.name,
+      cell: (p) => <span className="text-sm font-semibold text-navy-900">{p.name}</span>,
+    },
+    {
+      key: 'code',
+      header: 'الكود',
+      cell: (p) => <span className="num text-xs">{p.code ?? '—'}</span>,
+    },
+    {
+      key: 'kind',
+      header: 'النوع',
       cell: (p) => (
-        <div>
-          <span className="flex items-center gap-1.5 text-sm font-semibold text-navy-900">
-            {p.name}
-            {p.requires_code && <Badge tone="gold">كوبون</Badge>}
-          </span>
-          {p.code && <span className="num block text-[11px] text-purple">{p.code}</span>}
-        </div>
+        <span className="flex flex-wrap gap-1">
+          <Badge tone="navy">{p.discount_pct != null ? 'نسبة' : 'مبلغ ثابت'}</Badge>
+          {p.requires_code && <Badge tone="gold">كوبون</Badge>}
+        </span>
       ),
     },
     {
       key: 'value',
       header: 'القيمة',
       cell: (p) => (
-        <span className="num text-sm font-semibold text-green-700">{promotionValueLabel(p)}</span>
+        <span className="num text-sm font-semibold text-green-700">
+          {p.discount_pct != null ? `${p.discount_pct}٪` : `${sar(p.discount_amount ?? 0)} ر.س`}
+        </span>
+      ),
+    },
+    {
+      key: 'max',
+      header: 'الحد الأقصى',
+      cell: (p) => (
+        <span className="num text-xs">
+          {p.max_discount_amount != null ? `${sar(p.max_discount_amount)} ر.س` : '—'}
+        </span>
       ),
     },
     {
@@ -101,8 +184,18 @@ export function DiscountsManager({ editable }: { editable: boolean }) {
       cell: (p) => <span className="text-xs text-purple">{conditionsOf(p)}</span>,
     },
     {
+      key: 'validity',
+      header: 'فترة الصلاحية',
+      cell: (p) => (
+        <span className={`text-xs ${isSoon(p) ? 'text-amber-700' : 'text-purple'}`}>
+          {validityOf(p)}
+        </span>
+      ),
+    },
+    {
       key: 'usage',
-      header: 'الاستخدام',
+      header: 'الاستخدامات',
+      sortValue: (p) => p.usage_count,
       cell: (p) => (
         <span className="num text-xs">
           {p.usage_count}
@@ -113,9 +206,10 @@ export function DiscountsManager({ editable }: { editable: boolean }) {
     {
       key: 'status',
       header: 'الحالة',
-      cell: (p) => (
-        <Badge tone={p.is_active ? 'success' : 'neutral'}>{p.is_active ? 'مفعّل' : 'معطّل'}</Badge>
-      ),
+      cell: (p) => {
+        const st = PROMO_STATE[promoState(p, now)];
+        return <Badge tone={st.tone}>{st.label}</Badge>;
+      },
     },
     {
       key: 'actions',
@@ -144,6 +238,38 @@ export function DiscountsManager({ editable }: { editable: boolean }) {
 
   return (
     <div>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile
+          label="الخصومات النشطة"
+          value={kpi.active}
+          icon={BadgePercent}
+          tone="success"
+          active={state === 'active'}
+          onClick={() => setState(state === 'active' ? 'all' : 'active')}
+        />
+        <StatTile
+          label="الخصومات المنتهية"
+          value={kpi.expired}
+          icon={CircleSlash}
+          tone="neutral"
+          active={state === 'expired'}
+          onClick={() => setState(state === 'expired' ? 'all' : 'expired')}
+        />
+        <StatTile
+          label="إجمالي مرات الاستخدام"
+          value={kpi.uses}
+          icon={Repeat}
+          hint="يزيد عند إنشاء عقد بالخصم"
+        />
+        <StatTile
+          label={`تنتهي خلال ${soonDays} يومًا`}
+          value={kpi.soon}
+          icon={CalendarClock}
+          tone="warning"
+          active={state === 'soon'}
+          onClick={() => setState(state === 'soon' ? 'all' : 'soon')}
+        />
+      </div>
       <Card className="mb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -162,14 +288,30 @@ export function DiscountsManager({ editable }: { editable: boolean }) {
           )}
         </div>
       </Card>
+      <Toolbar>
+        <SearchBox value={q} onChange={setQ} placeholder="بحث باسم الخصم أو الكود" />
+        <FilterSelect
+          label="الحالة"
+          value={state}
+          onChange={(v) => setState(v as typeof state)}
+          options={[
+            { value: 'all', label: 'كل الحالات' },
+            ...(Object.keys(PROMO_STATE) as PromoState[]).map((k) => ({
+              value: k,
+              label: PROMO_STATE[k].label,
+            })),
+            { value: 'soon', label: 'تنتهي قريبًا' },
+          ]}
+        />
+      </Toolbar>
       <Table
         columns={columns}
-        rows={data}
+        rows={rows}
         rowKey={(p) => p.id}
         isLoading={isLoading}
         isError={isError}
         onRetry={() => void refetch()}
-        emptyTitle="لا توجد خصومات معرّفة"
+        emptyTitle={data.length ? 'لا خصومات مطابقة' : 'لا توجد خصومات معرّفة'}
       />
       {editing !== null && (
         <DiscountFormModal
@@ -228,7 +370,23 @@ function DiscountFormModal({
   }
 
   return (
-    <Modal open onClose={onClose} title={promotion ? 'تعديل خصم' : 'خصم جديد'}>
+    <Drawer
+      open
+      width="lg"
+      onClose={onClose}
+      title={promotion ? 'تعديل خصم' : 'خصم جديد'}
+      subtitle="الشروط تُعاد مراجعتها في الخادم (evaluate_promotion) عند كل تطبيق"
+      footer={
+        <div className="flex gap-2">
+          <Button onClick={submit} loading={save.isPending} className="flex-1">
+            حفظ الخصم
+          </Button>
+          <Button variant="ghost" onClick={onClose}>
+            إلغاء
+          </Button>
+        </div>
+      }
+    >
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Input
@@ -349,10 +507,67 @@ function DiscountFormModal({
             </span>
           </span>
         </label>
-        <Button onClick={submit} loading={save.isPending} className="w-full">
-          حفظ الخصم
-        </Button>
+        <ImpactPreview form={form} />
+        <p className="flex items-start gap-1.5 rounded-xl border border-navy-100 px-3 py-2 text-[11px] leading-relaxed text-purple">
+          <Info size={13} className="mt-0.5 shrink-0" />
+          غير مدعوم حاليًا في قواعد التسعير: حد استخدام لكل عميل، ودمج الخصم مع خصومات أخرى (يُطبَّق
+          خصم واحد فقط في كل حساب). تُضاف بعد تحديد قاعدتها التجارية.
+        </p>
       </div>
-    </Modal>
+    </Drawer>
+  );
+}
+
+/** Try the discount on a sample service/amount before saving — same evaluator as the calculator. */
+function ImpactPreview({ form }: { form: PromotionInput }) {
+  const [service, setService] = useState(form.service_codes[0] ?? 'recruitment');
+  const [base, setBase] = useState(15000);
+  const parsed = promotionInputSchema.safeParse(form);
+  const promo: Promotion | null = parsed.success
+    ? {
+        ...toPromotionRow(parsed.data),
+        id: 'preview',
+        usage_count: 0,
+        starts_at: null,
+        ends_at: null,
+      }
+    : null;
+  const check = promo ? evaluatePromotion(promo, service, base, new Date(), promo.code) : null;
+  return (
+    <div className="rounded-xl bg-navy-50/60 p-3">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-navy">
+        <FlaskConical size={13} /> معاينة الأثر قبل الاعتماد
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Select
+          aria-label="الخدمة"
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          options={Object.entries(PRICING_SERVICE_LABEL).map(([value, label]) => ({
+            value,
+            label,
+          }))}
+        />
+        <Input
+          aria-label="المبلغ قبل الخصم"
+          type="number"
+          min={0}
+          suffix="ر.س"
+          value={base}
+          onChange={(e) => setBase(e.target.valueAsNumber || 0)}
+        />
+      </div>
+      {!promo ? (
+        <p className="mt-2 text-xs text-purple">أكمل الحقول المطلوبة لعرض الأثر.</p>
+      ) : check?.ok ? (
+        <p className="mt-2 text-xs text-navy-900">
+          الخصم <span className="num font-bold text-green-700">{sar(check.amount)}</span> ر.س ←
+          السعر بعد الخصم <span className="num font-bold">{sar(base - check.amount)}</span> ر.س (قبل
+          الضريبة، ويُقيَّد بالحد الأدنى لقاعدة السعر).
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-red-600">لن يُطبَّق: {check?.reason}</p>
+      )}
+    </div>
   );
 }

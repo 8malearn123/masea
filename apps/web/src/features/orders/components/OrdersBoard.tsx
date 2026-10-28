@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   CalendarDays,
   CheckCircle2,
@@ -15,7 +16,7 @@ import {
   UserPlus,
   UserRound,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { FileSignature, type LucideIcon } from 'lucide-react';
 import { Badge, Card, Input, Modal, Select, Table, type Column } from '@/shared/ui';
 import { usePermissions } from '@/hooks/usePermissions';
 import { BRANCHES_AR } from '@/lib/funnel';
@@ -139,7 +140,20 @@ function DispatchBoard() {
     {
       key: 'request_no',
       header: 'رقم الطلب',
-      cell: (o) => <span className="num font-semibold text-navy">{o.request_no}</span>,
+      cell: (o) => (
+        <div>
+          <span className="num font-semibold text-navy">{o.request_no}</span>
+          {o.contract_id && (
+            <Link
+              to={`/contracts/${o.contract_id}`}
+              className="num mt-0.5 flex items-center gap-1 text-[11px] text-teal hover:underline"
+              title="عقد أُنشئ من موافقة العميل على الشروط"
+            >
+              <FileSignature size={11} /> {o.contract_no ?? 'العقد'}
+            </Link>
+          )}
+        </div>
+      ),
     },
     {
       key: 'customer_name',

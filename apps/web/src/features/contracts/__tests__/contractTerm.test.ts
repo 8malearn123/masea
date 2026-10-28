@@ -193,6 +193,8 @@ describe('طباعة العقد', () => {
     visa_number: null,
     expected_arrival_date: null,
     flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
   } satisfies ContractListItem;
 
   it('يتضمّن تاريخ النهاية والمدة في بيانات العقد المطبوعة', () => {

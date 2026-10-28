@@ -33,7 +33,7 @@ import { MatchedWorkerPicker } from '@/features/catalog/components/MatchedWorker
 import { isWorkerAvailable } from '@/features/catalog/lib/availability';
 import type { RequestNeed } from '@/features/catalog/lib/matching';
 import { isOccasion, type PlaceDetails } from '@/features/requests/types';
-import { periodLabel } from '@/features/requests/lib/period';
+import { contractTerms } from '@/features/requests/lib/orderTerms';
 import {
   NATIONALITIES,
   PROFESSIONS,
@@ -735,33 +735,3 @@ export default function StepWizard({ service, serviceName, initialDraft, onReset
 }
 
 /* ------------------------------- text helpers ------------------------------ */
-function contractTerms(
-  service: ServiceCode,
-  d: OrderDraft,
-  serviceName: string,
-  total: number,
-): string[] {
-  const period = draftPeriod(d);
-  const base = [
-    `نوع الخدمة: ${serviceName}.`,
-    ...(period
-      ? [`مدة الطلب: من ${period.startDate} إلى ${period.endDate} (${periodLabel(period)}).`]
-      : []),
-    `الفرع: ${d.branch || '—'}.`,
-    `إجمالي القيمة شاملة الضريبة: ${sar(total)} ر.س.`,
-    'العقد موثّق ومتوافق مع أنظمة وزارة الموارد البشرية ومنصة مساند.',
-  ];
-  if (service === 'recruitment')
-    base.splice(
-      1,
-      0,
-      `الجنسية والمهنة: ${d.nationality} — ${d.profession}.`,
-      `مدة العقد: ${d.contractMonths} شهرًا.`,
-    );
-  if (service === 'monthly_rental')
-    base.splice(1, 0, `مدة الإيجار: ${d.months} شهرًا، تجدد تلقائيًا.`);
-  if (service === 'daily_rental' && period)
-    base.splice(1, 0, `المهمة: ${d.taskType} لمدة ${periodLabel(period)}.`);
-  if (service === 'sponsorship_transfer') base.splice(1, 0, 'يشمل إجراءات النقل عبر مساند وأبشر.');
-  return base;
-}

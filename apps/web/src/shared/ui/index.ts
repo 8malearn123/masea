@@ -16,3 +16,7 @@ export { EmptyState } from '@/shared/ui/EmptyState';
 export { ErrorState } from '@/shared/ui/ErrorState';
 export { ToastProvider, useToast } from '@/shared/ui/Toast';
 export type { ToastApi } from '@/shared/ui/Toast';
+export { Drawer } from '@/shared/ui/Drawer';
+export { InfoTip } from '@/shared/ui/InfoTip';
+export { Pagination, paginate } from '@/shared/ui/Pagination';
+export { StatTile } from '@/shared/ui/StatTile';

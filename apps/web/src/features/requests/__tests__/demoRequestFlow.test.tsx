@@ -3,6 +3,7 @@
  * → التتبّع، مع التحقق من الجوال، والضغط المزدوج، وأخطاء الدفع.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { listContracts } from '@/features/contracts/api/contracts.api';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -86,6 +87,9 @@ describe('مسار الطلب التجريبي', () => {
     const next = await walkToCustomer(user);
     await fillCustomer(user, '+966 50 123 4567');
     await next(); // التسعير
+    await next(); // الشروط والأحكام — لا متابعة بلا موافقة
+    expect(screen.getByRole('button', { name: 'التالي' })).toBeDisabled();
+    await user.click(screen.getByLabelText(/أوافق على بنود وشروط العقد/));
     await next(); // الدفع
 
     const pay = await screen.findByRole('button', { name: /ادفع/ });
@@ -99,6 +103,11 @@ describe('مسار الطلب التجريبي', () => {
 
     const requestNo = (await submit.mock.results[0]?.value)?.requestNo as string;
     expect(screen.getByText(requestNo)).toBeVisible();
+    // الموافقة على الشروط أنشأت عقد التأجير اليومي موقّعًا ومربوطًا بالطلب
+    const contract = (
+      await listContracts({ status: 'all', service: 'all', branch: 'all', search: '' })
+    ).find((c) => c.source_request_no === requestNo);
+    expect(contract?.status).toBe('signed');
     const track = screen.getByRole('link', { name: /تتبّع الطلب/ });
     expect(track).toHaveAttribute('href', `/order/track?no=${requestNo}`);
 
@@ -115,8 +124,10 @@ describe('مسار الطلب التجريبي', () => {
     );
     const next = await walkToCustomer(user);
     await fillCustomer(user, '0501234567');
-    await next();
-    await next();
+    await next(); // التسعير
+    await next(); // الشروط والأحكام
+    await user.click(screen.getByLabelText(/أوافق على بنود وشروط العقد/));
+    await next(); // الدفع
     await user.click(await screen.findByRole('button', { name: /ادفع/ }));
 
     expect(await screen.findByRole('alert', {}, { timeout: 4000 })).toHaveTextContent(

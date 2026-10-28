@@ -158,13 +158,13 @@ interface Store {
   wallet: WalletEntry[];
 }
 
-// عملاء ولاء تجريبيون (يماثلون عملاء CRM/مركز الاتصال). أول عميل ثابت البذرة
+// عملاء ولاء تجريبيون — نفس عملاء مركز الاتصال وبأرقامهم (الجوال هو المفتاح)؛ أول عميل ثابت البذرة
 // لأن اختبارات المحرّك تعتمده كعميل افتراضي.
 const STORES: Store[] = [
   {
     id: 'c-mhd',
     customer_name: 'محمد الأحمدي',
-    phone: '0555100301',
+    phone: '0501234567',
     referral_code: 'MAS-MHD-7K2',
     total_spend: 21000,
     spins_used: 0,
@@ -181,7 +181,7 @@ const STORES: Store[] = [
   {
     id: 'c-sara',
     customer_name: 'سارة القحطاني',
-    phone: '0555100302',
+    phone: '0552345678',
     referral_code: 'MAS-SARA-4T9',
     total_spend: 12500,
     spins_used: 0,
@@ -196,7 +196,7 @@ const STORES: Store[] = [
   {
     id: 'c-fahd',
     customer_name: 'فهد العنزي',
-    phone: '0555100303',
+    phone: '0533456789',
     referral_code: 'MAS-FAHD-2P5',
     total_spend: 5200,
     spins_used: 1,
@@ -210,7 +210,7 @@ const STORES: Store[] = [
   {
     id: 'c-noura',
     customer_name: 'نورة الشهري',
-    phone: '0555100304',
+    phone: '0544567890',
     referral_code: 'MAS-NOURA-8L3',
     total_spend: 34000,
     spins_used: 0,
@@ -224,7 +224,21 @@ const STORES: Store[] = [
   },
 ];
 
+STORES.push({
+  id: 'c-abdullah',
+  customer_name: 'عبدالله الدوسري',
+  phone: '0500001111',
+  referral_code: 'MAS-ABD-6R1',
+  total_spend: 3400,
+  spins_used: 0,
+  points: [
+    { id: 'ap1', type: 'earn', points: 3400, description: 'خدمات يومية دورية', at: '2026-05-28T09:00:00Z' }, // prettier-ignore
+  ],
+  wallet: [],
+});
+
 const PRIMARY_ID = STORES[0]!.id;
+const lastDigits = (phone: string) => phone.replace(/\D/g, '').slice(-9);
 
 function findStore(customerId?: string): Store {
   return STORES.find((s) => s.id === customerId) ?? STORES[0]!;
@@ -296,7 +310,17 @@ export function redeemPoints(points: number, customerId: string = PRIMARY_ID): n
     description: 'استبدال نقاط',
     at: new Date().toISOString(),
   });
-  return round2(points / LOYALTY_CONFIG.redeem_points_per_riyal);
+  // the SAR value lands in the wallet in the same operation
+  const value = round2(points / LOYALTY_CONFIG.redeem_points_per_riyal);
+  store.wallet.push({
+    id: `wl-${Date.now()}`,
+    type: 'credit',
+    amount: value,
+    source: 'redeem',
+    description: `استبدال ${points} نقطة`,
+    at: new Date().toISOString(),
+  });
+  return value;
 }
 
 /** award_points mirror — points × tier multiplier; bumps spend & tier. */
@@ -312,6 +336,55 @@ export function awardPoints(orderTotal: number, customerId: string = PRIMARY_ID)
     at: new Date().toISOString(),
   });
   store.total_spend += orderTotal;
+  return pts;
+}
+
+/** Points balance of the customer with this phone (null = not a loyalty member). */
+export function loyaltyPointsByPhone(phone: string): number | null {
+  const key = lastDigits(phone);
+  const store = key.length >= 9 ? STORES.find((s) => lastDigits(s.phone) === key) : undefined;
+  return store ? balanceOf(store) : null;
+}
+
+const AWARDED_REFS = new Set<string>();
+/**
+ * Demo mirror of the 0059 payments trigger: a received payment earns the
+ * customer points (tier multiplier) once per receipt. A paying customer with
+ * no loyalty account gets one.
+ */
+export function awardPaymentPoints(
+  customerName: string,
+  amount: number,
+  ref: string,
+): number | null {
+  if (!(amount > 0) || AWARDED_REFS.has(ref)) return null;
+  const name = customerName.trim();
+  if (!name) return null;
+  let store = STORES.find((s) => s.customer_name === name);
+  if (!store) {
+    store = {
+      id: `c-${Date.now()}-${STORES.length}`,
+      customer_name: name,
+      phone: '',
+      referral_code: `MAS-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      total_spend: 0,
+      spins_used: 0,
+      points: [],
+      wallet: [],
+    };
+    STORES.push(store);
+  }
+  AWARDED_REFS.add(ref);
+  const mult = tierFor(store.total_spend).multiplier;
+  const pts = Math.floor(amount * LOYALTY_CONFIG.points_per_riyal * mult);
+  store.points.push({
+    id: `p-${Date.now()}-${ref}`,
+    type: 'earn',
+    points: pts,
+    description: `نقاط على دفعة ${ref}`,
+    at: new Date().toISOString(),
+  });
+  store.total_spend += amount;
   return pts;
 }
 
@@ -334,6 +407,13 @@ export function spinWheel(customerId: string = PRIMARY_ID): WheelPrize {
     }
   }
   store.spins_used += 1;
+  // a coupon prize gets a code of its own per win (never one code for everyone)
+  if (
+    (prize.prize_type === 'discount' || prize.prize_type === 'free_service') &&
+    prize.coupon_code
+  ) {
+    prize = { ...prize, coupon_code: generateCouponCode(prize.prize_type, prize.value) };
+  }
   if (prize.prize_type === 'points') {
     store.points.push({
       id: `p-${Date.now()}`,

@@ -1,5 +1,6 @@
 import { account } from '@/features/accounting/data/chart';
 import { trialBalance } from '@/features/accounting/data/engine';
+import { isClosingEntry, monthEnd, naturalAmount } from '@/features/accounting/data/ledger';
 import type { AccountType, JournalEntry, JournalLine } from '@/features/accounting/types';
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -23,10 +24,13 @@ function applyFilter(entries: JournalEntry[], f: ReportFilter): JournalEntry[] {
   );
 }
 
+// Natural sign per account TYPE (not the account's own normal balance) so
+// contra accounts — مجمع الإهلاك 1290 / مردودات 4900 — reduce their section.
 function linesByType(entries: JournalEntry[], type: AccountType): ReportLine[] {
   return trialBalance(entries)
-    .filter((r) => r.type === type && r.balance !== 0)
-    .map((r) => ({ code: r.code, name: r.name_ar, amount: r.balance }));
+    .filter((r) => r.type === type)
+    .map((r) => ({ code: r.code, name: r.name_ar, amount: naturalAmount(type, r.debit, r.credit) }))
+    .filter((r) => r.amount !== 0);
 }
 const sum = (rows: ReportLine[]): number => round2(rows.reduce((s, r) => s + r.amount, 0));
 
@@ -39,7 +43,8 @@ export interface IncomeStatement {
   netProfit: number;
 }
 export function incomeStatement(entries: JournalEntry[], f: ReportFilter = {}): IncomeStatement {
-  const scoped = applyFilter(entries, f);
+  // closing entries zero P&L into retained earnings — they are not performance
+  const scoped = applyFilter(entries, f).filter((e) => !isClosingEntry(e));
   const revenue = linesByType(scoped, 'revenue');
   const expenses = linesByType(scoped, 'expense');
   const totalRevenue = sum(revenue);
@@ -170,12 +175,13 @@ export function buildClosingEntry(entries: JournalEntry[], period: string): Jour
   return {
     id: `je-close-${period}`,
     entry_no: 8000 + (Number(period.slice(5, 7)) || 0),
-    entry_date: `${period}-28`,
+    entry_date: monthEnd(period),
     branch: null,
     description: `قيد إقفال الفترة ${period}`,
     reference: `CLOSE-${period}`,
     source_type: 'manual',
     status: 'posted',
+    kind: 'closing',
     lines,
   };
 }

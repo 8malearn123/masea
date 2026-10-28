@@ -7,11 +7,15 @@ import { useLeads, useSetLeadStage } from '@/features/crm/hooks/useCrm';
 import { useCrmMeta } from '@/features/crm/hooks/useCrmMeta';
 import { LeadFormModal } from '@/features/crm/components/LeadFormModal';
 import { LeadDrawer } from '@/features/crm/components/LeadDrawer';
+import { usePermissions } from '@/hooks/usePermissions';
 import { SERVICE_LABEL, type Lead, type LeadStageCode } from '@/features/crm/types';
 
 export default function PipelineBoard() {
   const { data: leads = [], isLoading } = useLeads();
   const setStage = useSetLeadStage();
+  const { can } = usePermissions();
+  const canCreate = can('leads', 'create');
+  const canEdit = can('leads', 'edit');
   const { stageOrder, stageLabel, stageTone, sourceLabel } = useCrmMeta();
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Lead | null>(null);
@@ -27,7 +31,7 @@ export default function PipelineBoard() {
     const id = draggingId;
     setDragOverStage(null);
     setDraggingId(null);
-    if (!id) return;
+    if (!id || !canEdit) return;
     const dragged = leads.find((l) => l.id === id);
     if (dragged && dragged.stage_code !== stage) {
       setStage.mutate({ id, stage: stage as LeadStageCode });
@@ -78,9 +82,11 @@ export default function PipelineBoard() {
             </p>
           </div>
         </div>
-        <Button variant="success" onClick={() => navigate('/leads/new')}>
-          <Plus size={16} /> عميل محتمل جديد
-        </Button>
+        {canCreate && (
+          <Button variant="success" onClick={() => navigate('/leads/new')}>
+            <Plus size={16} /> عميل محتمل جديد
+          </Button>
+        )}
       </div>
 
       <Card className="mb-4">
@@ -130,15 +136,17 @@ export default function PipelineBoard() {
                   <Badge tone={stageTone(stage)}>{stageLabel(stage)}</Badge>
                   <div className="flex items-center gap-1.5">
                     <span className="num text-xs font-bold text-purple">{items.length}</span>
-                    <button
-                      type="button"
-                      onClick={() => setCreatingStage(stage as LeadStageCode)}
-                      className="grid h-6 w-6 place-items-center rounded-lg text-purple transition hover:bg-white hover:text-navy"
-                      aria-label={`إضافة عميل محتمل إلى ${stageLabel(stage)}`}
-                      title="إضافة عميل محتمل هنا"
-                    >
-                      <Plus size={14} />
-                    </button>
+                    {canCreate && (
+                      <button
+                        type="button"
+                        onClick={() => setCreatingStage(stage as LeadStageCode)}
+                        className="grid h-6 w-6 place-items-center rounded-lg text-purple transition hover:bg-white hover:text-navy"
+                        aria-label={`إضافة عميل محتمل إلى ${stageLabel(stage)}`}
+                        title="إضافة عميل محتمل هنا"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -149,6 +157,7 @@ export default function PipelineBoard() {
                       stageOrder={stageOrder}
                       stageLabel={stageLabel}
                       sourceLabel={sourceLabel}
+                      canEdit={canEdit}
                       isDragging={draggingId === l.id}
                       onDragStart={() => setDraggingId(l.id)}
                       onDragEnd={() => {
@@ -191,6 +200,7 @@ function LeadCard({
   stageOrder,
   stageLabel,
   sourceLabel,
+  canEdit,
   isDragging,
   onDragStart,
   onDragEnd,
@@ -202,6 +212,7 @@ function LeadCard({
   stageOrder: string[];
   stageLabel: (code: string) => string;
   sourceLabel: (code: string | null | undefined) => string;
+  canEdit: boolean;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
@@ -211,20 +222,20 @@ function LeadCard({
 }) {
   return (
     <div
-      draggable
+      draggable={canEdit}
       onDragStart={(e) => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', lead.id);
         onDragStart();
       }}
       onDragEnd={onDragEnd}
-      className={`cursor-grab rounded-xl border border-navy-100 bg-white p-3 shadow-sm transition active:cursor-grabbing ${
+      className={`${canEdit ? 'cursor-grab active:cursor-grabbing' : ''} rounded-xl border border-navy-100 bg-white p-3 shadow-sm transition ${
         isDragging ? 'opacity-40 ring-2 ring-navy' : 'hover:shadow-md'
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-1">
-          <GripVertical size={13} className="shrink-0 text-purple/50" aria-hidden />
+          {canEdit && <GripVertical size={13} className="shrink-0 text-purple/50" aria-hidden />}
           <button
             type="button"
             onClick={onOpen}
@@ -233,14 +244,16 @@ function LeadCard({
             {lead.full_name}
           </button>
         </div>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="text-purple hover:text-navy"
-          aria-label="تعديل"
-        >
-          <Pencil size={13} />
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="text-purple hover:text-navy"
+            aria-label="تعديل"
+          >
+            <Pencil size={13} />
+          </button>
+        )}
       </div>
       {lead.phone && (
         <a
@@ -256,17 +269,19 @@ function LeadCard({
         {lead.source_code && <span className="text-purple">{sourceLabel(lead.source_code)}</span>}
       </div>
       <p className="num mt-1.5 text-xs font-semibold text-gold-600">{sar(lead.est_value)} ر.س</p>
-      <select
-        value={lead.stage_code}
-        onChange={(e) => onMove(e.target.value as LeadStageCode)}
-        className="mt-2 w-full rounded-lg border border-navy-100 bg-navy-50/40 px-2 py-1.5 text-[11px] text-navy outline-none transition focus:border-navy"
-      >
-        {stageOrder.map((s) => (
-          <option key={s} value={s}>
-            انقل إلى: {stageLabel(s)}
-          </option>
-        ))}
-      </select>
+      {canEdit && (
+        <select
+          value={lead.stage_code}
+          onChange={(e) => onMove(e.target.value as LeadStageCode)}
+          className="mt-2 w-full rounded-lg border border-navy-100 bg-navy-50/40 px-2 py-1.5 text-[11px] text-navy outline-none transition focus:border-navy"
+        >
+          {stageOrder.map((s) => (
+            <option key={s} value={s}>
+              انقل إلى: {stageLabel(s)}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

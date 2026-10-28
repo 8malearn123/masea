@@ -36,7 +36,8 @@ export function isDemoId(id: string): boolean {
 /**
  * True when a write error means "couldn't reach a real backend row" — the table
  * or function isn't provisioned, the id isn't a UUID, or RLS rejects demo rows.
- * All non-fatal in demo mode; keep the optimistic update.
+ * All non-fatal in demo mode; keep the optimistic update. A permission refusal
+ * is ignorable only in demo mode.
  */
 export function isIgnorableWriteError(message: string): boolean {
   const s = message.toLowerCase();
@@ -47,7 +48,9 @@ export function isIgnorableWriteError(message: string): boolean {
     s.includes('not found') ||
     s.includes('invalid input syntax') || // demo ids aren't uuids
     s.includes('uuid') ||
-    s.includes('permission denied') || // RLS not seeded for demo rows
+    // RLS not seeded for demo rows — only in demo mode; with a real backend a
+    // refused permission must reach the user, never read as a success
+    (s.includes('permission denied') && isDemoMode()) ||
     s.includes('abort') || // demo mode / request timeout — backend unreachable
     s.includes('offline') || // the demo-mode fetch guard ("demo mode — offline")
     s.includes('failed to fetch') ||

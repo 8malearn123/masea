@@ -42,6 +42,8 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'select_worker', title: 'ترشيح العاملة' },
     { key: 'customer', title: 'العنوان والبيانات' },
     { key: 'pricing', title: 'التسعير' },
+    // the customer's acceptance becomes the daily-rental contract (0060)
+    { key: 'contract', title: 'الشروط والأحكام' },
     { key: 'payment', title: 'الدفع' },
     { key: 'confirm', title: 'التأكيد' },
   ],

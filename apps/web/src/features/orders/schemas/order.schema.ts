@@ -58,5 +58,8 @@ export const orderSchema = z.object({
   customer_address: z.string().nullable().optional(),
   dropoff_at: z.string().nullable().optional(), // متى تكون عند العميل
   pickup_at: z.string().nullable().optional(), // متى تأخذها من العميل
+  // the contract this order became (service_requests.contract_id)
+  contract_id: z.string().nullable().optional(),
+  contract_no: z.string().nullable().optional(),
 });
 export type Order = z.infer<typeof orderSchema>;

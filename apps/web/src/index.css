@@ -158,3 +158,20 @@ body {
     opacity: 1;
   }
 }
+
+/* pricing tabs — quick, subtle panel transition */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [role='tabpanel'] {
+    animation: none !important;
+  }
+}

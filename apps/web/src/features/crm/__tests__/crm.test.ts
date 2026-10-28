@@ -9,6 +9,9 @@ import {
   listQuotes,
   setLeadStage,
 } from '@/features/crm/api/crm.api';
+import { EMPTY_CALC } from '@/features/pricing/lib/engine';
+import { listPricingRules } from '@/features/pricing/api/pricing.api';
+import { DEFAULT_PRICING_CONFIG } from '@/shared/lib/pricing';
 
 describe('sales CRM pipeline (demo)', () => {
   it('seeds the شرورة pipeline across stages', async () => {
@@ -52,19 +55,23 @@ describe('sales CRM pipeline (demo)', () => {
       est_value: 16000,
       notes: null,
     });
-    const quote = await createQuote({
-      lead_id: lead.id,
-      customer_name: lead.full_name,
-      service_code: 'recruitment',
-      base_amount: 16000,
-      vat_amount: 2400,
-      total_amount: 18400,
-      valid_until: null,
-    });
+    const quote = await createQuote(
+      {
+        lead_id: lead.id,
+        calc: { ...EMPTY_CALC, service: 'recruitment', nationality: 'الفلبين' },
+        valid_days: 7,
+      },
+      { rules: await listPricingRules(), cfg: DEFAULT_PRICING_CONFIG, actor: 'نورة العتيبي' },
+    );
+    // priced from the managed list (16,000 + 15%) and linked to the lead
+    expect(quote.total_amount).toBe(18400);
+    expect(quote.lead_id).toBe(lead.id);
     expect((await listLeads()).find((l) => l.id === lead.id)?.stage_code).toBe('quoted');
     expect((await listQuotes(lead.id)).length).toBe(1);
 
-    await convertQuoteToContract(quote.id);
+    await convertQuoteToContract(quote.id, 'MAS-2026-00042');
+    expect((await listQuotes(lead.id))[0]?.contract_id).toBe('MAS-2026-00042');
+    await expect(convertQuoteToContract(quote.id, 'MAS-2026-00043')).rejects.toThrow('مرتبط');
     expect((await listLeads()).find((l) => l.id === lead.id)?.stage_code).toBe('won');
   });
 

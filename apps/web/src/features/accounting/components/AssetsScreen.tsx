@@ -4,7 +4,19 @@ import { Badge, Button, Card, Input, Modal, Select, Table, type Column } from '@
 import { sar } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { BRANCHES_AR } from '@/lib/funnel';
-import { monthlyDepreciation, netBookValue } from '@/features/accounting/data/assets';
+import {
+  depreciationSchedule,
+  monthlyDepreciation,
+  netBookValue,
+} from '@/features/accounting/data/assets';
+import {
+  disposeAsset,
+  setAssetMethod,
+  transferAsset,
+} from '@/features/accounting/api/accounting.api';
+import { useAccMutation } from '@/features/accounting/hooks/useAccountingPro';
+import { todayIso } from '@/features/accounting/components/kit';
+import { usePeriods } from '@/features/accounting/hooks/useAccounting';
 import {
   useAddFixedAsset,
   useChart,
@@ -14,7 +26,9 @@ import {
 } from '@/features/accounting/hooks/useAccounting';
 import {
   ASSET_CATEGORY_LABEL,
+  DEP_METHOD_LABEL,
   type AssetCategory,
+  type DepMethod,
   type FixedAsset,
 } from '@/features/accounting/types';
 
@@ -23,7 +37,6 @@ const branchOptions = [
   ...BRANCHES_AR.map((b) => ({ value: b, label: b })),
 ];
 const CATEGORIES: AssetCategory[] = ['furniture', 'devices', 'vehicles'];
-const PERIODS = ['2026-04', '2026-05', '2026-06'] as const;
 
 function Stat({
   label,
@@ -49,7 +62,10 @@ export function AssetsScreen() {
   const { data: depPosted = [] } = usePostedDepreciation();
   const postDep = usePostDepreciation();
   const [adding, setAdding] = useState(false);
-  const [period, setPeriod] = useState('2026-06');
+  const { data: periods = [] } = usePeriods();
+  const openPeriods = periods.filter((p) => p.status === 'open').map((p) => p.id);
+  const [period, setPeriod] = useState(todayIso().slice(0, 7));
+  const [action, setAction] = useState<{ asset: FixedAsset; kind: AssetAction } | null>(null);
 
   const active = assets.filter((a) => a.status === 'active');
   const totalCost = active.reduce((s, a) => s + a.cost, 0);
@@ -84,7 +100,65 @@ export function AssetsScreen() {
     {
       key: 'monthly',
       header: 'إهلاك شهري',
-      cell: (a) => <span className="num text-purple">{sar(monthlyDepreciation(a))}</span>,
+      cell: (a) => (
+        <span className="num text-purple">
+          {a.status === 'active' ? sar(monthlyDepreciation(a)) : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'method',
+      header: 'الطريقة',
+      cell: (a) => <span className="text-xs">{DEP_METHOD_LABEL[a.method ?? 'straight_line']}</span>,
+    },
+    {
+      key: 'status',
+      header: 'الحالة',
+      cell: (a) => (
+        <Badge tone={a.status === 'active' ? 'success' : 'neutral'}>
+          {a.status === 'active' ? 'قيد الاستخدام' : `مستبعد ${a.disposed_at ?? ''}`}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      cell: (a) => (
+        <div className="flex flex-wrap gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setAction({ asset: a, kind: 'schedule' })}
+          >
+            جدول الإهلاك
+          </Button>
+          {editable && a.status === 'active' && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setAction({ asset: a, kind: 'transfer' })}
+              >
+                نقل
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setAction({ asset: a, kind: 'method' })}
+              >
+                الطريقة
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setAction({ asset: a, kind: 'dispose' })}
+              >
+                بيع/استبعاد
+              </Button>
+            </>
+          )}
+        </div>
+      ),
     },
   ];
 
@@ -103,7 +177,9 @@ export function AssetsScreen() {
             label="فترة الإهلاك"
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            options={PERIODS.map((p) => ({ value: p, label: p }))}
+            options={(openPeriods.includes(period) ? openPeriods : [period, ...openPeriods]).map(
+              (p) => ({ value: p, label: p }),
+            )}
           />
           {editable &&
             (isPosted ? (
@@ -137,11 +213,16 @@ export function AssetsScreen() {
         emptyTitle="لا توجد أصول ثابتة"
       />
       <p className="text-xs leading-relaxed text-purple">
-        الشراء يُرحَّل: مدين حساب الأصل / دائن البنك. الإهلاك الشهري (القسط الثابت): مدين مصروف
-        الإهلاك (٥٩٠٠) / دائن مجمع الإهلاك (١٢٩٠). القيمة الدفترية = التكلفة − مجمع الإهلاك.
+        الشراء يُرحَّل: مدين حساب الأصل / دائن البنك. الإهلاك الشهري (القسط الثابت أو المتناقص لكل
+        أصل): مدين مصروف الإهلاك (٥٩٠٠) / دائن مجمع الإهلاك (١٢٩٠). البيع/الاستبعاد يُقفل التكلفة
+        ومجمع الإهلاك ويُثبت الربح (٤٦٠٠) أو الخسارة (٥٩٦٠)، والنقل بين الفروع ينقل التكلفة والمجمع
+        بين مراكز التكلفة. القيمة الدفترية = التكلفة − مجمع الإهلاك.
       </p>
 
       {adding && <AddAssetModal onClose={() => setAdding(false)} />}
+      {action && (
+        <AssetActionModal asset={action.asset} kind={action.kind} onClose={() => setAction(null)} />
+      )}
     </div>
   );
 }
@@ -240,6 +321,153 @@ function AddAssetModal({ onClose }: { onClose: () => void }) {
         <Button onClick={submit} disabled={cost <= 0} className="w-full">
           <Building size={16} /> إضافة الأصل وترحيل الشراء
         </Button>
+      </div>
+    </Modal>
+  );
+}
+
+type AssetAction = 'dispose' | 'transfer' | 'method' | 'schedule';
+
+function AssetActionModal({
+  asset,
+  kind,
+  onClose,
+}: {
+  asset: FixedAsset;
+  kind: AssetAction;
+  onClose: () => void;
+}) {
+  const [date, setDate] = useState(todayIso());
+  const [proceeds, setProceeds] = useState(0);
+  const [pay, setPay] = useState('1112');
+  const [to, setTo] = useState(asset.branch ?? 'head');
+  const [method, setMethod] = useState<DepMethod>(asset.method ?? 'straight_line');
+  const dispose = useAccMutation(
+    () => disposeAsset(asset.id, { date, proceeds, pay_code: pay }),
+    'رُحّل قيد الاستبعاد',
+  );
+  const transfer = useAccMutation(
+    () => transferAsset(asset.id, to === 'head' ? null : to, date),
+    'رُحّل قيد نقل الأصل',
+  );
+  const changeMethod = useAccMutation(
+    () => setAssetMethod(asset.id, method),
+    'حُدّثت طريقة الإهلاك',
+  );
+  const nbv = netBookValue(asset);
+  const gain = proceeds - nbv;
+  return (
+    <Modal open onClose={onClose} title={`${asset.name}`}>
+      <div className="space-y-3 text-sm">
+        {kind === 'schedule' && (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-navy-100 text-purple">
+                <th className="py-1.5 text-right">السنة</th>
+                <th className="py-1.5 text-left">الإهلاك</th>
+                <th className="py-1.5 text-left">المجمع</th>
+                <th className="py-1.5 text-left">القيمة الدفترية</th>
+              </tr>
+            </thead>
+            <tbody>
+              {depreciationSchedule(asset).map((r) => (
+                <tr key={r.year} className="border-b border-navy-50">
+                  <td className="num py-1.5">{r.year}</td>
+                  <td className="num py-1.5 text-left">{sar(r.depreciation)}</td>
+                  <td className="num py-1.5 text-left">{sar(r.accumulated)}</td>
+                  <td className="num py-1.5 text-left">{sar(r.nbv)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {kind === 'dispose' && (
+          <>
+            <p className="text-purple">
+              القيمة الدفترية: <span className="num font-bold text-navy">{sar(nbv)}</span>
+            </p>
+            <Input
+              label="تاريخ البيع/الاستبعاد"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+            <Input
+              label="متحصلات البيع (0 = استبعاد بلا مقابل)"
+              type="number"
+              min={0}
+              value={proceeds}
+              onChange={(e) => setProceeds(Number(e.target.value))}
+            />
+            <Select
+              label="حساب التحصيل"
+              value={pay}
+              onChange={(e) => setPay(e.target.value)}
+              options={[
+                { value: '1112', label: '1112 — مصرف الراجحي' },
+                { value: '1113', label: '1113 — البنك الأهلي' },
+                { value: '1111', label: '1111 — الصندوق' },
+              ]}
+            />
+            <p className={gain >= 0 ? 'text-green-700' : 'text-red-600'}>
+              {gain >= 0 ? 'ربح' : 'خسارة'} استبعاد متوقع:{' '}
+              <span className="num font-bold">{sar(Math.abs(gain))}</span>
+            </p>
+            <Button
+              variant="danger"
+              className="w-full"
+              onClick={() => dispose.mutate(undefined, { onSuccess: onClose })}
+            >
+              ترحيل البيع/الاستبعاد
+            </Button>
+          </>
+        )}
+        {kind === 'transfer' && (
+          <>
+            <Select
+              label="إلى الفرع"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              options={branchOptions}
+            />
+            <Input
+              label="تاريخ النقل"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+            <Button
+              className="w-full"
+              disabled={(to === 'head' ? null : to) === asset.branch}
+              onClick={() => transfer.mutate(undefined, { onSuccess: onClose })}
+            >
+              ترحيل النقل
+            </Button>
+          </>
+        )}
+        {kind === 'method' && (
+          <>
+            <Select
+              label="طريقة الإهلاك"
+              value={method}
+              onChange={(e) => setMethod(e.target.value as DepMethod)}
+              options={(Object.keys(DEP_METHOD_LABEL) as DepMethod[]).map((m) => ({
+                value: m,
+                label: DEP_METHOD_LABEL[m],
+              }))}
+            />
+            <p className="text-xs text-purple">
+              التغيير يسري على الفترات القادمة فقط (تغيير تقدير محاسبي)، ولا يعدّل الإهلاك المرحّل
+              سابقًا.
+            </p>
+            <Button
+              className="w-full"
+              onClick={() => changeMethod.mutate(undefined, { onSuccess: onClose })}
+            >
+              حفظ
+            </Button>
+          </>
+        )}
       </div>
     </Modal>
   );

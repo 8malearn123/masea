@@ -71,6 +71,9 @@ function MarketingView() {
   const removeCampaign = useRemoveCampaign();
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
+  // campaigns issue coupons (promotions) — same rule as the promotions RLS policy
+  const { can } = usePermissions();
+  const manage = can('loyalty', 'manage');
 
   const earned = txns.filter((t) => t.points > 0).reduce((s, t) => s + t.points, 0);
   const redeemed = txns
@@ -132,9 +135,11 @@ function MarketingView() {
             <h2 className="flex items-center gap-2 text-sm font-bold text-navy">
               <Megaphone size={16} /> الحملات التسويقية
             </h2>
-            <Button variant="primary" size="sm" onClick={() => setCreatingCampaign(true)}>
-              <Plus size={14} /> حملة جديدة
-            </Button>
+            {manage && (
+              <Button variant="primary" size="sm" onClick={() => setCreatingCampaign(true)}>
+                <Plus size={14} /> حملة جديدة
+              </Button>
+            )}
           </div>
           {campaigns.map((c) => (
             <Card key={c.id} className="py-4">
@@ -144,37 +149,41 @@ function MarketingView() {
                   <Badge tone={c.is_active ? 'success' : 'neutral'}>
                     {c.is_active ? 'نشطة' : 'متوقّفة'}
                   </Badge>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateCampaign.mutate({ id: c.id, patch: { is_active: !c.is_active } })
-                    }
-                    className="rounded-lg p-1 text-purple transition hover:bg-navy-50 hover:text-navy"
-                    aria-label={c.is_active ? 'إيقاف' : 'تفعيل'}
-                    title={c.is_active ? 'إيقاف' : 'تفعيل'}
-                  >
-                    {c.is_active ? <Eye size={13} /> : <EyeOff size={13} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingCampaign(c)}
-                    className="rounded-lg p-1 text-purple transition hover:bg-navy-50 hover:text-navy"
-                    aria-label="تعديل"
-                    title="تعديل"
-                  >
-                    <Pencil size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm(`حذف حملة "${c.name}"؟`)) removeCampaign.mutate(c.id);
-                    }}
-                    className="rounded-lg p-1 text-red-500 transition hover:bg-red-50"
-                    aria-label="حذف"
-                    title="حذف"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  {manage && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateCampaign.mutate({ id: c.id, patch: { is_active: !c.is_active } })
+                        }
+                        className="rounded-lg p-1 text-purple transition hover:bg-navy-50 hover:text-navy"
+                        aria-label={c.is_active ? 'إيقاف' : 'تفعيل'}
+                        title={c.is_active ? 'إيقاف' : 'تفعيل'}
+                      >
+                        {c.is_active ? <Eye size={13} /> : <EyeOff size={13} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCampaign(c)}
+                        className="rounded-lg p-1 text-purple transition hover:bg-navy-50 hover:text-navy"
+                        aria-label="تعديل"
+                        title="تعديل"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`حذف حملة "${c.name}"؟`)) removeCampaign.mutate(c.id);
+                        }}
+                        className="rounded-lg p-1 text-red-500 transition hover:bg-red-50"
+                        aria-label="حذف"
+                        title="حذف"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-purple">
@@ -232,11 +241,13 @@ function MarketingView() {
       </div>
 
       <CampaignFormModal
+        key={creatingCampaign ? 'new-open' : 'new'}
         campaign={null}
         open={creatingCampaign}
         onClose={() => setCreatingCampaign(false)}
       />
       <CampaignFormModal
+        key={editingCampaign?.id ?? 'none'}
         campaign={editingCampaign}
         open={editingCampaign !== null}
         onClose={() => setEditingCampaign(null)}
@@ -257,7 +268,7 @@ function AdminView() {
         <PackagesCard editable={editable} />
       </div>
       <div className="lg:col-span-2">
-        <WheelPrizesManager />
+        <WheelPrizesManager editable={editable} />
       </div>
     </div>
   );

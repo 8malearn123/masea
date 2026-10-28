@@ -3,6 +3,7 @@ import { BRANCHES_AR } from '@/lib/funnel';
 import { CHART } from '@/features/accounting/data/chart';
 import {
   buildManualEntry,
+  cashAccountFor as engineCashAccount,
   postContract,
   postPayment,
   resetEntryCounter,
@@ -10,14 +11,23 @@ import {
 import { lineFrom, postBill, postSalesInvoice } from '@/features/accounting/data/invoicing';
 import {
   addCustomerSale,
+  listCustomerReceipts,
   listCustomerSales,
   voidCustomerSale,
   type CustomerSale,
 } from '@/shared/lib/salesLedger';
+import {
+  postedStoreEntries,
+  recordAudit,
+  addSystemEntry,
+} from '@/features/accounting/api/journalStore';
+import { isPeriodOpen } from '@/features/accounting/data/journalWorkflow';
 import { postCashExpense, postDebitNote, postVoucher } from '@/features/accounting/data/purchases';
 import {
   buildAcquisitionEntry,
   buildDepreciationEntry,
+  buildDisposalEntry,
+  buildTransferEntry,
   periodDepreciation,
 } from '@/features/accounting/data/assets';
 import { ASSET_CATEGORY_CODE } from '@/features/accounting/types';
@@ -26,6 +36,9 @@ import type {
   AccountType,
   AssetCategory,
   BankAccount,
+  CfClass,
+  DepMethod,
+  FsClass,
   Bill,
   CatalogItem,
   FixedAsset,
@@ -154,6 +167,13 @@ const PAYMENTS: PaymentEvent[] = [
     paid_at: '2026-05-22',
   },
 ];
+
+const PAY_METHODS: PaymentEvent['method'][] = ['cash', 'mada', 'apple_pay', 'tamara', 'transfer'];
+/** Map a free-text payment method (Payments page) onto the chart's cash/gateway leaf. */
+function cashAccountFor(method: string): string {
+  const m = PAY_METHODS.find((x) => x === method) ?? 'cash';
+  return engineCashAccount(m);
+}
 
 const branchOf = (contractId: string): string | null =>
   CONTRACTS.find((c) => c.id === contractId)?.branch ?? null;
@@ -289,8 +309,34 @@ function buildJournal(): JournalEntry[] {
   for (const v of VOUCHERS) entries.push(postVoucher(v));
   for (const e of CASH_EXPENSES) entries.push(postCashExpense(e));
   for (const n of DEBIT_NOTES) entries.push(postDebitNote(n));
+  // collections recorded after seeding (Payments page / AR screen) → DR cash / CR 1120
+  for (const r of listCustomerReceipts()) {
+    entries.push({
+      id: `je-rcpt-${r.id}`,
+      entry_no: 4000 + Number(r.id.replace(/\D/g, '') || 0),
+      entry_date: r.paid_at,
+      branch: r.branch,
+      description: `تحصيل من ${r.customer_name}`,
+      reference: r.reference_no,
+      source_type: 'payment',
+      source_id: r.sale_id,
+      status: 'posted',
+      kind: 'auto',
+      lines: [
+        {
+          account_code: cashAccountFor(r.method),
+          debit: r.amount,
+          credit: 0,
+          description: 'تحصيل',
+        },
+        { account_code: '1120', debit: 0, credit: r.amount, description: 'سداد ذمة العميل' },
+      ],
+    });
+  }
   for (const pe of PAYROLL_ENTRIES) entries.push(pe);
   for (const xe of EXTRA_ENTRIES) entries.push(xe);
+  // journal-screen workflow entries (posted) + document-generated system postings
+  for (const se of postedStoreEntries()) entries.push(se);
   for (const m of MANUAL) {
     entries.push(
       buildManualEntry({
@@ -388,6 +434,21 @@ export const accountSchema = z.object({
   type: z.enum(ACCOUNT_TYPES as [AccountType, ...AccountType[]]),
   parent_code: z.string().nullable(),
   normal_balance: z.enum(['debit', 'credit']),
+  fs_class: z
+    .enum([
+      'current_asset',
+      'non_current_asset',
+      'current_liability',
+      'non_current_liability',
+      'equity',
+      'revenue',
+      'cost_of_sales',
+      'operating_expense',
+      'other_income',
+      'other_expense',
+    ])
+    .optional(),
+  cf_class: z.enum(['cash', 'operating', 'investing', 'financing']).optional(),
 });
 export type AccountInput = z.infer<typeof accountSchema>;
 
@@ -396,8 +457,27 @@ export function addAccount(input: AccountInput): Account {
   if (chartState.some((a) => a.code === data.code)) {
     throw new Error('الرمز مستخدم بالفعل');
   }
-  const acc: Account = { ...data, is_postable: true, is_active: true };
+  const acc: Account = {
+    code: data.code,
+    name_ar: data.name_ar,
+    type: data.type,
+    parent_code: data.parent_code,
+    normal_balance: data.normal_balance,
+    is_postable: true,
+    is_active: true,
+    ...(data.fs_class ? { fs_class: data.fs_class } : {}),
+    ...(data.cf_class ? { cf_class: data.cf_class } : {}),
+  };
   chartState.push(acc);
+  chartState.sort((a, b) => a.code.localeCompare(b.code));
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'create',
+    entity: 'account',
+    entity_id: acc.code,
+    before: null,
+    after: acc,
+  });
   return acc;
 }
 
@@ -411,15 +491,34 @@ export function updateAccount(code: string, patch: Partial<AccountInput>): Accou
     type: (patch.type ?? current.type) as AccountType,
     normal_balance: (patch.normal_balance ?? current.normal_balance) as NormalBalance,
     parent_code: patch.parent_code === undefined ? current.parent_code : patch.parent_code,
+    ...(patch.fs_class ? { fs_class: patch.fs_class as FsClass } : {}),
+    ...(patch.cf_class ? { cf_class: patch.cf_class as CfClass } : {}),
   };
   chartState[i] = merged;
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'update',
+    entity: 'account',
+    entity_id: code,
+    before: current,
+    after: merged,
+  });
   return merged;
 }
 
 /** Soft delete — disable an account (kept for historical links). */
 export function toggleAccountActive(code: string, active: boolean): void {
   const acc = chartState.find((a) => a.code === code);
-  if (acc) acc.is_active = active;
+  if (!acc) return;
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: active ? 'enable' : 'disable',
+    entity: 'account',
+    entity_id: code,
+    before: { is_active: acc.is_active },
+    after: { is_active: active },
+  });
+  acc.is_active = active;
 }
 
 export async function listJournal(): Promise<JournalEntry[]> {
@@ -439,8 +538,19 @@ export type NewManualEntry = {
 
 /** Validate (balance + postable enforced by the engine) and store a manual entry. */
 export function addManualEntry(input: NewManualEntry): JournalEntry {
+  // closed periods reject posting (mirror of trg_je_period_open)
+  if (!isPeriodOpen(PERIODS, input.entry_date))
+    throw new Error(`الفترة ${input.entry_date.slice(0, 7)} مقفلة — لا ترحيل فيها`);
   const entry = buildManualEntry(input); // throws on unbalanced / non-postable
   MANUAL.push(entry);
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'post',
+    entity: 'journal_entry',
+    entity_id: entry.id,
+    before: null,
+    after: entry,
+  });
   return entry;
 }
 
@@ -458,11 +568,43 @@ export async function listPeriods(): Promise<Period[]> {
 }
 
 /** Open/close a period. Closed periods reject posting (correction = reversing entry). */
-export function setPeriodStatus(id: string, status: Period['status']): Period {
+export function setPeriodStatus(
+  id: string,
+  status: Period['status'],
+  meta: { actor?: string; reason?: string } = {},
+): Period {
   const p = PERIODS.find((x) => x.id === id);
   if (!p) throw new Error('الفترة غير موجودة');
+  const before = { ...p };
   p.status = status;
+  recordAudit({
+    actor: meta.actor ?? 'المستخدم الحالي',
+    action: status === 'closed' ? 'close_period' : 'reopen_period',
+    entity: 'accounting_period',
+    entity_id: id,
+    before,
+    after: { ...p },
+    ...(meta.reason ? { note: meta.reason } : {}),
+  });
   return { ...p };
+}
+
+/** Add a fiscal year's 12 periods (idempotent). */
+export function addFiscalYear(year: number): Period[] {
+  for (let m = 1; m <= 12; m++) {
+    const id = `${year}-${String(m).padStart(2, '0')}`;
+    if (!PERIODS.some((p) => p.id === id)) PERIODS.push({ id, year, month: m, status: 'open' });
+  }
+  PERIODS.sort((a, b) => a.id.localeCompare(b.id));
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'create_fiscal_year',
+    entity: 'fiscal_year',
+    entity_id: String(year),
+    before: null,
+    after: { year },
+  });
+  return PERIODS.filter((p) => p.year === year).map((p) => ({ ...p }));
 }
 
 /* ============================ purchases — Phase 4 ========================= */
@@ -557,7 +699,20 @@ export function voidBill(id: string): void {
 }
 
 /* -------- سندات الموردين (payment vouchers) -------- */
-const VOUCHERS: PaymentVoucher[] = [];
+// bill-1 is seeded as paid — its settlement voucher must exist in the ledger too,
+// otherwise GL 2110 would carry 9,000 that the AP sub-ledger doesn't.
+const VOUCHERS: PaymentVoucher[] = [
+  {
+    id: 'pv-0',
+    voucher_no: 0,
+    bill_id: 'bill-1',
+    vendor_name: 'مكتب الاستقدام - الهند',
+    amount: 9000,
+    pay_account_code: '1112',
+    branch: 'نجران',
+    voucher_date: '2026-05-05',
+  },
+];
 let voucherSeq = 0;
 export async function listVouchers(): Promise<PaymentVoucher[]> {
   return VOUCHERS.map((v) => ({ ...v }));
@@ -925,6 +1080,10 @@ const FIXED_ASSETS: FixedAsset[] = [
   },
 ];
 const POSTED_DEPRECIATION = new Set<string>();
+// The seeded register must agree with the ledger: post each seeded asset's
+// acquisition (DR asset / CR bank 1112) — otherwise GL 12xx would be empty
+// while the register shows 132,000 ر.س of assets.
+FIXED_ASSETS.forEach((a, i) => EXTRA_ENTRIES.push(buildAcquisitionEntry(a, '1112', i + 1)));
 
 export async function listFixedAssets(): Promise<FixedAsset[]> {
   return FIXED_ASSETS.map((a) => ({ ...a }));
@@ -962,6 +1121,68 @@ export function addFixedAsset(input: NewAssetInput): FixedAsset {
   return asset;
 }
 
+/** Sell / scrap an asset: posts the disposal entry (gain/loss) and marks it disposed. */
+export function disposeAsset(
+  id: string,
+  input: { date: string; proceeds: number; pay_code: string },
+): FixedAsset {
+  const a = FIXED_ASSETS.find((x) => x.id === id);
+  if (!a) throw new Error('الأصل غير موجود');
+  if (!isPeriodOpen(PERIODS, input.date)) throw new Error('الفترة مقفلة');
+  const before = { ...a };
+  addSystemEntry(buildDisposalEntry(a, input, ++extraSeq));
+  a.status = 'disposed';
+  a.disposed_at = input.date;
+  a.disposal_proceeds = input.proceeds;
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'dispose',
+    entity: 'fixed_asset',
+    entity_id: id,
+    before,
+    after: { ...a },
+  });
+  return { ...a };
+}
+
+/** Move an asset to another branch (cost center): posts the transfer entry. */
+export function transferAsset(id: string, toBranch: string | null, date: string): FixedAsset {
+  const a = FIXED_ASSETS.find((x) => x.id === id);
+  if (!a) throw new Error('الأصل غير موجود');
+  const before = { ...a };
+  const seq = ++extraSeq;
+  addSystemEntry({
+    ...buildTransferEntry(a, toBranch, date, seq),
+    idempotency_key: `AXFER-${a.id}-${seq}`,
+  });
+  a.branch = toBranch;
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'transfer',
+    entity: 'fixed_asset',
+    entity_id: id,
+    before,
+    after: { ...a },
+  });
+  return { ...a };
+}
+
+export function setAssetMethod(id: string, method: DepMethod): FixedAsset {
+  const a = FIXED_ASSETS.find((x) => x.id === id);
+  if (!a) throw new Error('الأصل غير موجود');
+  const before = { ...a };
+  a.method = method;
+  recordAudit({
+    actor: 'المستخدم الحالي',
+    action: 'update',
+    entity: 'fixed_asset',
+    entity_id: id,
+    before,
+    after: { ...a },
+  });
+  return { ...a };
+}
+
 export async function listPostedDepreciation(): Promise<string[]> {
   return [...POSTED_DEPRECIATION];
 }
@@ -969,6 +1190,7 @@ export async function listPostedDepreciation(): Promise<string[]> {
 /** Post the period depreciation (DR 5900 / CR 1290) and accrue per asset. */
 export function postDepreciation(period: string): void {
   if (POSTED_DEPRECIATION.has(period)) throw new Error('إهلاك هذه الفترة مُرحَّل بالفعل');
+  if (!isPeriodOpen(PERIODS, `${period}-01`)) throw new Error('الفترة مقفلة');
   const total = FIXED_ASSETS.reduce((s, a) => s + periodDepreciation(a), 0);
   if (total <= 0) throw new Error('لا يوجد إهلاك مستحق لهذه الفترة');
   EXTRA_ENTRIES.unshift(buildDepreciationEntry(FIXED_ASSETS, period));

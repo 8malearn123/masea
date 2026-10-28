@@ -16,15 +16,19 @@ export function useUpdateCallStatus() {
   return useMutation<
     void,
     Error,
-    { id: string; status: CallStatus },
+    { id: string; status: CallStatus; callbackAt?: string | null },
     { prev: CallLog[] | undefined }
   >({
-    mutationFn: ({ id, status }) => updateCallStatus(id, status),
-    onMutate: async ({ id, status }) => {
+    mutationFn: ({ id, status, callbackAt }) => updateCallStatus(id, status, callbackAt ?? null),
+    onMutate: async ({ id, status, callbackAt }) => {
       await qc.cancelQueries({ queryKey: KEY });
       const prev = qc.getQueryData<CallLog[]>(KEY);
       qc.setQueryData<CallLog[]>(KEY, (old) =>
-        old?.map((c) => (c.id === id ? { ...c, status } : c)),
+        old?.map((c) =>
+          c.id === id
+            ? { ...c, status, callback_at: status === 'callback' ? (callbackAt ?? null) : null }
+            : c,
+        ),
       );
       return { prev };
     },

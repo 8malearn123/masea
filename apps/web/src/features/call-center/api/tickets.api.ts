@@ -1,3 +1,4 @@
+import { resolveCallsForTicket } from '@/features/call-center/api/calls.api';
 import type { BadgeTone } from '@/shared/ui/Badge';
 import type { CallPriority } from '@/features/call-center/types';
 
@@ -131,6 +132,7 @@ export async function createTicket(input: NewTicketInput): Promise<Ticket> {
 export async function updateTicketStatus(id: string, status: TicketStatus): Promise<void> {
   const t = STORE.find((x) => x.id === id);
   if (t) t.status = status;
+  if (t && status === 'resolved') await resolveCallsForTicket(t.ticket_no);
 }
 
 export async function addTicketUpdate(id: string, text: string, by: string): Promise<void> {

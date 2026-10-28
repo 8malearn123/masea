@@ -13,6 +13,7 @@ import { Badge, Button, Card, Input, Modal, Select, Table, type Column } from '@
 import { dateAr, sar } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useCalls, useUpdateCallStatus } from '@/features/call-center/hooks/useCalls';
+import { overdueCallbacks } from '@/features/call-center/api/calls.api';
 import { NewCallModal } from '@/features/call-center/components/NewCallModal';
 import { IncomingCallConsole } from '@/features/call-center/components/IncomingCallConsole';
 import { FeedbackInbox } from '@/features/chatbot/components/FeedbackInbox';
@@ -30,7 +31,7 @@ import {
   type CallLog,
   type CallStatus,
 } from '@/features/call-center/types';
-import { Eye } from 'lucide-react';
+import { Eye, PhoneCall } from 'lucide-react';
 
 function Kpi({
   label,
@@ -71,6 +72,19 @@ export default function CallCenterBoard() {
     setConsolePhone(p);
     setConsole(true);
   }
+
+  // «معاودة اتصال» needs a time — asked for before the status changes
+  const [callbackFor, setCallbackFor] = useState<CallLog | null>(null);
+  const [callbackAt, setCallbackAt] = useState('');
+  function changeStatus(c: CallLog, next: CallStatus) {
+    if (next === 'callback') {
+      setCallbackAt('');
+      setCallbackFor(c);
+      return;
+    }
+    update.mutate({ id: c.id, status: next });
+  }
+  const overdue = overdueCallbacks(calls);
 
   const agents = useMemo(() => Array.from(new Set(calls.map((c) => c.agent))), [calls]);
 
@@ -162,10 +176,20 @@ export default function CallCenterBoard() {
           >
             <Eye size={13} /> تفاصيل
           </button>
+          {editable && c.status === 'callback' && (
+            <button
+              onClick={() => openConsoleFor(c.phone)}
+              title="معاودة الاتصال بالعميل الآن"
+              className="inline-flex items-center gap-1 rounded-lg border border-teal-100 bg-teal-100/40 px-2 py-1.5 text-xs font-semibold text-teal transition hover:bg-teal-100"
+            >
+              <PhoneCall size={13} /> اتصال
+            </button>
+          )}
           {editable && (
             <select
               value={c.status}
-              onChange={(e) => update.mutate({ id: c.id, status: e.target.value as CallStatus })}
+              onChange={(e) => changeStatus(c, e.target.value as CallStatus)}
+              aria-label="حالة المكالمة"
               className="rounded-lg border border-navy-100 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy"
             >
               {CALL_STATUSES.map((s) => (
@@ -244,7 +268,7 @@ export default function CallCenterBoard() {
       </div>
 
       {view === 'tickets' && <TicketsPanel />}
-      {view === 'retention' && <RetentionPanel onCall={openConsoleFor} />}
+      {view === 'retention' && <RetentionPanel onCall={editable ? openConsoleFor : undefined} />}
       {view === 'feedback' && <FeedbackInbox />}
 
       {view === 'calls' && (
@@ -257,6 +281,37 @@ export default function CallCenterBoard() {
             <Kpi label="مغلقة" value={String(counts.resolved)} tone="text-green-600" />
             <Kpi label="عاجلة مفتوحة" value={String(counts.urgent)} tone="text-red-600" />
           </div>
+
+          {overdue.length > 0 && (
+            <Card className="mb-4 border-red-100 bg-red-50/40">
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-bold text-red-600">
+                <AlarmClock size={15} /> معاودات اتصال متأخرة
+                <span className="num">({overdue.length})</span>
+              </p>
+              <ul className="space-y-1.5">
+                {overdue.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs"
+                  >
+                    <span className="text-navy">
+                      <span className="font-semibold">{c.customer_name}</span> · {c.topic}
+                      <span className="num mr-2 text-red-600">
+                        موعدها {c.callback_at ? dateAr(c.callback_at) : ''}
+                      </span>
+                    </span>
+                    {editable && (
+                      <Button variant="primary" size="sm" onClick={() => openConsoleFor(c.phone)}>
+                        <span className="flex items-center gap-1.5">
+                          <PhoneCall size={13} /> اتصل الآن
+                        </span>
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           {/* filters */}
           <Card className="mb-4">
@@ -315,13 +370,49 @@ export default function CallCenterBoard() {
         </>
       )}
 
+      <Modal
+        open={callbackFor !== null}
+        onClose={() => setCallbackFor(null)}
+        title="موعد معاودة الاتصال"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-navy">
+            {callbackFor?.customer_name} · <span className="num">{callbackFor?.phone}</span>
+          </p>
+          <Input
+            type="datetime-local"
+            label="الموعد"
+            value={callbackAt}
+            onChange={(e) => setCallbackAt(e.target.value)}
+          />
+          <Button
+            className="w-full"
+            disabled={!callbackAt}
+            loading={update.isPending}
+            onClick={() => {
+              if (!callbackFor || !callbackAt) return;
+              update.mutate(
+                {
+                  id: callbackFor.id,
+                  status: 'callback',
+                  callbackAt: new Date(callbackAt).toISOString(),
+                },
+                { onSuccess: () => setCallbackFor(null) },
+              );
+            }}
+          >
+            حفظ الموعد
+          </Button>
+        </div>
+      </Modal>
+
       <NewCallModal
         open={modal}
         onClose={() => setModal(false)}
         agents={agents.length ? agents : DEFAULT_AGENTS}
       />
       <IncomingCallConsole
-        open={console_}
+        open={console_ && editable}
         onClose={() => {
           setConsole(false);
           setConsolePhone('');

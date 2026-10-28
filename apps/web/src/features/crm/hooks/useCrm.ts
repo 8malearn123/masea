@@ -4,7 +4,6 @@ import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
   addActivity,
   convertLead,
-  convertQuoteToContract,
   createLead,
   createQuote,
   getMyTarget,
@@ -20,6 +19,8 @@ import {
   type QuoteInput,
 } from '@/features/crm/api/crm.api';
 import type { ActivityKind, Lead, LeadStageCode, Quote } from '@/features/crm/types';
+import type { PricingConfig } from '@/shared/lib/pricing';
+import type { PricingRule } from '@/features/pricing/types';
 
 const LEADS_KEY = ['crm', 'leads'] as const;
 
@@ -44,10 +45,15 @@ export function useQuotes(leadId?: string) {
 export function useCreateQuote() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<Quote, Error, QuoteInput>({
-    mutationFn: (input) => createQuote(input),
+  return useMutation<
+    Quote,
+    Error,
+    { input: QuoteInput; rules: PricingRule[]; cfg: PricingConfig; actor: string }
+  >({
+    mutationFn: ({ input, ...ctx }) => createQuote(input, ctx),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
+      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
       void qc.invalidateQueries({ queryKey: LEADS_KEY });
       toast.success('تم إنشاء عرض السعر');
     },
@@ -58,27 +64,14 @@ export function useCreateQuote() {
 export function useSetQuoteStatus() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<void, Error, { id: string; status: Quote['status'] }>({
-    mutationFn: ({ id, status }) => setQuoteStatus(id, status),
+  return useMutation<void, Error, { id: string; status: Quote['status']; actor: string }>({
+    mutationFn: ({ id, status, actor }) => setQuoteStatus(id, status, actor),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
+      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
       toast.success('تم تحديث حالة العرض');
     },
     onError: (e) => toast.error(e.message || 'تعذّر التحديث'),
-  });
-}
-
-export function useConvertQuoteToContract() {
-  const qc = useQueryClient();
-  const toast = useToast();
-  return useMutation<void, Error, string>({
-    mutationFn: (quoteId) => convertQuoteToContract(quoteId),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
-      void qc.invalidateQueries({ queryKey: LEADS_KEY });
-      toast.success('تم تحويل العرض إلى عقد');
-    },
-    onError: (e) => toast.error(e.message || 'تعذّر التحويل'),
   });
 }
 
