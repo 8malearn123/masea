@@ -214,10 +214,22 @@ export default function ContractDetails() {
                 <span className="inline-flex items-center gap-1 text-navy">
                   <ExternalLink size={13} /> منصة مساند
                 </span>
+              ) : contract.terms_accepted_at ? (
+                <span className="text-navy">
+                  موافقة إلكترونية على الشروط
+                  {contract.source_request_no && (
+                    <>
+                      {' · '}الطلب <span className="num">{contract.source_request_no}</span>
+                    </>
+                  )}
+                </span>
               ) : (
                 'داخلي (النظام)'
               )}
             </Row>
+            {contract.terms_accepted_at && (
+              <Row label="تاريخ موافقة العميل">{dateTimeAr(contract.terms_accepted_at)}</Row>
+            )}
             <Row label="الفرع">{branchLabel(contract)}</Row>
             <Row label="تاريخ البداية">{dateAr(contract.start_date)}</Row>
             <Row label="تاريخ النهاية">
@@ -275,7 +287,8 @@ export default function ContractDetails() {
           ) : (
             <Card>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-                <ScrollText size={16} /> بنود العقد
+                <ScrollText size={16} />{' '}
+                {contract.terms_accepted_at ? 'الشروط التي وافق عليها العميل' : 'بنود العقد'}
               </h2>
               {clauses.length === 0 ? (
                 <p className="text-sm text-purple">لا توجد بنود مُجمّدة لهذا العقد.</p>

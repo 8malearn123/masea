@@ -248,6 +248,8 @@ export function addLocalOrder(input: {
   service_code: Order['service_code'];
   branch: string | null;
   total_amount: number;
+  /** contract created from the customer's accepted terms (daily rental) */
+  contract?: { id: string; contract_no: string | null } | null;
 }): void {
   FALLBACK_ORDERS.unshift({
     // تسلسل إضافي: طلبان في نفس الملّي ثانية لا يتشاركان المعرّف
@@ -262,6 +264,8 @@ export function addLocalOrder(input: {
     total_amount: input.total_amount,
     created_at: new Date().toISOString(),
     trip_stage: 'none',
+    contract_id: input.contract?.id ?? null,
+    contract_no: input.contract?.contract_no ?? null,
   });
 }
 
@@ -326,8 +330,10 @@ interface RawOrder {
   customer_address: string | null;
   dropoff_at: string | null;
   pickup_at: string | null;
+  contract_id: string | null;
   branches: { name: string | null } | null;
   drivers: { full_name: string | null } | null;
+  contracts: { contract_no: string | null } | null;
 }
 
 interface RawDriver {
@@ -346,15 +352,18 @@ export async function listOrders(filters: OrderFilters): Promise<Order[]> {
     const { data, error } = await supabase
       .from('service_requests')
       .select(
-        'id, request_no, customer_name, service_code, status, driver_id, total_amount, created_at, trip_stage, customer_phone, customer_address, dropoff_at, pickup_at, branches(name), drivers(full_name)',
+        'id, request_no, customer_name, service_code, status, driver_id, total_amount, created_at, trip_stage, customer_phone, customer_address, dropoff_at, pickup_at, contract_id, branches(name), drivers(full_name), contracts(contract_no)',
       )
       .order('created_at', { ascending: false });
     if (!error && data && data.length > 0) {
-      const rows = (data as unknown as RawOrder[]).map(({ branches, drivers, ...rest }) => ({
-        ...rest,
-        branch: branches?.name ?? null,
-        driver_name: drivers?.full_name ?? null,
-      }));
+      const rows = (data as unknown as RawOrder[]).map(
+        ({ branches, drivers, contracts, ...rest }) => ({
+          ...rest,
+          contract_no: contracts?.contract_no ?? null,
+          branch: branches?.name ?? null,
+          driver_name: drivers?.full_name ?? null,
+        }),
+      );
       return applyFilters(scopeForViewer(rows), filters);
     }
   } catch {

@@ -107,6 +107,8 @@ function mk(o: {
     visa_number: o.visa_number ?? null,
     expected_arrival_date: o.expected_arrival_date ?? null,
     flight_no: o.flight_no ?? null,
+    terms_accepted_at: null,
+    source_request_no: null,
   };
 }
 
@@ -441,6 +443,8 @@ function applyFilters(rows: ContractListItem[], f: ContractFilters): ContractLis
 interface RawRow extends Contract {
   customers: { full_name: string | null } | null;
   branches: { city: string | null } | null;
+  /** orders linked to the contract (service_requests.contract_id) */
+  service_requests?: { request_no: string }[] | null;
 }
 
 /**
@@ -481,7 +485,7 @@ export async function listContracts(filters: ContractFilters): Promise<ContractL
   }
   const { data, error } = await supabase
     .from('contracts')
-    .select('*, customers(full_name), branches(city)')
+    .select('*, customers(full_name), branches(city), service_requests(request_no)')
     .not('contract_no', 'is', null)
     .order('created_at', { ascending: false });
   if (error) throw new Error(`تعذّر جلب العقود: ${error.message}`);
@@ -489,9 +493,11 @@ export async function listContracts(filters: ContractFilters): Promise<ContractL
 }
 
 /** صف قاعدة البيانات (مع جدولَي العميل والفرع) → عنصر القائمة. */
-function fromRaw({ customers, branches, ...rest }: RawRow): ContractListItem {
+function fromRaw({ customers, branches, service_requests, ...rest }: RawRow): ContractListItem {
   return {
     ...rest,
+    terms_accepted_at: rest.terms_accepted_at ?? null,
+    source_request_no: service_requests?.[0]?.request_no ?? null,
     customer_name: customers?.full_name ?? null,
     worker_name: null,
     branch_name: branches?.city ?? null,
@@ -506,7 +512,7 @@ export async function getContract(id: string): Promise<ContractListItem | null> 
   }
   const { data, error } = await supabase
     .from('contracts')
-    .select('*, customers(full_name), branches(city)')
+    .select('*, customers(full_name), branches(city), service_requests(request_no)')
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(`تعذّر جلب العقد: ${error.message}`);
@@ -697,6 +703,8 @@ async function localDraft(
     visa_number: null,
     expected_arrival_date: null,
     flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
   };
   FALLBACK.unshift(item);
   // the discount is consumed (create_contract_draft does the same server-side)
@@ -708,6 +716,92 @@ async function localDraft(
     body,
   }));
   seedDraftHistory(item);
+  return { ...item };
+}
+
+/**
+ * Demo mirror of 0060 `contract_from_accepted_terms`: a daily-rental order whose
+ * customer accepted the terms gets a SIGNED contract — the accepted terms are
+ * its clauses and the acceptance is the customer's signature. With Supabase the
+ * service_requests trigger does this, so it is never called there.
+ */
+export function contractFromAcceptedTerms(input: {
+  request_no: string;
+  customer_name: string;
+  branch: string | null;
+  start_date: string;
+  end_date: string | null;
+  amounts: { base: number; vat: number; total: number };
+  accepted_terms: string[];
+  terms_accepted_at: string;
+}): ContractListItem {
+  const existing = FALLBACK.find((c) => c.source_request_no === input.request_no);
+  if (existing) return { ...existing };
+  const id = `local-${Date.now()}-${++localSeq}`;
+  const item: ContractListItem = {
+    id,
+    contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    service_code: 'daily_rental',
+    template_id: null,
+    customer_id: `cust-${id}`,
+    worker_id: null,
+    branch_id: input.branch,
+    created_by: null,
+    start_date: input.start_date,
+    end_date: input.end_date,
+    base_amount: input.amounts.base,
+    vat_amount: input.amounts.vat,
+    total_amount: input.amounts.total,
+    gross_amount: input.amounts.base,
+    discount_amount: 0,
+    promotion_id: null,
+    amount_paid: 0,
+    status: 'signed',
+    version: 1,
+    parent_contract_id: null,
+    signed_at: input.terms_accepted_at,
+    musaned_contract_no: null,
+    created_at: input.terms_accepted_at,
+    customer_name: input.customer_name,
+    worker_name: null,
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+    terms_accepted_at: input.terms_accepted_at,
+    source_request_no: input.request_no,
+  };
+  FALLBACK.unshift(item);
+  FALLBACK_CLAUSES[id] = input.accepted_terms.map((body, i) => ({
+    id: `cl-${id}-${i}`,
+    contract_id: id,
+    sort_order: i,
+    body,
+  }));
+  FALLBACK_SIGNATURES[id] = [
+    {
+      id: `sg-${id}-c`,
+      contract_id: id,
+      signer_type: 'customer',
+      signer_name: `${input.customer_name} — موافقة إلكترونية على الشروط`,
+      national_id: null,
+      ip_address: null,
+      signature_image: null,
+      signed_at: input.terms_accepted_at,
+    },
+  ];
+  FALLBACK_HISTORY[id] = [
+    {
+      id: `h-${id}-0`,
+      contract_id: id,
+      from_status: null,
+      to_status: 'signed',
+      changed_by: null,
+      created_at: input.terms_accepted_at,
+    },
+  ];
   return { ...item };
 }
 
@@ -871,6 +965,9 @@ function renewDemoContract(
     visa_number: null,
     expected_arrival_date: null,
     flight_no: null,
+    // a renewal is a new version, not a new acceptance of the order terms
+    terms_accepted_at: null,
+    source_request_no: null,
   };
   FALLBACK.unshift({ ...renewal });
   FALLBACK_CLAUSES[renewal.id] = (FALLBACK_CLAUSES[parent.id] ?? []).map((cl, i) => ({
@@ -932,7 +1029,7 @@ async function listChildren(parentIds: string[]): Promise<ContractListItem[]> {
   }
   const { data, error } = await supabase
     .from('contracts')
-    .select('*, customers(full_name), branches(city)')
+    .select('*, customers(full_name), branches(city), service_requests(request_no)')
     .in('parent_contract_id', parentIds);
   if (error) throw new Error(`تعذّر جلب إصدارات العقد: ${error.message}`);
   return ((data ?? []) as RawRow[]).map(fromRaw);

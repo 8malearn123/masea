@@ -209,6 +209,14 @@ const CONFIG: ConfigItem[] = [
     sort_order: 30,
   },
   {
+    key: 'contract_auto_terms_daily',
+    label_ar: 'إنشاء عقد تلقائي للتأجير اليومي عند موافقة العميل على الشروط (1 = مفعّل)',
+    grp: 'العقود',
+    value: 1,
+    unit: null,
+    sort_order: 40,
+  },
+  {
     key: 'acc_reminder_after_days',
     label_ar: 'تذكير العميل بعد تأخر',
     grp: 'المحاسبة',

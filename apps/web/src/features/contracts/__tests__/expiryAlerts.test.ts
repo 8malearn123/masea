@@ -51,6 +51,8 @@ function contract(id: string, status: ContractStatus, endOffset: number | null):
     visa_number: null,
     expected_arrival_date: null,
     flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
   };
 }
 

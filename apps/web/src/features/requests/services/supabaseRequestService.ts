@@ -22,6 +22,7 @@ import {
 } from '@/features/requests/services/types';
 import { buildServiceDetails } from '@/features/requests/types';
 import { draftPeriod } from '@/lib/orderTypes';
+import { acceptedTerms } from '@/features/requests/lib/orderTerms';
 
 /**
  * الحمولة المرسلة للخادم: ما يعبّئه العميل فقط. المبالغ والحالة يحددها الخادم،
@@ -59,6 +60,10 @@ export function toSubmitPayload(input: SubmitRequestInput, phone: string) {
         documents: draft.documents,
       },
       agreeTerms: draft.agreeTerms,
+      // the exact terms accepted + when — the contract created from them (0060)
+      ...(acceptedTerms(draft, input.serviceName, input.price.total) ?? {}),
+      start_date: period?.startDate ?? null,
+      end_date: period?.endDate ?? null,
     },
   };
 }
