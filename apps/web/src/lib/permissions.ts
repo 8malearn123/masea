@@ -243,6 +243,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 export const MODULES: ModuleNav[] = [
   { module: 'contracts', label: 'العقود', to: '/contracts' },
   { module: 'leads', label: 'العملاء المحتملون', to: '/leads' },
+  { module: 'sales_ops', label: 'المبيعات', to: '/sales' },
   { module: 'orders', label: 'الطلبات والسائقون', to: '/orders' },
   { module: 'gps', label: 'التتبّع GPS', to: '/gps' },
   { module: 'pricing', label: 'التسعير', to: '/pricing' },
