@@ -1,6 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch } from '@/lib/branchScope';
 import { tripScanResult } from '@/features/orders/lib/trip';
 import {
   isTerminalOrderStatus,
@@ -301,7 +302,7 @@ function scopeForViewer(rows: Order[]): Order[] {
   if (profile?.role === 'driver') {
     return rows.filter((o) => o.driver_id === profile.id);
   }
-  return rows;
+  return scopeToViewerBranch(rows, (o) => o.branch);
 }
 
 function applyFilters(rows: Order[], f: OrderFilters): Order[] {

@@ -294,7 +294,10 @@ describe('المدة في المعالج', () => {
     await user.clear(start);
     await user.type(start, s2);
     expect(stat('تاريخ نهاية الخدمة')).toContain(dateAr(computeEndDate(s2, 'week', 3)));
-    expect(stat('تاريخ نهاية الخدمة')).not.toContain(dateAr(computeEndDate(s1, 'week', 3)));
+    // «١ ديسمبر» جزء من «٣١ ديسمبر» — يُقارن التاريخ كاملاً لا كنص جزئي
+    expect(stat('تاريخ نهاية الخدمة')).not.toMatch(
+      new RegExp(`(^|[^٠-٩])${dateAr(computeEndDate(s1, 'week', 3))}`),
+    );
   });
 
   it('مدة غير صحيحة: رسالة واضحة وتعطيل «التالي» ولا تاريخ نهاية قديم', async () => {

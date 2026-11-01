@@ -1,7 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
-import { loadDemo } from '@/lib/demo';
-import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
+import { scopeToViewerBranch } from '@/lib/branchScope';
+import { roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import {
   evaluatePromotion,
@@ -463,12 +463,7 @@ function scopeForViewer(rows: ContractListItem[]): ContractListItem[] {
   if (profile.role === 'external_office') {
     return rows.filter((r) => r.assigned_office_id === profile.id);
   }
-  const crossBranch = ROLE_META[profile.role as RoleCode]?.crossBranch ?? false;
-  if (isDemoMode() && !crossBranch) {
-    const branch = loadDemo()?.branch ?? null;
-    return rows.filter((r) => r.branch_id === null || (branch !== null && r.branch_id === branch));
-  }
-  return rows;
+  return scopeToViewerBranch(rows, (r) => r.branch_id);
 }
 
 /* ------------------------------- queries --------------------------------- */

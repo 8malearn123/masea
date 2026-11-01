@@ -38,6 +38,7 @@ const HousingTargetsPage = lazy(() => import('@/features/housing/components/Targ
 const LoyaltyBoard = lazy(() => import('@/features/loyalty/components/LoyaltyBoard'));
 const RatingBoard = lazy(() => import('@/features/rating/components/RatingBoard'));
 const TargetsBoard = lazy(() => import('@/features/targets/components/TargetsBoard'));
+const AuditLogBoard = lazy(() => import('@/features/audit/components/AuditLogBoard'));
 const AccountingBoard = lazy(() => import('@/features/accounting/components/AccountingBoard'));
 const ReportsBoard = lazy(() => import('@/features/reports/components/ReportsBoard'));
 const RbacBoard = lazy(() => import('@/features/rbac/components/RbacBoard'));
@@ -308,6 +309,14 @@ export default function App() {
               element={
                 <RequirePerm module="rbac" action="manage">
                   <RbacBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="audit"
+              element={
+                <RequirePerm module="audit">
+                  <AuditLogBoard />
                 </RequirePerm>
               }
             />

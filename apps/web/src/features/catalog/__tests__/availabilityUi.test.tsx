@@ -57,7 +57,7 @@ describe('التقويم', () => {
     render(
       <AvailabilityCalendar workerId="w6" highlight={{ start: from, end: addDays(from, 2) }} />,
     );
-    const booked = screen.getByRole('img', { name: new RegExp(`${dateAr(from)}: محجوزة`) });
+    const booked = screen.getByRole('img', { name: new RegExp(`^${dateAr(from)}: محجوزة`) });
     expect(booked).toHaveAttribute('data-state', 'booked');
     expect(booked).toHaveAttribute('data-in-range', 'true');
     expect(screen.getByText('غير متاحة')).toBeInTheDocument(); // مفتاح الألوان
@@ -65,10 +65,9 @@ describe('التقويم', () => {
     cleanup();
 
     render(<AvailabilityCalendar workerId="w1" highlight={{ start: from, end: from }} />);
-    expect(screen.getByRole('img', { name: new RegExp(`${dateAr(from)}: متاحة`) })).toHaveAttribute(
-      'data-state',
-      'available',
-    );
+    expect(
+      screen.getByRole('img', { name: new RegExp(`^${dateAr(from)}: متاحة`) }),
+    ).toHaveAttribute('data-state', 'available');
     expect(screen.getByText('لا توجد حجوزات — الجدول مفتوح بالكامل.')).toBeInTheDocument();
   });
 
