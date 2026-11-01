@@ -66,7 +66,7 @@ export function useAddCampaign() {
   const toast = useToast();
   return useMutation<Campaign, Error, CampaignInput>({
     mutationFn: async (input) => {
-      const c = addCampaign(input);
+      const c = await addCampaign(input);
       await syncCampaignCoupon(c);
       return c;
     },
@@ -85,7 +85,7 @@ export function useUpdateCampaign() {
   return useMutation<Campaign, Error, { id: string; patch: Partial<CampaignInput> }>({
     mutationFn: async ({ id, patch }) => {
       const previous = (await listCampaigns()).find((c) => c.id === id)?.coupon_code ?? null;
-      const c = updateCampaign(id, patch);
+      const c = await updateCampaign(id, patch);
       await syncCampaignCoupon(c, previous);
       return c;
     },
@@ -102,7 +102,7 @@ export function useRemoveCampaign() {
   const toast = useToast();
   return useMutation<void, Error, string>({
     mutationFn: async (id) => {
-      await retireCampaignCoupon(removeCampaign(id).coupon_code);
+      await retireCampaignCoupon((await removeCampaign(id)).coupon_code);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: CAMPAIGNS_KEY });

@@ -152,6 +152,22 @@ const CONFIG: ConfigItem[] = [
     sort_order: 34,
   },
   {
+    key: 'coupon_preset_pct_1',
+    label_ar: 'نسبة كوبون الإحالة المقترحة الأولى',
+    grp: 'التسويق',
+    value: 5,
+    unit: '٪',
+    sort_order: 41,
+  },
+  {
+    key: 'coupon_preset_pct_2',
+    label_ar: 'نسبة كوبون الإحالة المقترحة الثانية',
+    grp: 'التسويق',
+    value: 10,
+    unit: '٪',
+    sort_order: 42,
+  },
+  {
     key: 'quote_approval_discount_pct',
     label_ar: 'عرض السعر يحتاج اعتماد مدير الفرع إذا تجاوز الخصم',
     grp: 'المبيعات',

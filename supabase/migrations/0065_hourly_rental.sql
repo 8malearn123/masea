@@ -385,6 +385,9 @@ begin
   end loop;
   insert into contract_status_history (contract_id, from_status, to_status, changed_by)
   values (v_contract.id, null, 'draft', auth.uid());
+  if v_contract.promotion_id is not null then   -- the coupon is consumed (same as contracts)
+    update promotions set usage_count = usage_count + 1, updated_at = now() where id = v_contract.promotion_id;
+  end if;
 
   insert into service_requests (service_code, branch_id, customer_id, worker_profile_id, customer_name,
                                 customer_phone, base_amount, vat_amount, total_amount, status, contract_id, details)

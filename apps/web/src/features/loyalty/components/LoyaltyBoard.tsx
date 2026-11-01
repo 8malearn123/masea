@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import {
   Star,
@@ -195,6 +196,12 @@ function MarketingView() {
                   <Ticket size={10} /> {c.coupon_code}
                 </span>
               )}
+              <Link
+                to={`/loyalty/campaigns/${c.id}`}
+                className="mt-2 block text-xs font-medium text-navy underline"
+              >
+                كوبونات الإحالة والأداء
+              </Link>
               <div className="mt-2 flex items-center justify-between text-[11px] text-purple">
                 <span className="num">
                   {dateAr(c.start_at)} — {dateAr(c.end_at)}

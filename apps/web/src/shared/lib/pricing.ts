@@ -122,6 +122,10 @@ export interface Promotion {
   is_active: boolean;
   /** Coupon: hidden from the discount list, applied only by entering its code. */
   requires_code: boolean;
+  /** Marketing campaign the coupon belongs to (0066) — the coupon follows its window. */
+  campaign_id?: string | null;
+  /** Referral coupon: the customer who refers (gets the referral commission). */
+  referrer_name?: string | null;
 }
 
 export interface PromotionCheck {

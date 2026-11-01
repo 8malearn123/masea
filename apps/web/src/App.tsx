@@ -37,6 +37,7 @@ const HousingReportPage = lazy(() => import('@/features/housing/components/Repor
 const HousingAttendancePage = lazy(() => import('@/features/housing/components/AttendancePage'));
 const HousingTargetsPage = lazy(() => import('@/features/housing/components/TargetsPage'));
 const LoyaltyBoard = lazy(() => import('@/features/loyalty/components/LoyaltyBoard'));
+const CampaignDetail = lazy(() => import('@/features/loyalty/components/CampaignDetail'));
 const RatingBoard = lazy(() => import('@/features/rating/components/RatingBoard'));
 const TargetsBoard = lazy(() => import('@/features/targets/components/TargetsBoard'));
 const AuditLogBoard = lazy(() => import('@/features/audit/components/AuditLogBoard'));
@@ -226,6 +227,14 @@ export default function App() {
               element={
                 <RequirePerm module="loyalty">
                   <LoyaltyBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="loyalty/campaigns/:id"
+              element={
+                <RequirePerm module="loyalty">
+                  <CampaignDetail />
                 </RequirePerm>
               }
             />
