@@ -22,6 +22,7 @@ const ContractWizard = lazy(() => import('@/features/contracts/components/Contra
 const ContractDetails = lazy(() => import('@/features/contracts/components/ContractDetails'));
 const PipelineBoard = lazy(() => import('@/features/crm/components/PipelineBoard'));
 const LeadCreatePage = lazy(() => import('@/features/crm/components/LeadCreatePage'));
+const LeadProfile = lazy(() => import('@/features/crm/components/LeadProfile'));
 const OrdersBoard = lazy(() => import('@/features/orders/components/OrdersBoard'));
 const GpsTracking = lazy(() => import('@/features/gps/components/GpsTracking'));
 const PricingBoard = lazy(() => import('@/features/pricing/components/PricingBoard'));
@@ -149,6 +150,14 @@ export default function App() {
               element={
                 <RequirePerm module="leads" action="create">
                   <LeadCreatePage />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="leads/:id"
+              element={
+                <RequirePerm module="leads">
+                  <LeadProfile />
                 </RequirePerm>
               }
             />

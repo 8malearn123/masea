@@ -49,6 +49,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   'contract.transition': 'تغيير حالة عقد',
   'contract.create_from_terms': 'عقد من موافقة الشروط',
   'contract.renew': 'تجديد عقد',
+  'quote.convert': 'تحويل عرض إلى عقد',
 };
 
 /** أسماء عربية للحقول الأكثر تعديلاً؛ ما عداها يُعرض باسمه البرمجي. */

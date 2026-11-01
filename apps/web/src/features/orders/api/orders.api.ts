@@ -251,6 +251,8 @@ export function addLocalOrder(input: {
   total_amount: number;
   /** contract created from the customer's accepted terms (daily rental) */
   contract?: { id: string; contract_no: string | null } | null;
+  /** a deal closed from a quote starts as `new` (not yet paid) */
+  status?: Order['status'];
 }): void {
   FALLBACK_ORDERS.unshift({
     // تسلسل إضافي: طلبان في نفس الملّي ثانية لا يتشاركان المعرّف
@@ -259,7 +261,7 @@ export function addLocalOrder(input: {
     customer_name: input.customer_name,
     service_code: input.service_code,
     branch: input.branch,
-    status: 'paid',
+    status: input.status ?? 'paid',
     driver_id: null,
     driver_name: null,
     total_amount: input.total_amount,

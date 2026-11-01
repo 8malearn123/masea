@@ -1,3 +1,4 @@
+import { getQuoteRecord } from '@/shared/lib/quotesLedger';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -227,6 +228,17 @@ export default function ContractDetails() {
                 'داخلي (النظام)'
               )}
             </Row>
+            {contract.quote_id && (
+              <Row label="عرض السعر">
+                <span className="num text-navy">
+                  {(() => {
+                    const q = getQuoteRecord(contract.quote_id);
+                    return q ? `QT-${q.quote_no}` : 'مرتبط بعرض سعر مقبول';
+                  })()}
+                </span>
+              </Row>
+            )}
+            {contract.notes && <Row label="ملاحظات">{contract.notes}</Row>}
             {contract.terms_accepted_at && (
               <Row label="تاريخ موافقة العميل">{dateTimeAr(contract.terms_accepted_at)}</Row>
             )}

@@ -120,6 +120,11 @@ export const contractSchema = z.object({
   // when they accepted, and the order (service_requests.request_no) it came from.
   terms_accepted_at: z.string().nullable().default(null),
   source_request_no: z.string().nullable().default(null),
+  // Lead → quote → contract (0062): the accepted quote it came from + registration extras.
+  quote_id: z.string().nullable().optional(),
+  issue_date: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  alert_days_before: z.number().int().nonnegative().nullable().optional(),
 });
 export type Contract = z.infer<typeof contractSchema>;
 

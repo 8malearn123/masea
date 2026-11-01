@@ -26,6 +26,7 @@ export function Money({
 
 export const QUOTE_TONE: Record<QuoteStatus, BadgeTone> = {
   draft: 'neutral',
+  pending_approval: 'teal',
   sent: 'navy',
   accepted: 'success',
   rejected: 'danger',

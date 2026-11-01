@@ -119,7 +119,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
   },
   sales: {
     contracts: 'edit',
-    leads: 'full',
+    // يرسل العرض للاعتماد — الاعتماد (approve) لمدير الفرع (0062)
+    leads: ['view', 'create', 'edit', 'delete', 'export'],
     pricing: 'edit',
     call_center: 'view',
     loyalty: 'edit',

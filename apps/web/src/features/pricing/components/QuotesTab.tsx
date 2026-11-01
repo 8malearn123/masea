@@ -72,7 +72,14 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 
 const PAGE = 10;
-const STATUSES: QuoteStatus[] = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
+const STATUSES: QuoteStatus[] = [
+  'draft',
+  'pending_approval',
+  'sent',
+  'accepted',
+  'rejected',
+  'expired',
+];
 const EVENT_LABEL: Record<QuoteEvent['type'], string> = {
   created: 'أُنشئ العرض',
   whatsapp_opened: 'فُتح رابط واتساب (لا يعني الاستلام)',
@@ -83,6 +90,8 @@ const EVENT_LABEL: Record<QuoteEvent['type'], string> = {
   expired: 'انتهاء الصلاحية',
   version_created: 'إنشاء نسخة جديدة',
   converted: 'تحويل إلى عقد',
+  submitted_for_approval: 'إرسال لاعتماد مدير الفرع',
+  approved: 'اعتماد مدير الفرع',
 };
 const RANGES = [
   { value: 'all', label: 'كل الفترات' },

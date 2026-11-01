@@ -33,6 +33,7 @@ import type { QuoteStatus } from '@/shared/lib/quotesLedger';
 
 export const QUOTE_STATUS_LABEL: Record<QuoteStatus, string> = {
   draft: 'مسودة',
+  pending_approval: 'بانتظار الموافقة',
   sent: 'مُرسل',
   accepted: 'مقبول',
   rejected: 'مرفوض',

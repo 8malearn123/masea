@@ -7,7 +7,13 @@
  * `base_amount` keeps its existing meaning (amount BEFORE VAT, i.e. the net);
  * the full breakdown lives in the immutable `snapshot`.
  */
-export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+export type QuoteStatus =
+  | 'draft'
+  | 'pending_approval' // خصم فوق الحد المُدار ← اعتماد مدير الفرع قبل الإرسال (0062)
+  | 'sent'
+  | 'accepted'
+  | 'rejected'
+  | 'expired';
 export type QuoteEventType =
   | 'created'
   | 'whatsapp_opened'
@@ -17,7 +23,9 @@ export type QuoteEventType =
   | 'rejected'
   | 'expired'
   | 'version_created'
-  | 'converted';
+  | 'converted'
+  | 'submitted_for_approval'
+  | 'approved';
 
 export interface QuoteEvent {
   id: string;
@@ -51,6 +59,33 @@ export interface QuoteRecord {
   decided_at: string | null;
   parent_id: string | null; // new version of …
   snapshot: unknown | null; // PriceSnapshot (pricing) — null for legacy rows
+  /* ---- lead → quote → contract (0062); absent on calculator quotes ---- */
+  customer_id?: string | null;
+  worker_profile_id?: string | null;
+  worker_name?: string | null;
+  start_date?: string | null;
+  duration_unit?: 'day' | 'week' | 'month' | 'year' | 'hour' | null;
+  duration_count?: number | null;
+  end_date?: string | null;
+  gross_amount?: number | null; // before the discount
+  discount_amount?: number;
+  coupon_code?: string | null;
+  terms?: string[];
+  request_id?: string | null; // the order created on conversion
+  branch?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+}
+
+/** Discount share of the price above the managed threshold → manager approval. */
+export function quoteNeedsApproval(
+  q: Pick<QuoteRecord, 'gross_amount' | 'base_amount' | 'discount_amount' | 'approved_at'>,
+  thresholdPct: number,
+): boolean {
+  const gross = q.gross_amount ?? q.base_amount;
+  const discount = q.discount_amount ?? 0;
+  if (q.approved_at || gross <= 0 || discount <= 0) return false;
+  return (discount / gross) * 100 > thresholdPct;
 }
 
 const iso = (days: number) => new Date(Date.now() + days * 86400000).toISOString();
@@ -168,8 +203,8 @@ export function effectiveStatus(
   q: Pick<QuoteRecord, 'status' | 'valid_until'>,
   today = new Date().toISOString().slice(0, 10),
 ): QuoteStatus {
-  if ((q.status === 'draft' || q.status === 'sent') && q.valid_until && q.valid_until < today)
-    return 'expired';
+  const open = q.status === 'draft' || q.status === 'pending_approval' || q.status === 'sent';
+  if (open && q.valid_until && q.valid_until < today) return 'expired';
   return q.status;
 }
 
@@ -220,7 +255,8 @@ export function addQuoteRecord(input: NewQuoteRecord, actor: string): QuoteRecor
 }
 
 const ALLOWED: Record<QuoteStatus, QuoteStatus[]> = {
-  draft: ['sent', 'accepted', 'rejected'],
+  draft: ['sent', 'pending_approval', 'accepted', 'rejected'],
+  pending_approval: ['sent', 'rejected'], // sent = اعتماد المدير
   sent: ['accepted', 'rejected'],
   accepted: [],
   rejected: [],
@@ -230,36 +266,71 @@ export function canMoveTo(from: QuoteStatus, to: QuoteStatus): boolean {
   return ALLOWED[from].includes(to);
 }
 
-/** Status change with lifecycle guard + event. */
+export interface QuoteApprovalPolicy {
+  /** managed threshold (app_config.quote_approval_discount_pct) */
+  thresholdPct: number;
+  /** the actor holds leads.approve */
+  canApprove: boolean;
+}
+
+/** Status change with lifecycle guard + event — same rules as set_quote_status (0062). */
 export function setQuoteRecordStatus(
   id: string,
   to: QuoteStatus,
   actor: string,
   note?: string,
+  policy?: QuoteApprovalPolicy,
 ): QuoteRecord {
   const q = QUOTES.find((x) => x.id === id);
   if (!q) throw new Error('العرض غير موجود');
   const from = effectiveStatus(q);
   if (from === to) return clone(q);
   if (!canMoveTo(from, to)) throw new Error(`لا يمكن نقل العرض من «${from}» إلى «${to}»`);
+  if (
+    policy &&
+    from === 'draft' &&
+    (to === 'sent' || to === 'accepted') &&
+    quoteNeedsApproval(q, policy.thresholdPct)
+  )
+    throw new Error('الخصم يتجاوز الحد المسموح — أرسل العرض لاعتماد مدير الفرع أولاً');
+  if (policy && from === 'pending_approval' && !policy.canApprove)
+    throw new Error('اعتماد العرض أو رفضه لمدير الفرع');
   q.status = to;
   const now = new Date().toISOString();
   if (to === 'sent') q.sent_at = now;
   if (to === 'accepted' || to === 'rejected') q.decided_at = now;
+  if (from === 'pending_approval' && to === 'sent') {
+    q.approved_by = actor;
+    q.approved_at = now;
+    addEvent(id, 'approved', actor, note);
+  }
   addEvent(
     id,
-    to === 'sent' ? 'marked_sent' : to === 'accepted' ? 'accepted' : 'rejected',
+    to === 'sent'
+      ? 'marked_sent'
+      : to === 'pending_approval'
+        ? 'submitted_for_approval'
+        : to === 'accepted'
+          ? 'accepted'
+          : 'rejected',
     actor,
     note,
   );
   return clone(q);
 }
 
-export function linkQuoteContract(id: string, contractId: string, actor: string): void {
+export function linkQuoteContract(
+  id: string,
+  contractId: string,
+  actor: string,
+  extra?: { customer_id?: string | null; request_id?: string | null; contract_no?: string | null },
+): void {
   const q = QUOTES.find((x) => x.id === id);
   if (!q) return;
   q.contract_id = contractId;
-  addEvent(id, 'converted', actor, contractId);
+  if (extra?.customer_id) q.customer_id = extra.customer_id;
+  if (extra?.request_id) q.request_id = extra.request_id;
+  addEvent(id, 'converted', actor, extra?.contract_no ?? contractId);
 }
 
 /**

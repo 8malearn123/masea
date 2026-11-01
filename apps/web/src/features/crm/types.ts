@@ -8,7 +8,12 @@ export type ServiceCode =
   | 'daily_rental'
   | 'sponsorship_transfer';
 export type ActivityKind = 'call' | 'whatsapp' | 'sms' | 'visit' | 'note';
-export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+import type { QuoteStatus } from '@/shared/lib/quotesLedger';
+import { QUOTE_STATUS_LABEL } from '@/features/pricing/types';
+
+export type { QuoteStatus };
+/** One label set for the quote lifecycle (pricing + CRM). */
+export { QUOTE_STATUS_LABEL };
 
 export interface Lead {
   id: string;
@@ -22,6 +27,10 @@ export interface Lead {
   customer_id: string | null;
   created_at: string;
   updated_at: string;
+  /** branch name (demo) / joined branches.city — branch-scoped like the DB */
+  branch?: string | null;
+  city?: string | null;
+  email?: string | null;
 }
 
 export interface LeadActivity {
@@ -116,16 +125,9 @@ export const ACTIVITY_LABEL: Record<ActivityKind, string> = {
   note: 'ملاحظة',
 };
 
-export const QUOTE_STATUS_LABEL: Record<QuoteStatus, string> = {
-  draft: 'مسودة',
-  sent: 'مُرسل',
-  accepted: 'مقبول',
-  rejected: 'مرفوض',
-  expired: 'منتهٍ',
-};
-
 export const QUOTE_STATUS_TONE: Record<QuoteStatus, BadgeTone> = {
   draft: 'neutral',
+  pending_approval: 'teal',
   sent: 'gold',
   accepted: 'success',
   rejected: 'danger',

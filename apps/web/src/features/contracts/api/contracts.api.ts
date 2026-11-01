@@ -42,6 +42,7 @@ import type {
   UpdateDraftInput,
 } from '@/features/contracts/types';
 import { branchLabel } from '@/features/contracts/types';
+import type { QuoteRecord } from '@/shared/lib/quotesLedger';
 
 /** Identity + signature payload captured when signing a contract. */
 export interface SignPayload {
@@ -797,6 +798,82 @@ export function contractFromAcceptedTerms(input: {
       created_at: input.terms_accepted_at,
     },
   ];
+  return { ...item };
+}
+
+/**
+ * عرض سعر مقبول ← مسودة عقد بنفس مبالغ العرض المجمّدة (لا إعادة تسعير بين العرض
+ * والعقد) وبنوده = شروط العرض. مع قاعدة البيانات: `convert_quote_to_contract`
+ * (0062) ينشئ العميل والعقد والطلب التشغيلي ويربطها في معاملة واحدة. في الوضع
+ * التجريبي يُسجَّل العقد في مخزن العرض، والربط يتولّاه المستدعي (crm.api).
+ */
+export async function createContractFromQuote(
+  q: QuoteRecord,
+  opts: { branch: string | null; customer_name: string },
+): Promise<ContractListItem> {
+  if (!isDemoMode() && !isDemoId(q.id)) {
+    const { data, error } = await supabase.rpc('convert_quote_to_contract', {
+      p_quote_id: q.id,
+      p_branch: opts.branch,
+    });
+    if (error) throw new Error(`تعذّر إنشاء العقد: ${rpcError(error.message).message}`);
+    const row = data as Contract | null;
+    if (!row?.id) throw new Error('تعذّر إنشاء العقد: لم يُرجِع الخادم العقد');
+    return { ...row, customer_name: opts.customer_name, worker_name: q.worker_name ?? null };
+  }
+  const branch = q.branch ?? opts.branch;
+  if (!branch) throw new Error('حدّد فرع العقد');
+  const id = `local-${Date.now()}-${++localSeq}`;
+  const start = q.start_date ?? new Date().toISOString().slice(0, 10);
+  const snap = q.snapshot as { inputs?: { promotion_id?: string | null } } | null;
+  const promotionId = (q.discount_amount ?? 0) > 0 ? (snap?.inputs?.promotion_id ?? null) : null;
+  const item: ContractListItem = {
+    id,
+    contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    service_code: q.service_code as ContractListItem['service_code'],
+    template_id: null,
+    customer_id: q.customer_id ?? `cust-${id}`,
+    worker_id: null,
+    branch_id: branch,
+    created_by: null,
+    start_date: start,
+    end_date: q.end_date ?? null,
+    base_amount: q.base_amount,
+    vat_amount: q.vat_amount,
+    total_amount: q.total_amount,
+    gross_amount: q.gross_amount ?? q.base_amount,
+    discount_amount: q.discount_amount ?? 0,
+    promotion_id: promotionId,
+    amount_paid: 0,
+    status: 'draft',
+    version: 1,
+    parent_contract_id: null,
+    signed_at: null,
+    musaned_contract_no: null,
+    created_at: nowIso(),
+    customer_name: opts.customer_name,
+    worker_name: q.worker_name ?? null,
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
+    quote_id: q.id,
+    issue_date: nowIso().slice(0, 10),
+    notes: q.notes,
+  };
+  FALLBACK.unshift(item);
+  if (promotionId) countPromotionUse(promotionId);
+  FALLBACK_CLAUSES[id] = (q.terms ?? []).map((body, i) => ({
+    id: `cl-${id}-${i}`,
+    contract_id: id,
+    sort_order: i,
+    body,
+  }));
+  seedDraftHistory(item);
   return { ...item };
 }
 

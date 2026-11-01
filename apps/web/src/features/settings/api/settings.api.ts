@@ -88,6 +88,14 @@ const CONFIG: ConfigItem[] = [
     sort_order: 3,
   },
   {
+    key: 'quote_approval_discount_pct',
+    label_ar: 'عرض السعر يحتاج اعتماد مدير الفرع إذا تجاوز الخصم',
+    grp: 'المبيعات',
+    value: 10,
+    unit: '٪',
+    sort_order: 10,
+  },
+  {
     key: 'late_grace_days',
     label_ar: 'مهلة سماح التأخير',
     grp: 'الغرامات',
