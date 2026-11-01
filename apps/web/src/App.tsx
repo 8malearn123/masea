@@ -41,6 +41,8 @@ const RatingBoard = lazy(() => import('@/features/rating/components/RatingBoard'
 const TargetsBoard = lazy(() => import('@/features/targets/components/TargetsBoard'));
 const AuditLogBoard = lazy(() => import('@/features/audit/components/AuditLogBoard'));
 const SalesBoard = lazy(() => import('@/features/sales/components/SalesBoard'));
+const CustomersBoard = lazy(() => import('@/features/customers/components/CustomersBoard'));
+const CustomerProfile = lazy(() => import('@/features/customers/components/CustomerProfile'));
 const AccountingBoard = lazy(() => import('@/features/accounting/components/AccountingBoard'));
 const ReportsBoard = lazy(() => import('@/features/reports/components/ReportsBoard'));
 const RbacBoard = lazy(() => import('@/features/rbac/components/RbacBoard'));
@@ -319,6 +321,22 @@ export default function App() {
               element={
                 <RequirePerm module="rbac" action="manage">
                   <RbacBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="customers"
+              element={
+                <RequirePerm module="customers">
+                  <CustomersBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="customers/:id"
+              element={
+                <RequirePerm module="customers">
+                  <CustomerProfile />
                 </RequirePerm>
               }
             />

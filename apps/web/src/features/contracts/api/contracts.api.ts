@@ -73,6 +73,8 @@ function mk(o: {
   visa_number?: string | null;
   expected_arrival_date?: string | null;
   flight_no?: string | null;
+  /** the same customer across several contracts (purchase history) */
+  customer_id?: string;
 }): ContractListItem {
   const vat = Math.round(o.base_amount * 0.15 * 100) / 100;
   const total = o.base_amount + vat;
@@ -81,7 +83,7 @@ function mk(o: {
     contract_no: o.contract_no,
     service_code: o.service_code,
     template_id: null,
-    customer_id: `cust-${o.id}`,
+    customer_id: o.customer_id ?? `cust-${o.id}`,
     worker_id: null,
     branch_id: o.branch,
     created_by: null,
@@ -264,6 +266,49 @@ const FALLBACK: ContractListItem[] = [
     customer_name: 'ريم المالكي',
     branch: 'جازان',
     start_date: '2026-01-20',
+  }),
+  // purchase history (2025) — repeat customers for the CRM
+  mk({
+    id: '00010',
+    contract_no: 'MAS-2025-00142',
+    service_code: 'recruitment',
+    status: 'completed',
+    base_amount: 15000,
+    amount_paid: 17250,
+    customer_name: 'محمد الأحمدي',
+    customer_id: 'cust-00001',
+    branch: 'نجران',
+    start_date: '2025-03-04',
+    end_date: '2025-09-03',
+    signed_at: '2025-03-04T10:00:00Z',
+  }),
+  mk({
+    id: '00011',
+    contract_no: 'MAS-2025-00187',
+    service_code: 'monthly_rental',
+    status: 'completed',
+    base_amount: 7500,
+    amount_paid: 8625,
+    customer_name: 'نورة الشهري',
+    customer_id: 'cust-00004',
+    branch: 'نجران',
+    start_date: '2025-05-01',
+    end_date: '2025-07-31',
+    signed_at: '2025-04-28T12:00:00Z',
+  }),
+  mk({
+    id: '00012',
+    contract_no: 'MAS-2025-00203',
+    service_code: 'monthly_rental',
+    status: 'completed',
+    base_amount: 6600,
+    amount_paid: 7590,
+    customer_name: 'مشعل الصيعري',
+    customer_id: 'cust-00009',
+    branch: 'نجران',
+    start_date: '2025-06-10',
+    end_date: '2025-09-09',
+    signed_at: '2025-06-08T09:00:00Z',
   }),
 ];
 

@@ -248,6 +248,7 @@ export const MODULES: ModuleNav[] = [
   { module: 'gps', label: 'التتبّع GPS', to: '/gps' },
   { module: 'pricing', label: 'التسعير', to: '/pricing' },
   { module: 'payments', label: 'المدفوعات', to: '/payments' },
+  { module: 'customers', label: 'العملاء', to: '/customers' },
   { module: 'call_center', label: 'مركز الاتصال', to: '/call-center' },
   { module: 'loyalty', label: 'الولاء والتسويق', to: '/loyalty' },
   { module: 'rating', label: 'التقييم', to: '/rating' },
