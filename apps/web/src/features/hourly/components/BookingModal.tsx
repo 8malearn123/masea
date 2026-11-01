@@ -9,6 +9,8 @@ import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { today } from '@/features/requests/lib/period';
 import { calculate, EMPTY_CALC } from '@/features/pricing/lib/engine';
 import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
+import { usePromotions } from '@/features/pricing/hooks/usePromotions';
+import { findByCode } from '@/shared/lib/pricing';
 import { useBookHourly, useBusySlots, useHourlyConfig } from '@/features/hourly/hooks/useHourly';
 import { conflictFor, hoursBetween, validateHours } from '@/features/hourly/lib/hourly';
 
@@ -54,6 +56,7 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
+  const [coupon, setCoupon] = useState('');
   const [branch, setBranch] = useState(meta?.crossBranch ? '' : (branchLabel ?? ''));
 
   const hoursError = validateHours(start, end, cfg);
@@ -70,6 +73,8 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
     }
     return map;
   }, [workers, bookings, date, start, end, cfg]);
+  const { data: promotions = [] } = usePromotions();
+  const promotion = coupon.trim() ? findByCode(promotions, coupon.trim()) : null;
   const price = useMemo(
     () =>
       pcfg && hours > 0
@@ -80,13 +85,21 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
               profession: task,
               quantity: hours,
               branch: branch || null,
+              promotion,
+              couponCode: coupon.trim() || null,
             },
             rules,
             pcfg,
           )
         : null,
-    [pcfg, hours, task, branch, rules],
+    [pcfg, hours, task, branch, rules, promotion, coupon],
   );
+  const couponError =
+    coupon.trim() && !promotion
+      ? 'رمز الكوبون غير صحيح'
+      : price?.promotion && !price.promotion.ok
+        ? price.promotion.reason
+        : null;
   const worker = workers.find((w) => w.id === workerId) ?? null;
   const blocker =
     hoursError ??
@@ -100,7 +113,7 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
             ? 'اسم العميل مطلوب'
             : !/^05\d{8}$/.test(phone.trim())
               ? 'رقم الجوال يبدأ بـ 05 ومكوّن من 10 أرقام'
-              : (price?.blockers[0] ?? null));
+              : (couponError ?? price?.blockers[0] ?? null));
 
   function submit() {
     if (blocker || !worker) return;
@@ -116,6 +129,7 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
         customer_phone: phone,
         address: address.trim() || null,
         notes: notes.trim() || null,
+        promotion_code: coupon.trim() || null,
         branch: branch || null,
       },
       { onSuccess: onDone },
@@ -232,6 +246,14 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
         />
         <Input label="العنوان" value={address} onChange={(e) => setAddress(e.target.value)} />
         <Input label="ملاحظات" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <Input
+          label="كوبون خصم (اختياري)"
+          className="num"
+          placeholder="MAS-REF10-XXXXX"
+          value={coupon}
+          onChange={(e) => setCoupon(e.target.value.toUpperCase())}
+          {...(couponError ? { error: couponError } : {})}
+        />
       </section>
 
       {price && (
@@ -248,8 +270,14 @@ function Body({ onDone, defaultDate }: { onDone: () => void; defaultDate: string
           </div>
           <div className="flex justify-between">
             <span>{hours} ساعات</span>
-            <span className="num">{sar(price.detail.net)}</span>
+            <span className="num">{sar(price.detail.base)}</span>
           </div>
+          {price.detail.discounts > 0 && (
+            <div className="flex justify-between text-red-600">
+              <span>خصم الكوبون ({coupon.trim()})</span>
+              <span className="num">− {sar(price.detail.discounts)}</span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span>ضريبة القيمة المضافة</span>
             <span className="num">{sar(price.detail.vat)}</span>

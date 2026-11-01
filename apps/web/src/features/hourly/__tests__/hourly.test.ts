@@ -174,6 +174,22 @@ describe('hourly bookings (demo mode)', () => {
     ).resolves.toBeTruthy();
   });
 
+  it('a valid coupon discounts the booking and its contract; an unknown one is refused', async () => {
+    signIn('branch_manager');
+    const b = await bookHourly(
+      input({ worker_profile_id: 'w11', worker_name: 'نيلوكا فرناندو', promotion_code: 'FIRST10' }),
+    );
+    expect(b.discount_amount).toBe(16); // 10% of 160
+    const contract = b.contract_id ? await getContract(b.contract_id) : null;
+    expect(contract?.discount_amount).toBe(16);
+    expect(contract?.promotion_id).toBe('pm-1');
+    await expect(
+      bookHourly(
+        input({ worker_profile_id: 'w12', worker_name: 'راجو كومارا', promotion_code: 'NOPE-1' }),
+      ),
+    ).rejects.toThrow(/رمز الكوبون غير صحيح/);
+  });
+
   it('a branch manager sees the bookings of their branch only', async () => {
     const acc = signIn('branch_manager');
     const rows = await listBookings();

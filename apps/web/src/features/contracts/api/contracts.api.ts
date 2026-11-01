@@ -858,6 +858,7 @@ export function addDemoHourlyContract(input: {
   amounts: { gross: number; discount: number; net: number; vat: number; total: number };
   clauses: string[];
   notes: string | null;
+  promotion_id?: string | null;
 }): ContractListItem {
   const id = `local-${Date.now()}-${++localSeq}`;
   const item: ContractListItem = {
@@ -876,7 +877,7 @@ export function addDemoHourlyContract(input: {
     total_amount: input.amounts.total,
     gross_amount: input.amounts.gross,
     discount_amount: input.amounts.discount,
-    promotion_id: null,
+    promotion_id: input.promotion_id ?? null,
     amount_paid: 0,
     status: 'draft',
     version: 1,

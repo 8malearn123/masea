@@ -9,6 +9,8 @@ import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
 import { scopeToViewerBranch, viewerScope } from '@/lib/branchScope';
 import { recordAudit } from '@/shared/lib/auditTrail';
 import { listPricingRules, getPricingConfig } from '@/features/pricing/api/pricing.api';
+import { countPromotionUse, listPromotions } from '@/features/pricing/api/promotions.api';
+import { findByCode } from '@/shared/lib/pricing';
 import { calculate, EMPTY_CALC } from '@/features/pricing/lib/engine';
 import { addDemoHourlyContract, getTemplates } from '@/features/contracts/api/contracts.api';
 import { renderClauses } from '@/features/contracts/lib/clauses';
@@ -64,6 +66,8 @@ export interface BookingInput {
   address: string | null;
   notes: string | null;
   branch: string | null;
+  /** a campaign / referral coupon — validated by calc_price like everywhere */
+  promotion_code?: string | null;
 }
 
 export async function getHourlyConfig(): Promise<HourlyConfig> {
@@ -310,11 +314,15 @@ export async function bookHourly(input: BookingInput): Promise<HourlyBooking> {
     );
 
   const hours = hoursBetween(input.start_time, input.end_time);
-  const [rules, pcfg, templates] = await Promise.all([
+  const [rules, pcfg, templates, promos] = await Promise.all([
     listPricingRules(),
     getPricingConfig(),
     getTemplates(),
+    listPromotions(),
   ]);
+  const code = input.promotion_code?.trim() || null;
+  const promotion = code ? findByCode(promos, code) : null;
+  if (code && !promotion) throw new Error('رمز الكوبون غير صحيح');
   const price = calculate(
     {
       ...EMPTY_CALC,
@@ -322,11 +330,14 @@ export async function bookHourly(input: BookingInput): Promise<HourlyBooking> {
       profession: input.profession,
       quantity: hours,
       branch,
+      promotion,
+      couponCode: code,
     },
     rules,
     pcfg,
   );
   if (price.blockers.length) throw new Error(price.blockers.join(' · '));
+  if (promotion && price.detail.discounts > 0) countPromotionUse(promotion.id);
   const template = templates.find((t) => t.service_code === 'hourly_rental' && t.is_active);
   const contract = addDemoHourlyContract({
     customer_name: input.customer_name.trim(),
@@ -347,6 +358,7 @@ export async function bookHourly(input: BookingInput): Promise<HourlyBooking> {
         })
       : [],
     notes: input.notes,
+    promotion_id: price.detail.discounts > 0 ? (promotion?.id ?? null) : null,
   });
   addLocalOrder({
     request_no: `REQ-H${Date.now().toString(36).toUpperCase().slice(-7)}`,
