@@ -69,6 +69,7 @@ const SERVICE_LABEL: Record<ServiceCode, string> = {
   monthly_rental: 'تأجير شهري',
   daily_rental: 'خدمة يومية',
   sponsorship_transfer: 'نقل كفالة',
+  hourly_rental: 'تأجير بالساعة',
 };
 
 /** Demo numbers wired to the directory — clickable shortcuts for agents. */

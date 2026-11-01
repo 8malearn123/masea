@@ -13,6 +13,7 @@ import { scopeToViewerBranch, viewerScope } from '@/lib/branchScope';
 import { recordAudit } from '@/shared/lib/auditTrail';
 import { createContractFromQuote } from '@/features/contracts/api/contracts.api';
 import { addLocalOrder } from '@/features/orders/api/orders.api';
+import { demoBookingForQuote } from '@/features/hourly/api/hourly.api';
 import type { PricingConfig } from '@/shared/lib/pricing';
 import type { CalcInput } from '@/features/pricing/lib/engine';
 import type { PricingRule } from '@/features/pricing/types';
@@ -520,11 +521,20 @@ export async function convertQuote(
   if (q.contract_id) throw new Error('هذا العرض مرتبط بعقد مسبقًا');
   if (q.status !== 'accepted') throw new Error('لا يُحوَّل إلى عقد إلا العرض المقبول من العميل');
   const lead = q.lead_id ? DEMO_LEADS.find((l) => l.id === q.lead_id) : undefined;
+  const demo = isDemoMode() || isDemoId(q.id);
+  // hourly: the worker must still be free — checked before anything is created
+  if (demo && q.service_code === 'hourly_rental') await demoBookingForQuote(q, null);
   const contract = await createContractFromQuote(q, {
     branch: q.branch ?? lead?.branch ?? viewerScope().branch,
     customer_name: q.customer_name ?? lead?.full_name ?? 'عميل',
   });
-  if (isDemoMode() || isDemoId(q.id)) {
+  if (demo) {
+    if (q.service_code === 'hourly_rental')
+      await demoBookingForQuote(q, {
+        id: contract.id,
+        contract_no: contract.contract_no,
+        branch: contract.branch_id,
+      });
     const requestNo = `REQ-${Date.now().toString(36).toUpperCase().slice(-8)}`;
     addLocalOrder({
       request_no: requestNo,

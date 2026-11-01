@@ -42,6 +42,7 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   loyalty_config: 'إعدادات الولاء',
   sales: 'المبيعات',
   sale_notes: 'ملاحظات المبيعات',
+  worker_bookings: 'حجوزات التأجير بالساعة',
 };
 
 export const AUDIT_ACTION_LABEL: Record<string, string> = {

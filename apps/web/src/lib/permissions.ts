@@ -27,7 +27,8 @@ export type ModuleCode =
   | 'settings'
   | 'customers' // CRM العملاء (0061)
   | 'sales_ops' // المبيعات الفعلية (0061)
-  | 'audit'; // سجل التدقيق (0061)
+  | 'audit' // سجل التدقيق (0061)
+  | 'hourly'; // التأجير بالساعة (0065)
 
 export type ActionCode = 'view' | 'create' | 'edit' | 'delete' | 'approve' | 'export' | 'manage';
 
@@ -73,6 +74,7 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     customers: 'full',
     sales_ops: ['view', 'edit', 'approve', 'export'],
     audit: ['view', 'export'],
+    hourly: 'full',
   },
   operations_manager: {
     contracts: 'full',
@@ -95,6 +97,7 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     customers: 'full',
     sales_ops: ['view', 'edit', 'approve', 'export'],
     audit: ['view', 'export'],
+    hourly: 'full',
   },
   branch_manager: {
     // الرأس التشغيلي لفرعه فقط — يملك العمليات، لا المال ولا النظام.
@@ -115,6 +118,7 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     customers: 'full', // عملاء فرعه فقط (RLS)
     sales_ops: ['view', 'edit', 'approve', 'export'],
     audit: 'view', // سجل تدقيق فرعه
+    hourly: 'full', // حجوزات فرعه
     // محجوب: accounting (المال) + rbac (النظام)
   },
   sales: {
@@ -130,6 +134,7 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     targets: 'view',
     customers: 'edit', // إنشاء وتعديل — الحذف للمدير
     sales_ops: 'view',
+    hourly: 'edit',
   },
   call_center: {
     contracts: 'view',
@@ -142,6 +147,7 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     rating: 'edit',
     targets: 'view',
     customers: ['view', 'create'],
+    hourly: ['view', 'create'],
   },
   // السائق يرى رحلاته المُسندة فقط ويحدّث حالتها، ويتتبّع موقعه — لا لوحة شرف ولا أسطول.
   driver: { gps: 'edit', orders: 'edit' },
@@ -229,7 +235,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     label: 'خدمة العملاء',
     modules: ['customers', 'call_center', 'loyalty', 'rating'],
   },
-  { key: 'ops', label: 'العمليات والميدان', modules: ['orders', 'gps', 'housing'] },
+  { key: 'ops', label: 'العمليات والميدان', modules: ['orders', 'hourly', 'gps', 'housing'] },
   { key: 'people', label: 'الموارد البشرية', modules: ['hr'] },
   {
     key: 'finance',
@@ -245,6 +251,7 @@ export const MODULES: ModuleNav[] = [
   { module: 'leads', label: 'العملاء المحتملون', to: '/leads' },
   { module: 'sales_ops', label: 'المبيعات', to: '/sales' },
   { module: 'orders', label: 'الطلبات والسائقون', to: '/orders' },
+  { module: 'hourly', label: 'التأجير بالساعة', to: '/hourly' },
   { module: 'gps', label: 'التتبّع GPS', to: '/gps' },
   { module: 'pricing', label: 'التسعير', to: '/pricing' },
   { module: 'payments', label: 'المدفوعات', to: '/payments' },

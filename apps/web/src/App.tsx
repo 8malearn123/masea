@@ -41,6 +41,7 @@ const RatingBoard = lazy(() => import('@/features/rating/components/RatingBoard'
 const TargetsBoard = lazy(() => import('@/features/targets/components/TargetsBoard'));
 const AuditLogBoard = lazy(() => import('@/features/audit/components/AuditLogBoard'));
 const SalesBoard = lazy(() => import('@/features/sales/components/SalesBoard'));
+const HourlyBoard = lazy(() => import('@/features/hourly/components/HourlyBoard'));
 const CustomersBoard = lazy(() => import('@/features/customers/components/CustomersBoard'));
 const CustomerProfile = lazy(() => import('@/features/customers/components/CustomerProfile'));
 const AccountingBoard = lazy(() => import('@/features/accounting/components/AccountingBoard'));
@@ -337,6 +338,14 @@ export default function App() {
               element={
                 <RequirePerm module="customers">
                   <CustomerProfile />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="hourly"
+              element={
+                <RequirePerm module="hourly">
+                  <HourlyBoard />
                 </RequirePerm>
               }
             />

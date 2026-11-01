@@ -46,4 +46,5 @@ export const SERVICE_LABEL: Record<ContractServiceCode, string> = {
   monthly_rental: 'تأجير شهري',
   daily_rental: 'تأجير يومي',
   sponsorship_transfer: 'نقل كفالة',
+  hourly_rental: 'تأجير بالساعة',
 };

@@ -72,6 +72,8 @@ export interface QuoteRecord {
   coupon_code?: string | null;
   terms?: string[];
   request_id?: string | null; // the order created on conversion
+  start_time?: string | null; // hourly rental: arrival HH:MM (0065)
+  end_time?: string | null; // hourly rental: leave HH:MM
   branch?: string | null;
   approved_by?: string | null;
   approved_at?: string | null;

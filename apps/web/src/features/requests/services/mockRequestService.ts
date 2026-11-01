@@ -125,7 +125,7 @@ export function createMockRequestService(): RequestService {
     addLocalOrder({
       request_no: requestNo,
       customer_name: draft.customerName.trim() || null,
-      service_code: draft.service as ServiceCode,
+      service_code: draft.service,
       branch: draft.branch || null,
       total_amount: price.total,
       contract,

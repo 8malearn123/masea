@@ -1,3 +1,4 @@
+import { BRANCHES_AR } from '@/lib/funnel';
 import { Fragment, useMemo, useState } from 'react';
 import {
   ChevronDown,
@@ -49,8 +50,10 @@ const SERVICE_UNIT: Record<string, string> = {
   monthly_rental: 'month',
   daily_rental: 'day',
   sponsorship_transfer: 'fixed',
+  hourly_rental: 'hour',
 };
-const keyOf = (r: PricingRule) => r.nationality ?? r.profession ?? 'عام';
+const keyOf = (r: PricingRule) =>
+  `${r.nationality ?? r.profession ?? 'عام'}${r.branch_name ? ` — فرع ${r.branch_name}` : ''}`;
 
 export function PriceListTab() {
   const { can, fullName } = usePermissions();
@@ -504,7 +507,9 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
   const [key, setKey] = useState('');
   const [base, setBase] = useState(0);
   const [min, setMin] = useState<number | null>(null);
-  const isDaily = service === 'daily_rental';
+  const [branch, setBranch] = useState('');
+  // daily and hourly rentals are priced by task, the rest by nationality
+  const isDaily = service === 'daily_rental' || service === 'hourly_rental';
   const keyOptions: readonly string[] =
     service === 'sponsorship_transfer' ? [] : isDaily ? TASK_TYPES : NATIONALITIES;
   const valid =
@@ -532,6 +537,7 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
                     duration_unit: SERVICE_UNIT[service] ?? 'fixed',
                     base_price: base,
                     min_price: min,
+                    branch: branch || null,
                   },
                   actor: fullName,
                 },
@@ -571,8 +577,18 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
             ]}
           />
         )}
+        <Select
+          label="الفرع"
+          value={branch}
+          onChange={(e) => setBranch(e.target.value)}
+          options={[
+            { value: '', label: 'كل الفروع (السعر العام)' },
+            ...BRANCHES_AR.map((b) => ({ value: b, label: `فرع ${b} فقط` })),
+          ]}
+        />
         <p className="text-xs text-purple">
           وحدة التسعير: {UNIT_LABEL[SERVICE_UNIT[service] ?? 'fixed']}
+          {branch && ' · سعر الفرع يُقدَّم على السعر العام لنفس الخدمة'}
         </p>
         <Input
           label="السعر الأساسي"

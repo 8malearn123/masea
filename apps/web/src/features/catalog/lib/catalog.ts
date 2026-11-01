@@ -20,6 +20,7 @@ export const SERVICE_LABEL: Record<ServiceCode, string> = {
   monthly_rental: 'تأجير شهري',
   daily_rental: 'تأجير يومي',
   sponsorship_transfer: 'نقل كفالة',
+  hourly_rental: 'تأجير بالساعة',
 };
 
 export const SERVICE_UNIT: Record<ServiceCode, string> = {
@@ -27,6 +28,7 @@ export const SERVICE_UNIT: Record<ServiceCode, string> = {
   monthly_rental: '/ شهر',
   daily_rental: '/ يوم',
   sponsorship_transfer: 'لمرة واحدة',
+  hourly_rental: '/ ساعة',
 };
 
 export type Availability = 'available' | 'reserved' | 'soon';

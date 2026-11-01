@@ -24,6 +24,7 @@ import { FlagCircle } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import { fallbackPrice } from '@/shared/lib/pricing';
 import { BRANCHES_AR, type ServiceCode, type WorkerProfile } from '@/lib/funnel';
+import { isServiceCode } from '@/lib/wizardConfig';
 import { useServices } from '@/hooks/useServices';
 import { SERVICE_ICON } from '@/lib/serviceIcons';
 import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
@@ -119,7 +120,9 @@ function priceFrom(code: string): number {
 }
 
 export default function OrderLanding() {
-  const { data: services = [] } = useServices();
+  const { data: allServices = [] } = useServices();
+  // only services the public order wizard has a flow for
+  const services = allServices.filter((x) => isServiceCode(x.code));
   const { data: workers = [] } = useWorkerProfiles(8);
   const { data: allWorkers = [] } = useWorkerProfiles();
   const { data: config = [] } = useConfig();

@@ -23,6 +23,7 @@ export const contractServiceCodeSchema = z.enum([
   'monthly_rental',
   'daily_rental',
   'sponsorship_transfer',
+  'hourly_rental', // 0065 — staff-booked, not in the public wizard
 ]);
 export type ContractServiceCode = z.infer<typeof contractServiceCodeSchema>;
 

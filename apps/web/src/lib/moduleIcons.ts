@@ -3,6 +3,7 @@ import {
   Building2,
   Calculator,
   CreditCard,
+  Clock,
   FileText,
   History,
   Gift,
@@ -43,4 +44,5 @@ export const MODULE_ICON: Record<ModuleCode, LucideIcon> = {
   customers: UserRound,
   sales_ops: Wallet,
   audit: History,
+  hourly: Clock,
 };

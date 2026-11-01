@@ -12,6 +12,10 @@ export interface PricingRule {
   is_active: boolean;
   updated_at?: string | null;
   updated_by?: string | null;
+  /** null = all branches; else the branch this price applies to (0065) */
+  branch_id?: string | null;
+  /** display name of that branch */
+  branch_name?: string | null;
 }
 
 /** A price change (pricing_rule_changes, 0058) — old → new with reason & effective date. */
@@ -69,10 +73,12 @@ export const PRICING_SERVICE_LABEL: Record<string, string> = {
   monthly_rental: 'تأجير شهري',
   daily_rental: 'تأجير يومي',
   sponsorship_transfer: 'نقل كفالة',
+  hourly_rental: 'تأجير بالساعة',
 };
 
 export const UNIT_LABEL: Record<string, string> = {
   fixed: 'مقطوع',
   month: 'شهري',
   day: 'يومي',
+  hour: 'بالساعة',
 };

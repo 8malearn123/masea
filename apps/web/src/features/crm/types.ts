@@ -6,7 +6,8 @@ export type ServiceCode =
   | 'recruitment'
   | 'monthly_rental'
   | 'daily_rental'
-  | 'sponsorship_transfer';
+  | 'sponsorship_transfer'
+  | 'hourly_rental';
 export type ActivityKind = 'call' | 'whatsapp' | 'sms' | 'visit' | 'note';
 import type { QuoteStatus } from '@/shared/lib/quotesLedger';
 import { QUOTE_STATUS_LABEL } from '@/features/pricing/types';
@@ -115,6 +116,7 @@ export const SERVICE_LABEL: Record<ServiceCode, string> = {
   monthly_rental: 'تأجير شهري',
   daily_rental: 'تأجير يومي',
   sponsorship_transfer: 'نقل كفالة',
+  hourly_rental: 'تأجير بالساعة',
 };
 
 export const ACTIVITY_LABEL: Record<ActivityKind, string> = {

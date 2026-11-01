@@ -16,6 +16,8 @@ import { renderClauses } from '@/features/contracts/lib/clauses';
 import { RECRUITMENT_TERM_MONTHS } from '@/features/contracts/lib/contractTerm';
 import { useConfig } from '@/features/settings/hooks/useSettings';
 import { configValue } from '@/features/settings/api/settings.api';
+import { useHourlyConfig } from '@/features/hourly/hooks/useHourly';
+import { hoursBetween, validateHours } from '@/features/hourly/lib/hourly';
 import { useCreateLeadQuote, useQuoteApprovalPolicy } from '@/features/crm/hooks/useCrm';
 import { SERVICE_LABEL, type Lead, type ServiceCode } from '@/features/crm/types';
 
@@ -36,6 +38,7 @@ const QTY_LABEL: Record<ServiceCode, string> = {
   monthly_rental: 'عدد الأشهر',
   daily_rental: 'عدد الأيام',
   sponsorship_transfer: 'عدد العاملات',
+  hourly_rental: 'عدد الساعات',
 };
 
 /**
@@ -82,6 +85,7 @@ function QuoteBuilderBody({
   const { data: workers = [] } = useWorkerProfiles();
   const { data: templates = [] } = useContractTemplates();
   const policy = useQuoteApprovalPolicy();
+  const hourlyCfg = useHourlyConfig();
   const createQuote = useCreateLeadQuote();
 
   const snapInputs = (parent?.snapshot as { inputs?: Partial<CalcInput> } | null)?.inputs;
@@ -95,6 +99,8 @@ function QuoteBuilderBody({
     String(parent?.duration_unit === 'month' && !RENTAL_UNIT[service] ? parent.duration_count : 24),
   );
   const [startDate, setStartDate] = useState(parent?.start_date ?? today());
+  const [startTime, setStartTime] = useState(parent?.start_time?.slice(0, 5) ?? '09:00');
+  const [endTime, setEndTime] = useState(parent?.end_time?.slice(0, 5) ?? '13:00');
   const [workerId, setWorkerId] = useState(parent?.worker_profile_id ?? '');
   const [promotion, setPromotion] = useState<Promotion | null>(null);
   const [coupon, setCoupon] = useState<string | null>(snapInputs?.couponCode ?? null);
@@ -104,13 +110,21 @@ function QuoteBuilderBody({
   const [termsTouched, setTermsTouched] = useState(Boolean(parent?.terms?.length));
 
   const defaultValid = configValue(config, 'quote_validity_days', 7);
-  const isDaily = service === 'daily_rental';
+  const isHourly = service === 'hourly_rental';
+  // daily and hourly rentals are priced by task, not nationality
+  const isDaily = service === 'daily_rental' || isHourly;
   const rentalUnit = RENTAL_UNIT[service] ?? null;
-  const quantity = Math.max(Number(qty) || 0, 0);
-  const durationUnit = rentalUnit ?? 'month';
-  const durationCount = rentalUnit ? quantity : Number(termMonths);
-  const endDate =
-    startDate && durationCount > 0 ? computeEndDate(startDate, durationUnit, durationCount) : '';
+  // hourly: the hours come from the arrival/leave time (managed 4–12 h)
+  const hoursError = isHourly ? validateHours(startTime, endTime, hourlyCfg) : null;
+  const hours = isHourly && !hoursError ? hoursBetween(startTime, endTime) : 0;
+  const quantity = isHourly ? hours : Math.max(Number(qty) || 0, 0);
+  const durationUnit = isHourly ? 'hour' : (rentalUnit ?? 'month');
+  const durationCount = isHourly ? Math.ceil(hours) : rentalUnit ? quantity : Number(termMonths);
+  const endDate = isHourly
+    ? startDate
+    : startDate && durationCount > 0
+      ? computeEndDate(startDate, durationUnit as 'day' | 'month', durationCount)
+      : '';
 
   const nationalityWorkers = useMemo(
     () => workers.filter((w) => isDaily || w.nationality === nationality),
@@ -126,11 +140,12 @@ function QuoteBuilderBody({
     quantity,
     promotion,
     couponCode: coupon,
+    branch: lead.branch ?? null, // a branch-specific price wins (0065)
   };
   const result = useMemo(
     () => (cfg ? calculate(calc, rules, cfg) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [service, nationality, task, quantity, promotion, coupon, rules, cfg],
+    [service, nationality, task, quantity, promotion, coupon, rules, cfg, lead.branch],
   );
 
   // default terms = the active contract template of the service, rendered
@@ -178,6 +193,8 @@ function QuoteBuilderBody({
   const blocker = !result
     ? 'جارٍ تحميل قائمة الأسعار…'
     : (result.blockers[0] ??
+      hoursError ??
+      (isHourly && !worker ? 'اختر العاملة — الحجز بالساعة يحتاج عاملة محددة' : null) ??
       (quantity < 1
         ? 'العدد يجب أن يكون 1 على الأقل'
         : !startDate
@@ -204,6 +221,7 @@ function QuoteBuilderBody({
             duration_count: durationCount,
             end_date: endDate || null,
             terms: terms.map((t) => t.trim()).filter(Boolean),
+            ...(isHourly ? { start_time: startTime, end_time: endTime } : {}),
           },
         },
         rules,
@@ -262,20 +280,46 @@ function QuoteBuilderBody({
           value={workerId}
           onChange={(e) => setWorkerId(e.target.value)}
         />
+        {isHourly ? (
+          <div
+            className={`rounded-xl border px-3 py-2 text-sm ${hoursError ? 'border-red-200 bg-red-50' : 'border-navy-100'}`}
+          >
+            <div className="text-xs text-purple">{QTY_LABEL[service]} (محسوب)</div>
+            <div className="num font-bold text-navy">{hours || '—'}</div>
+          </div>
+        ) : (
+          <Input
+            label={QTY_LABEL[service]}
+            type="number"
+            min={1}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+          />
+        )}
         <Input
-          label={QTY_LABEL[service]}
-          type="number"
-          min={1}
-          value={qty}
-          onChange={(e) => setQty(e.target.value)}
-        />
-        <Input
-          label="تاريخ بداية الخدمة"
+          label={isHourly ? 'تاريخ الحجز' : 'تاريخ بداية الخدمة'}
           type="date"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
         />
-        {rentalUnit ? (
+        {isHourly ? (
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              label="ساعة الوصول"
+              type="time"
+              step={hourlyCfg.slotMinutes * 60}
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+            />
+            <Input
+              label="ساعة الانصراف"
+              type="time"
+              step={hourlyCfg.slotMinutes * 60}
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+            />
+          </div>
+        ) : rentalUnit ? (
           <div className="rounded-xl border border-navy-100 px-3 py-2 text-sm">
             <div className="text-xs text-purple">تاريخ النهاية (محسوب)</div>
             <div className="num font-medium text-navy">{endDate || '—'}</div>

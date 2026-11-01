@@ -55,6 +55,16 @@ const FALLBACK: PricingRule[] = [
   rule('daily_rental', null, 'طبخ', 'day', 220, 200),
   rule('daily_rental', null, 'رعاية', 'day', 200, 180),
   rule('sponsorship_transfer', null, null, 'fixed', 2000, 1800),
+  // hourly rental (0065) — per hour; Najran has its own cleaning rate
+  rule('hourly_rental', null, null, 'hour', 45, 40),
+  rule('hourly_rental', null, 'تنظيف', 'hour', 40, 36),
+  rule('hourly_rental', null, 'طبخ', 'hour', 50, 45),
+  rule('hourly_rental', null, 'رعاية', 'hour', 55, 50),
+  {
+    ...rule('hourly_rental', null, 'تنظيف', 'hour', 38, 34),
+    branch_id: 'نجران',
+    branch_name: 'نجران',
+  },
 ];
 
 /** All rules incl. disabled (price-list management). */
@@ -63,9 +73,19 @@ export async function listAllPricingRules(): Promise<PricingRule[]> {
     const { data, error } = await supabase
       .from('pricing_rules')
       .select(
-        'id, service_code, nationality, profession, duration_unit, base_price, min_price, is_active, updated_at',
+        'id, service_code, nationality, profession, duration_unit, base_price, min_price, is_active, updated_at, branch_id, branches(city)',
       );
-    if (!error && data && data.length > 0) return data as PricingRule[];
+    if (!error && data && data.length > 0)
+      return (
+        data as unknown as (PricingRule & { branches: { city: string | null } | null })[]
+      ).map(
+        // the UI resolves prices by branch NAME (same as demo rows); writes use the rule id
+        ({ branches, ...r }) => ({
+          ...r,
+          branch_id: r.branch_id ? (branches?.city ?? r.branch_id) : null,
+          branch_name: branches?.city ?? null,
+        }),
+      );
   } catch {
     /* fall through */
   }
@@ -156,6 +176,8 @@ export interface NewRuleInput {
   duration_unit: string;
   base_price: number;
   min_price: number | null;
+  /** branch name for a branch-specific price; null = all branches */
+  branch?: string | null;
 }
 
 export async function createPricingRule(input: NewRuleInput, actor: string): Promise<PricingRule> {
@@ -165,13 +187,17 @@ export async function createPricingRule(input: NewRuleInput, actor: string): Pro
       r.is_active &&
       r.service_code === input.service_code &&
       (r.nationality ?? null) === (input.nationality ?? null) &&
-      (r.profession ?? null) === (input.profession ?? null),
+      (r.profession ?? null) === (input.profession ?? null) &&
+      (r.branch_id ?? null) === (input.branch ?? null),
   );
   if (dup) throw new Error('توجد قاعدة نشطة لنفس الخدمة والجنسية/المهنة — عدّلها بدل التكرار');
   const now = new Date().toISOString();
+  const { branch = null, ...cols } = input;
   const row: PricingRule = {
     id: `pr-new-${Date.now()}`,
-    ...input,
+    ...cols,
+    branch_id: branch,
+    branch_name: branch,
     is_active: true,
     updated_at: now,
     updated_by: actor,
@@ -179,7 +205,18 @@ export async function createPricingRule(input: NewRuleInput, actor: string): Pro
   try {
     const { data, error } = await supabase
       .from('pricing_rules')
-      .insert({ ...input, is_active: true })
+      .insert({
+        ...cols,
+        is_active: true,
+        branch_id: branch
+          ? ((
+              (await supabase.from('branches').select('id').eq('city', branch).maybeSingle())
+                .data as {
+                id: string;
+              } | null
+            )?.id ?? null)
+          : null,
+      })
       .select('id')
       .single();
     if (!error && data) return { ...row, id: (data as { id: string }).id };

@@ -847,6 +847,68 @@ export function contractFromAcceptedTerms(input: {
 }
 
 /**
+ * Demo mirror of the draft contract `book_hourly` (0065) creates for a booking:
+ * same frozen amounts as the booking, the hourly template clauses. With Supabase
+ * the backend function does this, so it is never called there.
+ */
+export function addDemoHourlyContract(input: {
+  customer_name: string;
+  branch: string;
+  date: string;
+  amounts: { gross: number; discount: number; net: number; vat: number; total: number };
+  clauses: string[];
+  notes: string | null;
+}): ContractListItem {
+  const id = `local-${Date.now()}-${++localSeq}`;
+  const item: ContractListItem = {
+    id,
+    contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    service_code: 'hourly_rental',
+    template_id: null,
+    customer_id: `cust-${id}`,
+    worker_id: null,
+    branch_id: input.branch,
+    created_by: null,
+    start_date: input.date,
+    end_date: input.date,
+    base_amount: input.amounts.net,
+    vat_amount: input.amounts.vat,
+    total_amount: input.amounts.total,
+    gross_amount: input.amounts.gross,
+    discount_amount: input.amounts.discount,
+    promotion_id: null,
+    amount_paid: 0,
+    status: 'draft',
+    version: 1,
+    parent_contract_id: null,
+    signed_at: null,
+    musaned_contract_no: null,
+    created_at: nowIso(),
+    customer_name: input.customer_name,
+    worker_name: null,
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
+    issue_date: input.date,
+    notes: input.notes,
+  };
+  FALLBACK.unshift(item);
+  FALLBACK_CLAUSES[id] = input.clauses.map((body, i) => ({
+    id: `cl-${id}-${i}`,
+    contract_id: id,
+    sort_order: i,
+    body,
+  }));
+  seedDraftHistory(item);
+  return { ...item };
+}
+
+/**
  * عرض سعر مقبول ← مسودة عقد بنفس مبالغ العرض المجمّدة (لا إعادة تسعير بين العرض
  * والعقد) وبنوده = شروط العرض. مع قاعدة البيانات: `convert_quote_to_contract`
  * (0062) ينشئ العميل والعقد والطلب التشغيلي ويربطها في معاملة واحدة. في الوضع

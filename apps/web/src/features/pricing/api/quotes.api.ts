@@ -55,7 +55,7 @@ export async function listQuotes(): Promise<PricingQuote[]> {
     const { data, error } = await supabase
       .from('quotes')
       .select(
-        'id, quote_no, lead_id, service_code, nationality, profession, quantity, base_amount, vat_amount, total_amount, status, valid_until, notes, contract_id, created_at, sent_at, decided_at, parent_id, price_snapshot, customer_name, customer_phone, customer_id, worker_profile_id, worker_name, start_date, duration_unit, duration_count, end_date, gross_amount, discount_amount, coupon_code, terms, request_id, approved_at',
+        'id, quote_no, lead_id, service_code, nationality, profession, quantity, base_amount, vat_amount, total_amount, status, valid_until, notes, contract_id, created_at, sent_at, decided_at, parent_id, price_snapshot, customer_name, customer_phone, customer_id, worker_profile_id, worker_name, start_date, duration_unit, duration_count, end_date, gross_amount, discount_amount, coupon_code, terms, request_id, approved_at, start_time, end_time',
       )
       .order('created_at', { ascending: false })
       .limit(200);
@@ -106,6 +106,9 @@ export interface QuoteExtra {
   end_date?: string | null;
   terms?: string[];
   branch?: string | null;
+  /** hourly rental arrival / leave (HH:MM) */
+  start_time?: string | null;
+  end_time?: string | null;
 }
 
 export function validateQuoteMeta(
@@ -172,6 +175,8 @@ export async function createQuote(
         duration_unit: input.extra?.duration_unit ?? null,
         duration_count: input.extra?.duration_count ?? null,
         terms: input.extra?.terms ?? [],
+        start_time: input.extra?.start_time ?? null,
+        end_time: input.extra?.end_time ?? null,
       },
     });
     if (!error && data) {
@@ -212,6 +217,8 @@ export async function createQuote(
       end_date: input.extra?.end_date ?? null,
       terms: input.extra?.terms ?? [],
       branch: input.extra?.branch ?? null,
+      start_time: input.extra?.start_time ?? null,
+      end_time: input.extra?.end_time ?? null,
     },
     ctx.actor,
   );
