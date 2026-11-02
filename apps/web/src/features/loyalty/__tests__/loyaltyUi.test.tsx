@@ -86,7 +86,9 @@ describe('view-only roles see no write buttons', () => {
   it('call center can add leads but not move or edit them', async () => {
     signIn('call_center');
     renderUi(<PipelineBoard />);
-    await screen.findByText('عبدالله آل مفرح');
+    // branch-scoped (0061): the call-center demo account is in حبونا
+    await screen.findByText('بدر الفيفي');
+    expect(screen.queryByText('عبدالله آل مفرح')).not.toBeInTheDocument(); // شرورة
     expect(screen.getByRole('button', { name: /عميل محتمل جديد/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'تعديل' })).not.toBeInTheDocument();
     expect(screen.queryAllByRole('combobox')).toHaveLength(0);

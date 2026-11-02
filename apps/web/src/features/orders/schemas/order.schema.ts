@@ -14,6 +14,7 @@ export const driverStatusSchema = z.enum(['available', 'on_route', 'off_duty']);
 export type DriverStatus = z.infer<typeof driverStatusSchema>;
 
 export const orderServiceCodeSchema = z.enum([
+  'hourly_rental',
   'recruitment',
   'monthly_rental',
   'daily_rental',

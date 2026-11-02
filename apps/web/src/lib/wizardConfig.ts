@@ -56,9 +56,14 @@ export const SERVICE_FLOWS: Record<ServiceCode, WizardStepDef[]> = {
     { key: 'payment', title: 'الدفع' },
     { key: 'confirm', title: 'تتبّع النقل' },
   ],
+  // booked by staff (التأجير بالساعة) — no public wizard flow yet
+  hourly_rental: [],
 };
 
-export const SERVICE_CODES = Object.keys(SERVICE_FLOWS) as ServiceCode[];
+/** Services the public wizard offers = the ones that have a flow. */
+export const SERVICE_CODES = (Object.keys(SERVICE_FLOWS) as ServiceCode[]).filter(
+  (c) => SERVICE_FLOWS[c].length > 0,
+);
 
 export function isServiceCode(v: string): v is ServiceCode {
   return (SERVICE_CODES as string[]).includes(v);

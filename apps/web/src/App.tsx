@@ -22,6 +22,7 @@ const ContractWizard = lazy(() => import('@/features/contracts/components/Contra
 const ContractDetails = lazy(() => import('@/features/contracts/components/ContractDetails'));
 const PipelineBoard = lazy(() => import('@/features/crm/components/PipelineBoard'));
 const LeadCreatePage = lazy(() => import('@/features/crm/components/LeadCreatePage'));
+const LeadProfile = lazy(() => import('@/features/crm/components/LeadProfile'));
 const OrdersBoard = lazy(() => import('@/features/orders/components/OrdersBoard'));
 const GpsTracking = lazy(() => import('@/features/gps/components/GpsTracking'));
 const PricingBoard = lazy(() => import('@/features/pricing/components/PricingBoard'));
@@ -36,8 +37,14 @@ const HousingReportPage = lazy(() => import('@/features/housing/components/Repor
 const HousingAttendancePage = lazy(() => import('@/features/housing/components/AttendancePage'));
 const HousingTargetsPage = lazy(() => import('@/features/housing/components/TargetsPage'));
 const LoyaltyBoard = lazy(() => import('@/features/loyalty/components/LoyaltyBoard'));
+const CampaignDetail = lazy(() => import('@/features/loyalty/components/CampaignDetail'));
 const RatingBoard = lazy(() => import('@/features/rating/components/RatingBoard'));
 const TargetsBoard = lazy(() => import('@/features/targets/components/TargetsBoard'));
+const AuditLogBoard = lazy(() => import('@/features/audit/components/AuditLogBoard'));
+const SalesBoard = lazy(() => import('@/features/sales/components/SalesBoard'));
+const HourlyBoard = lazy(() => import('@/features/hourly/components/HourlyBoard'));
+const CustomersBoard = lazy(() => import('@/features/customers/components/CustomersBoard'));
+const CustomerProfile = lazy(() => import('@/features/customers/components/CustomerProfile'));
 const AccountingBoard = lazy(() => import('@/features/accounting/components/AccountingBoard'));
 const ReportsBoard = lazy(() => import('@/features/reports/components/ReportsBoard'));
 const RbacBoard = lazy(() => import('@/features/rbac/components/RbacBoard'));
@@ -152,6 +159,14 @@ export default function App() {
               }
             />
             <Route
+              path="leads/:id"
+              element={
+                <RequirePerm module="leads">
+                  <LeadProfile />
+                </RequirePerm>
+              }
+            />
+            <Route
               path="orders"
               element={
                 <RequirePerm module="orders">
@@ -212,6 +227,14 @@ export default function App() {
               element={
                 <RequirePerm module="loyalty">
                   <LoyaltyBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="loyalty/campaigns/:id"
+              element={
+                <RequirePerm module="loyalty">
+                  <CampaignDetail />
                 </RequirePerm>
               }
             />
@@ -308,6 +331,46 @@ export default function App() {
               element={
                 <RequirePerm module="rbac" action="manage">
                   <RbacBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="customers"
+              element={
+                <RequirePerm module="customers">
+                  <CustomersBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="customers/:id"
+              element={
+                <RequirePerm module="customers">
+                  <CustomerProfile />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="hourly"
+              element={
+                <RequirePerm module="hourly">
+                  <HourlyBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="sales"
+              element={
+                <RequirePerm module="sales_ops">
+                  <SalesBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="audit"
+              element={
+                <RequirePerm module="audit">
+                  <AuditLogBoard />
                 </RequirePerm>
               }
             />

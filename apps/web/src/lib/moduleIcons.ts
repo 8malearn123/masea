@@ -3,7 +3,9 @@ import {
   Building2,
   Calculator,
   CreditCard,
+  Clock,
   FileText,
+  History,
   Gift,
   Headphones,
   KanbanSquare,
@@ -14,7 +16,9 @@ import {
   Tag,
   Target,
   Truck,
+  UserRound,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react';
 import type { ModuleCode } from '@/lib/permissions';
@@ -37,4 +41,8 @@ export const MODULE_ICON: Record<ModuleCode, LucideIcon> = {
   reports: BarChart3,
   settings: Settings2,
   rbac: ShieldCheck,
+  customers: UserRound,
+  sales_ops: Wallet,
+  audit: History,
+  hourly: Clock,
 };

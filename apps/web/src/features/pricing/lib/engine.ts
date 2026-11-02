@@ -32,13 +32,17 @@ export function resolveRule(
         r.is_active &&
         r.service_code === service &&
         (r.nationality == null || r.nationality === args.nationality) &&
-        (r.profession == null || r.profession === args.profession),
+        (r.profession == null || r.profession === args.profession) &&
+        (r.branch_id == null || r.branch_id === args.branch),
     )
     .sort(
       (a, b) =>
+        4 * Number(b.branch_id != null) +
         Number(b.nationality != null) +
         Number(b.profession != null) -
-        (Number(a.nationality != null) + Number(a.profession != null)),
+        (4 * Number(a.branch_id != null) +
+          Number(a.nationality != null) +
+          Number(a.profession != null)),
     )[0];
   return match ?? null;
 }
@@ -65,6 +69,8 @@ export interface CalcInput {
   cancelled: boolean;
   promotion: Promotion | null;
   couponCode: string | null;
+  /** branch of the order (branch-specific price) */
+  branch?: string | null;
 }
 
 export const EMPTY_CALC: CalcInput = {
@@ -80,9 +86,10 @@ export const EMPTY_CALC: CalcInput = {
 };
 
 export function priceArgsOf(i: CalcInput): PriceArgs {
-  return i.service === 'daily_rental'
-    ? { profession: i.profession, quantity: Math.max(i.quantity, 1) }
-    : { nationality: i.nationality, quantity: Math.max(i.quantity, 1) };
+  const branch = i.branch ?? null;
+  return i.service === 'daily_rental' || i.service === 'hourly_rental'
+    ? { profession: i.profession, quantity: Math.max(i.quantity, 1), branch }
+    : { nationality: i.nationality, quantity: Math.max(i.quantity, 1), branch };
 }
 
 export type FieldErrors = Partial<Record<'quantity' | 'lateDays' | 'absenceDays', string>>;

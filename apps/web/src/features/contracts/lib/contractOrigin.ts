@@ -13,6 +13,7 @@ export const DEFAULT_SERVICE_ORIGIN: Record<ContractServiceCode, ContractOrigin>
   sponsorship_transfer: 'musaned',
   monthly_rental: 'internal',
   daily_rental: 'internal',
+  hourly_rental: 'internal',
 };
 
 export type ServiceOriginMap = Record<string, ContractOrigin>;

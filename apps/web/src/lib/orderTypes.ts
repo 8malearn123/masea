@@ -74,6 +74,7 @@ export const TRACKING_STAGES: Record<ServiceCode, string[]> = {
   monthly_rental: ['تأكيد الطلب', 'تجهيز العاملة', 'المباشرة'],
   daily_rental: ['تأكيد الطلب', 'في الطريق', 'الحضور'],
   sponsorship_transfer: ['تقديم الطلب', 'مراجعة الجهات', 'الموافقة', 'إصدار الإقامة'],
+  hourly_rental: ['تأكيد الحجز', 'في الطريق', 'بدء الخدمة', 'انتهاء الخدمة'],
 };
 
 export function emptyDraft(service: ServiceCode): OrderDraft {
@@ -118,6 +119,7 @@ export const DURATION_UNITS: Record<ServiceCode, PeriodUnit[]> = {
   monthly_rental: ['month'],
   recruitment: ['month'],
   sponsorship_transfer: [],
+  hourly_rental: [], // بالساعات (وقت وصول وانصراف) لا بوحدة مدة
 };
 
 /** وحدة مدة المسودة — وحدة غير مسموحة للخدمة تعود لوحدتها الافتراضية. */

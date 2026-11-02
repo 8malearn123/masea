@@ -13,7 +13,9 @@ import type { ServiceCode } from '@/lib/funnel';
 
 export default function OrderWizard() {
   const [params, setParams] = useSearchParams();
-  const { data: services = [] } = useServices();
+  const { data: allServices = [] } = useServices();
+  // the public wizard offers the services it has a flow for (hourly rental is booked by staff)
+  const services = allServices.filter((x) => isServiceCode(x.code));
   const { data: workers = [] } = useWorkerProfiles();
 
   const serviceParam = params.get('service') ?? '';

@@ -114,7 +114,7 @@ describe('loyalty coupons are real discounts', () => {
   });
 
   it('a campaign coupon works until the campaign stops or is removed', async () => {
-    const c = addCampaign({
+    const c = await addCampaign({
       name: 'عرض العودة للمدارس',
       type: 'discount',
       discount_pct: 5,
@@ -130,7 +130,7 @@ describe('loyalty coupons are real discounts', () => {
     expect((await calcWith('MAS-DISC5-SCHL')).promotion?.ok).toBe(false);
 
     await syncCampaignCoupon(c);
-    await retireCampaignCoupon(removeCampaign(c.id).coupon_code);
+    await retireCampaignCoupon((await removeCampaign(c.id)).coupon_code);
     expect((await calcWith('MAS-DISC5-SCHL')).promotion?.ok).toBe(false);
   });
 

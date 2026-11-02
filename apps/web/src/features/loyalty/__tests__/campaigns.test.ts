@@ -15,7 +15,7 @@ describe('marketing campaign store', () => {
 
   it('adds a campaign with a generated id and zero usage', async () => {
     const before = (await listCampaigns()).length;
-    const c = addCampaign({
+    const c = await addCampaign({
       name: 'عرض العودة للمدارس',
       type: 'discount',
       discount_pct: 12,
@@ -31,13 +31,13 @@ describe('marketing campaign store', () => {
 
   it('updates a campaign', async () => {
     const c = (await listCampaigns())[0]!;
-    const updated = updateCampaign(c.id, { discount_pct: 33, is_active: false });
+    const updated = await updateCampaign(c.id, { discount_pct: 33, is_active: false });
     expect(updated.discount_pct).toBe(33);
     expect(updated.is_active).toBe(false);
   });
 
   it('removes a campaign', async () => {
-    const added = addCampaign({
+    const added = await addCampaign({
       name: 'مؤقتة',
       type: 'seasonal',
       discount_pct: 5,
@@ -47,7 +47,7 @@ describe('marketing campaign store', () => {
       coupon_code: null,
     });
     const before = (await listCampaigns()).length;
-    removeCampaign(added.id);
+    await removeCampaign(added.id);
     expect((await listCampaigns()).length).toBe(before - 1);
   });
 

@@ -1,7 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
-import { loadDemo } from '@/lib/demo';
-import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
+import { scopeToViewerBranch } from '@/lib/branchScope';
+import { roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import {
   evaluatePromotion,
@@ -42,6 +42,7 @@ import type {
   UpdateDraftInput,
 } from '@/features/contracts/types';
 import { branchLabel } from '@/features/contracts/types';
+import type { QuoteRecord } from '@/shared/lib/quotesLedger';
 
 /** Identity + signature payload captured when signing a contract. */
 export interface SignPayload {
@@ -72,6 +73,8 @@ function mk(o: {
   visa_number?: string | null;
   expected_arrival_date?: string | null;
   flight_no?: string | null;
+  /** the same customer across several contracts (purchase history) */
+  customer_id?: string;
 }): ContractListItem {
   const vat = Math.round(o.base_amount * 0.15 * 100) / 100;
   const total = o.base_amount + vat;
@@ -80,7 +83,7 @@ function mk(o: {
     contract_no: o.contract_no,
     service_code: o.service_code,
     template_id: null,
-    customer_id: `cust-${o.id}`,
+    customer_id: o.customer_id ?? `cust-${o.id}`,
     worker_id: null,
     branch_id: o.branch,
     created_by: null,
@@ -263,6 +266,49 @@ const FALLBACK: ContractListItem[] = [
     customer_name: 'ريم المالكي',
     branch: 'جازان',
     start_date: '2026-01-20',
+  }),
+  // purchase history (2025) — repeat customers for the CRM
+  mk({
+    id: '00010',
+    contract_no: 'MAS-2025-00142',
+    service_code: 'recruitment',
+    status: 'completed',
+    base_amount: 15000,
+    amount_paid: 17250,
+    customer_name: 'محمد الأحمدي',
+    customer_id: 'cust-00001',
+    branch: 'نجران',
+    start_date: '2025-03-04',
+    end_date: '2025-09-03',
+    signed_at: '2025-03-04T10:00:00Z',
+  }),
+  mk({
+    id: '00011',
+    contract_no: 'MAS-2025-00187',
+    service_code: 'monthly_rental',
+    status: 'completed',
+    base_amount: 7500,
+    amount_paid: 8625,
+    customer_name: 'نورة الشهري',
+    customer_id: 'cust-00004',
+    branch: 'نجران',
+    start_date: '2025-05-01',
+    end_date: '2025-07-31',
+    signed_at: '2025-04-28T12:00:00Z',
+  }),
+  mk({
+    id: '00012',
+    contract_no: 'MAS-2025-00203',
+    service_code: 'monthly_rental',
+    status: 'completed',
+    base_amount: 6600,
+    amount_paid: 7590,
+    customer_name: 'مشعل الصيعري',
+    customer_id: 'cust-00009',
+    branch: 'نجران',
+    start_date: '2025-06-10',
+    end_date: '2025-09-09',
+    signed_at: '2025-06-08T09:00:00Z',
   }),
 ];
 
@@ -463,12 +509,7 @@ function scopeForViewer(rows: ContractListItem[]): ContractListItem[] {
   if (profile.role === 'external_office') {
     return rows.filter((r) => r.assigned_office_id === profile.id);
   }
-  const crossBranch = ROLE_META[profile.role as RoleCode]?.crossBranch ?? false;
-  if (isDemoMode() && !crossBranch) {
-    const branch = loadDemo()?.branch ?? null;
-    return rows.filter((r) => r.branch_id === null || (branch !== null && r.branch_id === branch));
-  }
-  return rows;
+  return scopeToViewerBranch(rows, (r) => r.branch_id);
 }
 
 /* ------------------------------- queries --------------------------------- */
@@ -802,6 +843,145 @@ export function contractFromAcceptedTerms(input: {
       created_at: input.terms_accepted_at,
     },
   ];
+  return { ...item };
+}
+
+/**
+ * Demo mirror of the draft contract `book_hourly` (0065) creates for a booking:
+ * same frozen amounts as the booking, the hourly template clauses. With Supabase
+ * the backend function does this, so it is never called there.
+ */
+export function addDemoHourlyContract(input: {
+  customer_name: string;
+  branch: string;
+  date: string;
+  amounts: { gross: number; discount: number; net: number; vat: number; total: number };
+  clauses: string[];
+  notes: string | null;
+  promotion_id?: string | null;
+}): ContractListItem {
+  const id = `local-${Date.now()}-${++localSeq}`;
+  const item: ContractListItem = {
+    id,
+    contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    service_code: 'hourly_rental',
+    template_id: null,
+    customer_id: `cust-${id}`,
+    worker_id: null,
+    branch_id: input.branch,
+    created_by: null,
+    start_date: input.date,
+    end_date: input.date,
+    base_amount: input.amounts.net,
+    vat_amount: input.amounts.vat,
+    total_amount: input.amounts.total,
+    gross_amount: input.amounts.gross,
+    discount_amount: input.amounts.discount,
+    promotion_id: input.promotion_id ?? null,
+    amount_paid: 0,
+    status: 'draft',
+    version: 1,
+    parent_contract_id: null,
+    signed_at: null,
+    musaned_contract_no: null,
+    created_at: nowIso(),
+    customer_name: input.customer_name,
+    worker_name: null,
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
+    issue_date: input.date,
+    notes: input.notes,
+  };
+  FALLBACK.unshift(item);
+  FALLBACK_CLAUSES[id] = input.clauses.map((body, i) => ({
+    id: `cl-${id}-${i}`,
+    contract_id: id,
+    sort_order: i,
+    body,
+  }));
+  seedDraftHistory(item);
+  return { ...item };
+}
+
+/**
+ * عرض سعر مقبول ← مسودة عقد بنفس مبالغ العرض المجمّدة (لا إعادة تسعير بين العرض
+ * والعقد) وبنوده = شروط العرض. مع قاعدة البيانات: `convert_quote_to_contract`
+ * (0062) ينشئ العميل والعقد والطلب التشغيلي ويربطها في معاملة واحدة. في الوضع
+ * التجريبي يُسجَّل العقد في مخزن العرض، والربط يتولّاه المستدعي (crm.api).
+ */
+export async function createContractFromQuote(
+  q: QuoteRecord,
+  opts: { branch: string | null; customer_name: string },
+): Promise<ContractListItem> {
+  if (!isDemoMode() && !isDemoId(q.id)) {
+    const { data, error } = await supabase.rpc('convert_quote_to_contract', {
+      p_quote_id: q.id,
+      p_branch: opts.branch,
+    });
+    if (error) throw new Error(`تعذّر إنشاء العقد: ${rpcError(error.message).message}`);
+    const row = data as Contract | null;
+    if (!row?.id) throw new Error('تعذّر إنشاء العقد: لم يُرجِع الخادم العقد');
+    return { ...row, customer_name: opts.customer_name, worker_name: q.worker_name ?? null };
+  }
+  const branch = q.branch ?? opts.branch;
+  if (!branch) throw new Error('حدّد فرع العقد');
+  const id = `local-${Date.now()}-${++localSeq}`;
+  const start = q.start_date ?? new Date().toISOString().slice(0, 10);
+  const snap = q.snapshot as { inputs?: { promotion_id?: string | null } } | null;
+  const promotionId = (q.discount_amount ?? 0) > 0 ? (snap?.inputs?.promotion_id ?? null) : null;
+  const item: ContractListItem = {
+    id,
+    contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
+    service_code: q.service_code as ContractListItem['service_code'],
+    template_id: null,
+    customer_id: q.customer_id ?? `cust-${id}`,
+    worker_id: null,
+    branch_id: branch,
+    created_by: null,
+    start_date: start,
+    end_date: q.end_date ?? null,
+    base_amount: q.base_amount,
+    vat_amount: q.vat_amount,
+    total_amount: q.total_amount,
+    gross_amount: q.gross_amount ?? q.base_amount,
+    discount_amount: q.discount_amount ?? 0,
+    promotion_id: promotionId,
+    amount_paid: 0,
+    status: 'draft',
+    version: 1,
+    parent_contract_id: null,
+    signed_at: null,
+    musaned_contract_no: null,
+    created_at: nowIso(),
+    customer_name: opts.customer_name,
+    worker_name: q.worker_name ?? null,
+    assigned_office_id: null,
+    assigned_at: null,
+    recruitment_stage: null,
+    visa_number: null,
+    expected_arrival_date: null,
+    flight_no: null,
+    terms_accepted_at: null,
+    source_request_no: null,
+    quote_id: q.id,
+    issue_date: nowIso().slice(0, 10),
+    notes: q.notes,
+  };
+  FALLBACK.unshift(item);
+  if (promotionId) countPromotionUse(promotionId);
+  FALLBACK_CLAUSES[id] = (q.terms ?? []).map((body, i) => ({
+    id: `cl-${id}-${i}`,
+    contract_id: id,
+    sort_order: i,
+    body,
+  }));
+  seedDraftHistory(item);
   return { ...item };
 }
 

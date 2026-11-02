@@ -1,6 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch } from '@/lib/branchScope';
 import { tripScanResult } from '@/features/orders/lib/trip';
 import {
   isTerminalOrderStatus,
@@ -250,6 +251,8 @@ export function addLocalOrder(input: {
   total_amount: number;
   /** contract created from the customer's accepted terms (daily rental) */
   contract?: { id: string; contract_no: string | null } | null;
+  /** a deal closed from a quote starts as `new` (not yet paid) */
+  status?: Order['status'];
 }): void {
   FALLBACK_ORDERS.unshift({
     // تسلسل إضافي: طلبان في نفس الملّي ثانية لا يتشاركان المعرّف
@@ -258,7 +261,7 @@ export function addLocalOrder(input: {
     customer_name: input.customer_name,
     service_code: input.service_code,
     branch: input.branch,
-    status: 'paid',
+    status: input.status ?? 'paid',
     driver_id: null,
     driver_name: null,
     total_amount: input.total_amount,
@@ -301,7 +304,7 @@ function scopeForViewer(rows: Order[]): Order[] {
   if (profile?.role === 'driver') {
     return rows.filter((o) => o.driver_id === profile.id);
   }
-  return rows;
+  return scopeToViewerBranch(rows, (o) => o.branch);
 }
 
 function applyFilters(rows: Order[], f: OrderFilters): Order[] {

@@ -8,6 +8,8 @@ export interface PriceArgs {
   nationality?: string | undefined;
   profession?: string | undefined;
   quantity: number;
+  /** branch of the order — a branch-specific rule wins over the general one (0065) */
+  branch?: string | null | undefined;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -47,6 +49,11 @@ export function fallbackBase(service: ServiceCode, args: PriceArgs): number {
     return (byTask[args.profession ?? ''] ?? 180) * q;
   }
   if (service === 'sponsorship_transfer') return 2000 * q;
+  if (service === 'hourly_rental') {
+    // per hour × hours (mirror of the 0065 seed rules)
+    const byTask: Record<string, number> = { تنظيف: 40, طبخ: 50, رعاية: 55 };
+    return (byTask[args.profession ?? ''] ?? 45) * q;
+  }
   return 0;
 }
 
@@ -115,6 +122,10 @@ export interface Promotion {
   is_active: boolean;
   /** Coupon: hidden from the discount list, applied only by entering its code. */
   requires_code: boolean;
+  /** Marketing campaign the coupon belongs to (0066) — the coupon follows its window. */
+  campaign_id?: string | null;
+  /** Referral coupon: the customer who refers (gets the referral commission). */
+  referrer_name?: string | null;
 }
 
 export interface PromotionCheck {

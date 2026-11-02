@@ -8,6 +8,7 @@ import {
   listQuoteEvents,
   listQuoteRecords,
   setQuoteRecordStatus,
+  type QuoteApprovalPolicy,
   type QuoteEvent,
   type QuoteRecord,
   type QuoteStatus,
@@ -31,28 +32,35 @@ import type { PricingRule } from '@/features/pricing/types';
 export type PricingQuote = QuoteRecord;
 export type { QuoteEvent, QuoteStatus };
 
+/** A `quotes` row as the backend returns it (numerics may arrive as strings). */
+type QuoteRow = Omit<QuoteRecord, 'snapshot' | 'assigned_to'> & { price_snapshot?: unknown };
+
+function fromQuoteRow(q: QuoteRow, assignedTo: string | null = null): PricingQuote {
+  const { price_snapshot, ...rest } = q;
+  return {
+    ...rest,
+    base_amount: Number(q.base_amount),
+    vat_amount: Number(q.vat_amount),
+    total_amount: Number(q.total_amount),
+    gross_amount: q.gross_amount == null ? null : Number(q.gross_amount),
+    discount_amount: Number(q.discount_amount ?? 0),
+    terms: Array.isArray(q.terms) ? q.terms : [],
+    assigned_to: assignedTo,
+    snapshot: price_snapshot ?? null,
+  };
+}
+
 export async function listQuotes(): Promise<PricingQuote[]> {
   try {
     const { data, error } = await supabase
       .from('quotes')
       .select(
-        'id, quote_no, lead_id, service_code, nationality, profession, quantity, base_amount, vat_amount, total_amount, status, valid_until, notes, contract_id, created_at, sent_at, decided_at, parent_id, price_snapshot, customer_name, customer_phone',
+        'id, quote_no, lead_id, service_code, nationality, profession, quantity, base_amount, vat_amount, total_amount, status, valid_until, notes, contract_id, created_at, sent_at, decided_at, parent_id, price_snapshot, customer_name, customer_phone, customer_id, worker_profile_id, worker_name, start_date, duration_unit, duration_count, end_date, gross_amount, discount_amount, coupon_code, terms, request_id, approved_at, start_time, end_time',
       )
       .order('created_at', { ascending: false })
       .limit(200);
     if (!error && data && data.length > 0)
-      return (
-        data as unknown as (Omit<QuoteRecord, 'snapshot' | 'assigned_to'> & {
-          price_snapshot: unknown;
-        })[]
-      ).map((q) => ({
-        ...q,
-        base_amount: Number(q.base_amount),
-        vat_amount: Number(q.vat_amount),
-        total_amount: Number(q.total_amount),
-        assigned_to: null,
-        snapshot: q.price_snapshot ?? null,
-      }));
+      return (data as unknown as QuoteRow[]).map((q) => fromQuoteRow(q));
   } catch {
     /* fall through */
   }
@@ -84,6 +92,23 @@ export interface CreateQuoteInput {
   parent_id?: string | null;
   /** Sales lead the quote belongs to (shown in the lead file) */
   lead_id?: string | null;
+  /** Lead-file quote details (customer, worker, duration, terms) — 0062 p_extra */
+  extra?: QuoteExtra;
+}
+
+export interface QuoteExtra {
+  customer_id?: string | null;
+  worker_profile_id?: string | null;
+  worker_name?: string | null;
+  start_date?: string | null;
+  duration_unit?: QuoteRecord['duration_unit'];
+  duration_count?: number | null;
+  end_date?: string | null;
+  terms?: string[];
+  branch?: string | null;
+  /** hourly rental arrival / leave (HH:MM) */
+  start_time?: string | null;
+  end_time?: string | null;
 }
 
 export function validateQuoteMeta(
@@ -135,18 +160,28 @@ export async function createQuote(
       p_notes: input.notes,
       p_parent_id: input.parent_id ?? null,
       p_snapshot: snapshot,
+      p_extra: {
+        lead_id: input.lead_id && !isDemoId(input.lead_id) ? input.lead_id : null,
+        customer_id:
+          input.extra?.customer_id && !isDemoId(input.extra.customer_id)
+            ? input.extra.customer_id
+            : null,
+        worker_profile_id:
+          input.extra?.worker_profile_id && !isDemoId(input.extra.worker_profile_id)
+            ? input.extra.worker_profile_id
+            : null,
+        worker_name: input.extra?.worker_name ?? null,
+        start_date: input.extra?.start_date ?? null,
+        duration_unit: input.extra?.duration_unit ?? null,
+        duration_count: input.extra?.duration_count ?? null,
+        terms: input.extra?.terms ?? [],
+        start_time: input.extra?.start_time ?? null,
+        end_time: input.extra?.end_time ?? null,
+      },
     });
     if (!error && data) {
-      const q = data as unknown as QuoteRecord & { price_snapshot?: unknown };
-      if (input.lead_id && !isDemoId(input.lead_id)) {
-        await supabase.from('quotes').update({ lead_id: input.lead_id }).eq('id', q.id);
-      }
-      return {
-        ...q,
-        lead_id: input.lead_id ?? q.lead_id,
-        snapshot: q.price_snapshot ?? snapshot,
-        assigned_to: ctx.actor,
-      };
+      const q = fromQuoteRow(data as unknown as QuoteRow, ctx.actor);
+      return { ...q, snapshot: q.snapshot ?? snapshot };
     }
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   } catch (e) {
@@ -170,6 +205,20 @@ export async function createQuote(
       assigned_to: ctx.actor,
       parent_id: input.parent_id ?? null,
       snapshot,
+      gross_amount: result.detail.base,
+      discount_amount: result.detail.discounts,
+      coupon_code: input.calc.couponCode?.trim().toUpperCase() || null,
+      customer_id: input.extra?.customer_id ?? null,
+      worker_profile_id: input.extra?.worker_profile_id ?? null,
+      worker_name: input.extra?.worker_name ?? null,
+      start_date: input.extra?.start_date ?? null,
+      duration_unit: input.extra?.duration_unit ?? null,
+      duration_count: input.extra?.duration_count ?? null,
+      end_date: input.extra?.end_date ?? null,
+      terms: input.extra?.terms ?? [],
+      branch: input.extra?.branch ?? null,
+      start_time: input.extra?.start_time ?? null,
+      end_time: input.extra?.end_time ?? null,
     },
     ctx.actor,
   );
@@ -192,16 +241,19 @@ export async function setQuoteStatus(
   to: QuoteStatus,
   actor: string,
   note?: string,
+  policy?: QuoteApprovalPolicy,
 ): Promise<PricingQuote> {
   if (!isDemoId(id) && !getQuoteRecord(id)) {
-    const { error } = await supabase.rpc('set_quote_status', {
+    const { data, error } = await supabase.rpc('set_quote_status', {
       p_quote_id: id,
       p_status: to,
       p_note: note ?? null,
     });
+    // a real row: the backend is the record — never fall through to the demo ledger
+    if (!error && data) return fromQuoteRow(data as unknown as QuoteRow, actor);
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   }
-  return setQuoteRecordStatus(id, to, actor, note);
+  return setQuoteRecordStatus(id, to, actor, note, policy);
 }
 
 /**

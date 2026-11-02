@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Ticket } from 'lucide-react';
 import { Button, Input, Modal, Select } from '@/shared/ui';
 import { useAddCampaign, useUpdateCampaign } from '@/features/loyalty/hooks/useLoyalty';
+import { useServices } from '@/hooks/useServices';
 import { generateCampaignCoupon } from '@/features/loyalty/api/loyalty.api';
 import { CAMPAIGN_TYPE_LABEL, type Campaign, type CampaignType } from '@/features/loyalty/types';
 
@@ -23,6 +24,8 @@ const schema = z
     end_at: z.string().min(1, 'تاريخ النهاية مطلوب'),
     is_active: z.boolean(),
     coupon_code: z.string().nullable(),
+    description: z.string().nullable(),
+    service_codes: z.array(z.string()),
   })
   .refine((v) => v.end_at >= v.start_at, {
     message: 'تاريخ النهاية قبل البداية',
@@ -49,6 +52,9 @@ export function CampaignFormModal({
   const [endAt, setEndAt] = useState(toDateInput(campaign?.end_at ?? ''));
   const [isActive, setIsActive] = useState(campaign?.is_active ?? true);
   const [coupon, setCoupon] = useState(campaign?.coupon_code ?? '');
+  const [description, setDescription] = useState(campaign?.description ?? '');
+  const [serviceCodes, setServiceCodes] = useState<string[]>(campaign?.service_codes ?? []);
+  const { data: services = [] } = useServices();
   const [error, setError] = useState<string | null>(null);
 
   const busy = add.isPending || update.isPending;
@@ -62,6 +68,8 @@ export function CampaignFormModal({
       end_at: toIso(endAt),
       is_active: isActive,
       coupon_code: coupon.trim() ? coupon.trim() : null,
+      description: description.trim() || null,
+      service_codes: serviceCodes,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'تحقّق من الحقول');
@@ -112,6 +120,37 @@ export function CampaignFormModal({
             <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
           </div>
         </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-900">وصف العرض</label>
+          <Input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="مثال: خصم 10٪ لكل عميل يُحضر عميلاً جديدًا"
+          />
+        </div>
+        <fieldset>
+          <legend className="mb-1 block text-xs font-medium text-navy-900">
+            الخدمات المشمولة (بدون تحديد = كل الخدمات)
+          </legend>
+          <div className="flex flex-wrap gap-3">
+            {services.map((s) => (
+              <label key={s.code} className="flex items-center gap-1.5 text-sm text-navy">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-navy"
+                  checked={serviceCodes.includes(s.code)}
+                  onChange={(e) =>
+                    setServiceCodes((all) =>
+                      e.target.checked ? [...all, s.code] : all.filter((c) => c !== s.code),
+                    )
+                  }
+                />
+                {s.name_ar}
+              </label>
+            ))}
+          </div>
+        </fieldset>
 
         <label className="flex cursor-pointer items-center gap-2 text-sm text-navy">
           <input

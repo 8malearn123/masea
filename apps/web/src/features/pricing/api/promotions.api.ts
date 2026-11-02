@@ -216,7 +216,7 @@ STORE.push(
 );
 
 const COLUMNS =
-  'id, name, code, description, discount_pct, discount_amount, service_codes, min_base_amount, max_discount_amount, starts_at, ends_at, usage_limit, usage_count, is_active, requires_code';
+  'id, name, code, description, discount_pct, discount_amount, service_codes, min_base_amount, max_discount_amount, starts_at, ends_at, usage_limit, usage_count, is_active, requires_code, campaign_id, referrer_name';
 
 function normalize(r: Record<string, unknown>): Promotion {
   const num = (v: unknown) => (v == null ? null : Number(v));
@@ -236,6 +236,8 @@ function normalize(r: Record<string, unknown>): Promotion {
     usage_count: Number(r.usage_count ?? 0),
     is_active: Boolean(r.is_active),
     requires_code: Boolean(r.requires_code),
+    campaign_id: (r.campaign_id as string | null) ?? null,
+    referrer_name: (r.referrer_name as string | null) ?? null,
   };
 }
 
@@ -303,6 +305,27 @@ export async function upsertCouponPromotion(
 export async function disableCouponPromotion(code: string): Promise<void> {
   const existing = findByCode(await listPromotions(), code);
   if (existing?.is_active) await updatePromotion(existing.id, { is_active: false });
+}
+
+/**
+ * Demo mirror of evaluate_promotion's campaign check (0066): a campaign's coupons
+ * follow its active state and window. With Supabase the check runs server-side.
+ */
+export function syncCampaignCouponsLocal(
+  campaignId: string,
+  c: {
+    is_active: boolean;
+    start_at: string | null;
+    end_at: string | null;
+    service_codes?: string[];
+  },
+): void {
+  for (const p of STORE.filter((x) => x.campaign_id === campaignId)) {
+    p.is_active = c.is_active;
+    p.starts_at = c.start_at;
+    p.ends_at = c.end_at;
+    if (c.service_codes) p.service_codes = [...c.service_codes];
+  }
 }
 
 /**

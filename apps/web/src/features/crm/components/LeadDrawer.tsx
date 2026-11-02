@@ -171,6 +171,9 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
               </a>
             </>
           )}
+          <Button size="sm" onClick={() => navigate(`/leads/${lead.id}`)}>
+            <FileText size={14} /> الملف الكامل وعرض السعر
+          </Button>
           {lead.customer_id ? (
             <span className="inline-flex items-center gap-1 rounded-lg bg-green-100 px-2.5 py-1.5 text-xs font-semibold text-green-600">
               <BadgeCheck size={13} /> عميل

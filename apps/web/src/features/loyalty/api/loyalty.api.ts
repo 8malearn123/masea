@@ -8,8 +8,11 @@ import type {
 } from '@/features/loyalty/types';
 import {
   disableCouponPromotion,
+  syncCampaignCouponsLocal,
   upsertCouponPromotion,
 } from '@/features/pricing/api/promotions.api';
+import { supabase } from '@/shared/lib/supabase';
+import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
 
 const TXNS: LoyaltyTxn[] = [
   {
@@ -160,26 +163,94 @@ export function generateCampaignCoupon(type: CampaignType, discountPct: number):
   return `MAS-${token[type]}-${rand}`;
 }
 
-export function addCampaign(input: CampaignInput): Campaign {
+// With Supabase the campaigns live in `campaigns` (0005 + 0066); the store above
+// is the demo fallback (localStorage).
+const CAMPAIGN_COLUMNS =
+  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes';
+
+function fromCampaignRow(r: Record<string, unknown>): Campaign {
+  return {
+    id: String(r.id),
+    name: String(r.name ?? ''),
+    type: r.type as CampaignType,
+    discount_pct: Number(r.discount_pct ?? 0),
+    start_at: (r.start_at as string | null) ?? '',
+    end_at: (r.end_at as string | null) ?? '',
+    is_active: Boolean(r.is_active),
+    usage_count: Number(r.usage_count ?? 0),
+    coupon_code: (r.coupon_code as string | null) ?? null,
+    description: (r.description as string | null) ?? null,
+    service_codes: (r.service_codes as string[] | null) ?? [],
+  };
+}
+
+const toCampaignRow = (input: Partial<CampaignInput>) => ({
+  ...input,
+  start_at: input.start_at || null,
+  end_at: input.end_at || null,
+});
+
+export async function addCampaign(input: CampaignInput): Promise<Campaign> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .insert(toCampaignRow(input))
+      .select(CAMPAIGN_COLUMNS)
+      .single();
+    if (error) throw new Error(`تعذّرت إضافة الحملة: ${error.message}`);
+    return fromCampaignRow(data as Record<string, unknown>);
+  }
   const campaign: Campaign = { ...input, id: `cm-${Date.now()}`, usage_count: 0 };
   CAMPAIGNS.unshift(campaign);
   persistCampaigns();
   return { ...campaign };
 }
 
-export function updateCampaign(id: string, patch: Partial<CampaignInput>): Campaign {
+export async function updateCampaign(id: string, patch: Partial<CampaignInput>): Promise<Campaign> {
+  if (!isDemoMode() && !isDemoId(id)) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .update({ ...toCampaignRow(patch), updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select(CAMPAIGN_COLUMNS)
+      .single();
+    if (error) throw new Error(`تعذّر تعديل الحملة: ${error.message}`);
+    return fromCampaignRow(data as Record<string, unknown>);
+  }
   const campaign = CAMPAIGNS.find((c) => c.id === id);
   if (!campaign) throw new Error('الحملة غير موجودة');
   Object.assign(campaign, patch);
   persistCampaigns();
+  // the campaign's coupons follow its state and window (evaluate_promotion, 0066)
+  syncCampaignCouponsLocal(id, {
+    is_active: campaign.is_active,
+    start_at: campaign.start_at || null,
+    end_at: campaign.end_at || null,
+    ...(campaign.service_codes ? { service_codes: campaign.service_codes } : {}),
+  });
   return { ...campaign };
 }
 
-export function removeCampaign(id: string): Campaign {
+export async function removeCampaign(id: string): Promise<Campaign> {
+  if (!isDemoMode() && !isDemoId(id)) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .delete()
+      .eq('id', id)
+      .select(CAMPAIGN_COLUMNS)
+      .single();
+    if (error) throw new Error(`تعذّر حذف الحملة: ${error.message}`);
+    return fromCampaignRow(data as Record<string, unknown>);
+  }
   const idx = CAMPAIGNS.findIndex((c) => c.id === id);
   if (idx === -1) throw new Error('الحملة غير موجودة');
   const [removed] = CAMPAIGNS.splice(idx, 1);
   persistCampaigns();
+  syncCampaignCouponsLocal(id, {
+    is_active: false,
+    start_at: removed!.start_at || null,
+    end_at: removed!.end_at || null,
+  });
   return { ...removed! };
 }
 
@@ -209,6 +280,7 @@ export async function syncCampaignCoupon(c: Campaign, previousCode?: string | nu
     usage_limit: null,
     is_active: c.is_active,
     requires_code: true,
+    campaign_id: isDemoId(c.id) && !isDemoMode() ? null : c.id,
   });
 }
 
@@ -272,6 +344,14 @@ export async function listLoyaltyTxns(): Promise<LoyaltyTxn[]> {
 }
 
 export async function listCampaigns(): Promise<Campaign[]> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase
+      .from('campaigns')
+      .select(CAMPAIGN_COLUMNS)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(`تعذّر جلب الحملات: ${error.message}`);
+    return ((data ?? []) as Record<string, unknown>[]).map(fromCampaignRow);
+  }
   return CAMPAIGNS.map((c) => ({ ...c }));
 }
 

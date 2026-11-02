@@ -11,7 +11,21 @@ import type { AppRole } from '@masiat/shared';
 const ALL = { status: 'all', service: 'all', branch: 'all', search: '' } as const;
 
 /** عقود بيانات العرض كما هي في contracts.api (لا يُضاف إليها شيء). */
-const SEED_IDS = ['00001', '00002', '00003', '00004', '00007', '00008', '00009', '00005', '00006'];
+const SEED_IDS = [
+  '00001',
+  '00002',
+  '00003',
+  '00004',
+  '00007',
+  '00008',
+  '00009',
+  '00005',
+  '00006',
+  // 2025 purchase history of repeat customers (CRM)
+  '00010',
+  '00011',
+  '00012',
+];
 
 function signInDemo(role: AppRole) {
   const acc = DEMO_ACCOUNTS.find((a) => a.role === role);
@@ -37,7 +51,8 @@ describe('نطاق الاطلاع على العقود (الوضع التجريب
     const acc = signInDemo('branch_manager');
     const rows = await listContracts(ALL);
     expect(rows.length).toBeGreaterThan(0);
-    expect(rows.every((c) => c.branch_id === acc.branch || c.branch_id === null)).toBe(true);
+    // strict branch scope (0061): rows without a branch are for cross-branch roles only
+    expect(rows.every((c) => c.branch_id === acc.branch)).toBe(true);
   });
 
   it('لا يفتح مدير الفرع عقدًا من فرع آخر عبر رابطه المباشر', async () => {

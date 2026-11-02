@@ -19,7 +19,8 @@ export type ServiceCode =
   | 'recruitment'
   | 'monthly_rental'
   | 'daily_rental'
-  | 'sponsorship_transfer';
+  | 'sponsorship_transfer'
+  | 'hourly_rental'; // 0065 — staff-booked; the public wizard's own list (SERVICE_CODES) excludes it
 
 export interface ServiceItem {
   code: ServiceCode | string;

@@ -5,15 +5,23 @@ import {
   listQuoteRecords,
   quoteCoupon,
   setQuoteRecordStatus,
+  type QuoteApprovalPolicy,
   type QuoteRecord,
 } from '@/shared/lib/quotesLedger';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch, viewerScope } from '@/lib/branchScope';
+import { recordAudit } from '@/shared/lib/auditTrail';
+import { createContractFromQuote } from '@/features/contracts/api/contracts.api';
+import { addLocalOrder } from '@/features/orders/api/orders.api';
+import { demoBookingForQuote } from '@/features/hourly/api/hourly.api';
 import type { PricingConfig } from '@/shared/lib/pricing';
 import type { CalcInput } from '@/features/pricing/lib/engine';
 import type { PricingRule } from '@/features/pricing/types';
 import {
   createQuote as createPricingQuote,
+  listQuotes as listPricingQuotes,
   setQuoteStatus as setPricingQuoteStatus,
+  type QuoteExtra,
 } from '@/features/pricing/api/quotes.api';
 import type {
   ActivityKind,
@@ -32,6 +40,8 @@ const iso = (offsetDays: number) => new Date(now + offsetDays * 86_400_000).toIS
 const DEMO_LEADS: Lead[] = [
   {
     id: 'lead-1',
+    branch: 'شرورة',
+    city: 'شرورة',
     full_name: 'عبدالله آل مفرح',
     phone: '0555100201',
     source_code: 'website',
@@ -45,6 +55,8 @@ const DEMO_LEADS: Lead[] = [
   },
   {
     id: 'lead-2',
+    branch: 'جازان',
+    city: 'جازان',
     full_name: 'منيرة اليامي',
     phone: '0555100202',
     source_code: 'call_center',
@@ -58,6 +70,8 @@ const DEMO_LEADS: Lead[] = [
   },
   {
     id: 'lead-3',
+    branch: 'شرورة',
+    city: 'شرورة',
     full_name: 'سعد الوادعي',
     phone: '0555100203',
     source_code: 'referral',
@@ -71,6 +85,8 @@ const DEMO_LEADS: Lead[] = [
   },
   {
     id: 'lead-4',
+    branch: 'جازان',
+    city: 'جازان',
     full_name: 'حصة آل سالم',
     phone: '0555100204',
     source_code: 'walk_in',
@@ -84,6 +100,8 @@ const DEMO_LEADS: Lead[] = [
   },
   {
     id: 'lead-5',
+    branch: 'نجران',
+    city: 'نجران',
     full_name: 'فيصل القحطاني',
     phone: '0555100205',
     source_code: 'campaign',
@@ -97,6 +115,8 @@ const DEMO_LEADS: Lead[] = [
   },
   {
     id: 'lead-6',
+    branch: 'شرورة',
+    city: 'شرورة',
     full_name: 'نوف آل حمدان',
     phone: '0555100206',
     source_code: 'website',
@@ -110,6 +130,8 @@ const DEMO_LEADS: Lead[] = [
   },
   {
     id: 'lead-7',
+    branch: 'حبونا',
+    city: 'حبونا',
     full_name: 'بدر الفيفي',
     phone: '0555100207',
     source_code: 'referral',
@@ -200,14 +222,23 @@ export async function listLeads(): Promise<Lead[]> {
     const { data, error } = await supabase
       .from('leads')
       .select(
-        'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at',
+        'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
       )
       .order('updated_at', { ascending: false });
-    if (!error && data && data.length > 0) return data as Lead[];
+    if (!error && data && data.length > 0)
+      return (data as unknown as (Lead & { branches: { city: string | null } | null })[]).map(
+        ({ branches, ...l }) => ({ ...l, branch: branches?.city ?? null }),
+      );
   } catch {
     /* fall through */
   }
-  return [...DEMO_LEADS].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  return scopeToViewerBranch([...DEMO_LEADS], (l) => l.branch).sort((a, b) =>
+    b.updated_at.localeCompare(a.updated_at),
+  );
+}
+
+export async function getLead(id: string): Promise<Lead | null> {
+  return (await listLeads()).find((l) => l.id === id) ?? null;
 }
 
 export async function listActivities(leadId?: string): Promise<LeadActivity[]> {
@@ -275,6 +306,7 @@ export async function createLead(input: LeadInput): Promise<Lead> {
   const row: Lead = {
     id: `lead-${++seq}`,
     ...input,
+    branch: viewerScope().branch,
     customer_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -418,6 +450,121 @@ export async function convertQuoteToContract(quoteId: string, contractRef: strin
       lead.updated_at = new Date().toISOString();
     }
   }
+}
+
+/* ---------------------- lead file: quotes → contract (0062) ---------------------- */
+/** All quotes of a lead (newest first) — the full records, as the lead file shows them. */
+export async function listLeadQuotes(leadId: string): Promise<QuoteRecord[]> {
+  return (await listPricingQuotes()).filter((q) => q.lead_id === leadId);
+}
+
+export interface LeadQuoteInput {
+  lead: Lead;
+  calc: CalcInput;
+  valid_days: number;
+  notes: string | null;
+  extra: QuoteExtra;
+  /** editing a quote = a new version of it (the priced snapshot is immutable) */
+  parent_id?: string | null;
+}
+
+/** Quote from the lead file — same pricing path as the calculator, with the deal details. */
+export async function createLeadQuote(
+  input: LeadQuoteInput,
+  ctx: { rules: PricingRule[]; cfg: PricingConfig; actor: string },
+): Promise<QuoteRecord> {
+  const rec = await createPricingQuote(
+    {
+      calc: input.calc,
+      customer_name: input.lead.full_name,
+      customer_phone: input.lead.phone,
+      valid_days: input.valid_days,
+      notes: input.notes,
+      lead_id: input.lead.id,
+      parent_id: input.parent_id ?? null,
+      extra: {
+        ...input.extra,
+        customer_id: input.extra.customer_id ?? input.lead.customer_id,
+        branch: input.lead.branch ?? viewerScope().branch,
+      },
+    },
+    ctx,
+  );
+  const lead = DEMO_LEADS.find((l) => l.id === input.lead.id);
+  if (lead && (lead.stage_code === 'new' || lead.stage_code === 'contacted')) {
+    lead.stage_code = 'quoted';
+    lead.updated_at = new Date().toISOString();
+  }
+  return rec;
+}
+
+/** Lifecycle + approval policy (set_quote_status, 0062). */
+export async function setLeadQuoteStatus(
+  id: string,
+  status: QuoteRecord['status'],
+  actor: string,
+  policy: QuoteApprovalPolicy,
+  note?: string,
+): Promise<QuoteRecord> {
+  return setPricingQuoteStatus(id, status, actor, note, policy);
+}
+
+/**
+ * Accepted quote → customer → contract (frozen amounts, quote terms as clauses)
+ * → operational order, all linked; the lead is won. One quote = one contract.
+ * Backend: convert_quote_to_contract does it in one transaction.
+ */
+export async function convertQuote(
+  q: QuoteRecord,
+  actor: string,
+): Promise<{ contract_id: string; contract_no: string | null }> {
+  if (q.contract_id) throw new Error('هذا العرض مرتبط بعقد مسبقًا');
+  if (q.status !== 'accepted') throw new Error('لا يُحوَّل إلى عقد إلا العرض المقبول من العميل');
+  const lead = q.lead_id ? DEMO_LEADS.find((l) => l.id === q.lead_id) : undefined;
+  const demo = isDemoMode() || isDemoId(q.id);
+  // hourly: the worker must still be free — checked before anything is created
+  if (demo && q.service_code === 'hourly_rental') await demoBookingForQuote(q, null);
+  const contract = await createContractFromQuote(q, {
+    branch: q.branch ?? lead?.branch ?? viewerScope().branch,
+    customer_name: q.customer_name ?? lead?.full_name ?? 'عميل',
+  });
+  if (demo) {
+    if (q.service_code === 'hourly_rental')
+      await demoBookingForQuote(q, {
+        id: contract.id,
+        contract_no: contract.contract_no,
+        branch: contract.branch_id,
+      });
+    const requestNo = `REQ-${Date.now().toString(36).toUpperCase().slice(-8)}`;
+    addLocalOrder({
+      request_no: requestNo,
+      customer_name: contract.customer_name,
+      service_code: q.service_code as Parameters<typeof addLocalOrder>[0]['service_code'],
+      branch: contract.branch_id,
+      total_amount: q.total_amount,
+      contract: { id: contract.id, contract_no: contract.contract_no },
+      status: 'new',
+    });
+    linkQuoteContract(q.id, contract.id, actor, {
+      customer_id: contract.customer_id,
+      request_id: requestNo,
+      contract_no: contract.contract_no,
+    });
+    if (lead) {
+      lead.stage_code = 'won';
+      lead.customer_id = contract.customer_id;
+      lead.updated_at = new Date().toISOString();
+    }
+    recordAudit({
+      action: 'quote.convert',
+      entity: 'contracts',
+      record_ref: contract.contract_no,
+      old_data: null,
+      new_data: { quote_no: `QT-${q.quote_no}`, contract_no: contract.contract_no },
+      branch: contract.branch_id,
+    });
+  }
+  return { contract_id: contract.id, contract_no: contract.contract_no };
 }
 
 /**
