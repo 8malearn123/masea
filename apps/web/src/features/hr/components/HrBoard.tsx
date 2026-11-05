@@ -714,10 +714,13 @@ function EmployeeModal({
             label="الدور (الصلاحيات)"
             value={role}
             onChange={(ev) => setRole(ev.target.value as RoleCode)}
-            options={(Object.keys(ROLE_META) as RoleCode[]).map((r) => ({
-              value: r,
-              label: ROLE_META[r].label,
-            }))}
+            options={(Object.keys(ROLE_META) as RoleCode[])
+              // العاملة ليست موظفة: حسابها يُربط بملفها في العمالة لا بسجل موظف
+              .filter((r) => r !== 'worker')
+              .map((r) => ({
+                value: r,
+                label: ROLE_META[r].label,
+              }))}
           />
         </div>
 

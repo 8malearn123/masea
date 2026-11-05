@@ -20,9 +20,12 @@ export type LoyaltyTxnType = 'earn' | 'redeem' | 'cashback' | 'referral';
 export type CampaignType =
   | 'hourly_offer' | 'first_order' | 'lucky_wheel' | 'referral' | 'general';
 export type HousingStatus = 'present' | 'absent' | 'on_service' | 'medical';
+// 'worker' (العاملة): بوابة شخصية للعاملة بلا صلاحيات وحدات (migration 0067).
+// ربط حسابها بملفها وسياسات RLS لقراءة بياناتها تأتي عند تفعيلها على البيانات الحقيقية.
 export type AppRole =
   | 'admin' | 'operations_manager' | 'branch_manager' | 'sales' | 'call_center'
-  | 'driver' | 'housing_supervisor' | 'hr' | 'accountant' | 'external_office';
+  | 'driver' | 'housing_supervisor' | 'hr' | 'accountant' | 'external_office'
+  | 'worker';
 
 export interface Branch {
   id: string;

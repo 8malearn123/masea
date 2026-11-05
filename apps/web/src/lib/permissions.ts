@@ -152,6 +152,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
   // السائق يرى رحلاته المُسندة فقط ويحدّث حالتها، ويتتبّع موقعه — لا لوحة شرف ولا أسطول.
   driver: { gps: 'edit', orders: 'edit' },
   housing_supervisor: { housing: 'full' },
+  // العاملة: لا وحدات إدارية — لوحتها الشخصية فقط (بياناتها هي، من ملفها المرتبط).
+  worker: {},
   hr: { hr: 'full', housing: 'view', reports: 'view' },
   accountant: {
     // محاسبي فقط: المدفوعات + النظام المحاسبي + التقارير المالية (واللوحة المالية متاحة للجميع).
@@ -207,6 +209,7 @@ export const ROLE_META: Record<RoleCode, RoleMeta> = {
   hr: { label: 'الموارد البشرية', crossBranch: true, webAccess: true },
   accountant: { label: 'المحاسب', crossBranch: true, webAccess: true },
   external_office: { label: 'المكتب الخارجي', crossBranch: false, webAccess: true },
+  worker: { label: 'العاملة', crossBranch: false, webAccess: true },
 };
 
 export interface ModuleNav {

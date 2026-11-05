@@ -13,6 +13,9 @@ export interface DemoAccount {
   role: AppRole;
   branch: string;
   desc: string;
+  /** حساب العاملة فقط: ربط صريح بملفها في الكتالوج وسجلها في السكن (لا مطابقة بالاسم). */
+  workerId?: string;
+  residentId?: string;
 }
 
 export const DEMO_PASSWORD = 'demo1234';
@@ -98,6 +101,16 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     role: 'external_office',
     branch: 'شرورة',
     desc: 'تعديل محدود لمسار الاستقدام',
+  },
+  {
+    email: 'worker@demo.masea',
+    password: DEMO_PASSWORD,
+    name: 'سيتي نورهاليزا',
+    role: 'worker',
+    branch: 'جازان',
+    desc: 'لوحة العاملة الشخصية',
+    workerId: 'w3',
+    residentId: 'r2',
   },
 ];
 
