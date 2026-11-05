@@ -59,7 +59,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     // full + manage: الإدارة تعدّل إعدادات التسعير (ضريبة/غرامات/تعويضات)
     pricing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     payments: 'full',
-    hr: 'full',
+    // full + manage: الإدارة تعدّل إعدادات الرواتب والتأمينات (0067)
+    hr: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     call_center: 'full',
     // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
@@ -152,7 +153,12 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
   // السائق يرى رحلاته المُسندة فقط ويحدّث حالتها، ويتتبّع موقعه — لا لوحة شرف ولا أسطول.
   driver: { gps: 'edit', orders: 'edit' },
   housing_supervisor: { housing: 'full' },
-  hr: { hr: 'full', housing: 'view', reports: 'view' },
+  hr: {
+    // full + manage: مسؤول الموارد البشرية يعدّل إعدادات الرواتب والتأمينات (0067)
+    hr: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
+    housing: 'view',
+    reports: 'view',
+  },
   accountant: {
     // محاسبي فقط: المدفوعات + النظام المحاسبي + التقارير المالية (واللوحة المالية متاحة للجميع).
     // بيانات الرواتب/الإيراد تصل المحاسب عبر القيود والتقارير، لا عبر فتح وحدات HR/العقود.

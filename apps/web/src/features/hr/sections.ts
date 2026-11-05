@@ -6,6 +6,7 @@ import {
   HandCoins,
   IdCard,
   LayoutGrid,
+  SlidersHorizontal,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -20,7 +21,8 @@ export type HrSection =
   | 'eos'
   | 'documents'
   | 'performance'
-  | 'visas';
+  | 'visas'
+  | 'settings';
 
 /** HR sections — surfaced as primary sidebar links under «الموارد البشرية». */
 export const HR_SECTIONS: { key: HrSection; label: string; icon: LucideIcon; slug: string }[] = [
@@ -33,6 +35,7 @@ export const HR_SECTIONS: { key: HrSection; label: string; icon: LucideIcon; slu
   { key: 'documents', label: 'المستندات', icon: FileText, slug: 'documents' },
   { key: 'performance', label: 'الأداء', icon: Gauge, slug: 'performance' },
   { key: 'visas', label: 'التأشيرات والإقامات', icon: IdCard, slug: 'visas' },
+  { key: 'settings', label: 'إعدادات الرواتب', icon: SlidersHorizontal, slug: 'settings' },
 ];
 
 /** slug → section key (for routing). */

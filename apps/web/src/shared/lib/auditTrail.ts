@@ -43,6 +43,8 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   sales: 'المبيعات',
   sale_notes: 'ملاحظات المبيعات',
   worker_bookings: 'حجوزات التأجير بالساعة',
+  payroll_config: 'إعدادات الرواتب',
+  gosi_config: 'إعدادات التأمينات (GOSI)',
 };
 
 export const AUDIT_ACTION_LABEL: Record<string, string> = {
@@ -85,6 +87,17 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   assigned_to: 'المسؤول',
   action: 'الإجراء',
   module: 'الوحدة',
+  standard_work_days: 'أيام الشهر المعتمدة',
+  daily_hours: 'ساعات العمل اليومية',
+  overtime_multiplier: 'معامل العمل الإضافي',
+  shift_start_hour: 'بداية الدوام',
+  late_grace_minutes: 'فترة سماح التأخير',
+  ceiling: 'سقف وعاء التأمينات',
+  saudi_old_employee: 'حصة الموظف السعودي (قديم)',
+  saudi_old_company: 'حصة المنشأة للسعودي (قديم)',
+  saudi_new_employee: 'حصة الموظف السعودي (جديد)',
+  saudi_new_company: 'حصة المنشأة للسعودي (جديد)',
+  nonsaudi_company: 'حصة المنشأة للوافد',
 };
 
 export const auditEntityLabel = (e: string) => AUDIT_ENTITY_LABEL[e] ?? e;

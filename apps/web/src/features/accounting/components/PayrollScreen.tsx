@@ -3,7 +3,7 @@ import { BookOpenText, CheckCircle2, Link2, Wallet } from 'lucide-react';
 import { Badge, Button, Card, Select, Table, type Column } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useAdjustments, useEmployees } from '@/features/hr/hooks/useHr';
+import { useAdjustments, useEmployees, usePayrollSettings } from '@/features/hr/hooks/useHr';
 import { payrollPeriods, runPayroll } from '@/features/hr/api/hr.api';
 import type { Payslip } from '@/features/hr/types';
 import { accountName } from '@/features/accounting/data/chart';
@@ -34,13 +34,14 @@ export function PayrollScreen() {
   const editable = can('accounting', 'create');
   const { data: employees = [], isLoading } = useEmployees();
   const { data: adjustments = [] } = useAdjustments();
+  const { data: settings } = usePayrollSettings(); // live payroll/GOSI config
   const { data: postedRefs = [] } = usePostedPayroll();
   const post = usePostPayroll();
   const [period, setPeriod] = useState(PERIODS[0] ?? '');
 
   const slips: Payslip[] = useMemo(
     () => runPayroll(employees, period, adjustments),
-    [employees, period, adjustments],
+    [employees, period, adjustments, settings],
   );
   const totals = useMemo(() => payrollTotals(slips), [slips]);
   const entry = useMemo(() => buildPayrollEntry(slips, period, null), [slips, period]);

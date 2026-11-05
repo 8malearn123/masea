@@ -382,21 +382,59 @@ export function computePayroll(
  *   nationality/GOSI system) + APPROVED adjustments + config.
  * This is the demo mirror of supabase/migrations/0022_payroll.sql calculate_payslip().
  * ========================================================================= */
-export const PAYROLL_CONFIG = {
+/** Tunable payroll values — mirror of `payroll_config` (0022). Managed from
+ *  «إعدادات الرواتب» (hr.manage); the engine always reads these live values. */
+export interface PayrollConfig {
+  standardWorkDays: number;
+  dailyHours: number;
+  overtimeMultiplier: number;
+  shiftStartHour: number;
+  lateGraceMinutes: number;
+}
+
+/** GOSI rates — mirror of `gosi_config` (0022). Rates are fractions (0.0975 = 9.75٪). */
+export interface GosiConfig {
+  ceiling: number;
+  saudiOldEmployee: number;
+  saudiOldCompany: number;
+  saudiNewEmployee: number;
+  saudiNewCompany: number;
+  nonSaudiCompany: number;
+}
+
+/** Defaults = the DB column defaults (0022). Used to seed and to "restore defaults". */
+export const PAYROLL_CONFIG_DEFAULTS: Readonly<PayrollConfig> = Object.freeze({
   standardWorkDays: 30,
   dailyHours: 8,
   overtimeMultiplier: 1.5, // نظام العمل السعودي
-  lateMinutesPerIncident: 30, // افتراض تجريبي: كل تأخير ≈ ٣٠ دقيقة فوق فترة السماح
-} as const;
-
-export const GOSI_CONFIG = {
+  shiftStartHour: 8,
+  lateGraceMinutes: 15,
+});
+export const GOSI_CONFIG_DEFAULTS: Readonly<GosiConfig> = Object.freeze({
   ceiling: 45000,
   saudiOldEmployee: 0.0975, // نظام قديم (قبل 2024-07-03)
-  saudiNewEmployee: 0.1, // نظام جديد
   saudiOldCompany: 0.1175,
+  saudiNewEmployee: 0.1, // نظام جديد
   saudiNewCompany: 0.12,
   nonSaudiCompany: 0.02, // أخطار مهنية فقط
-} as const;
+});
+
+/** Live values — mutated in place by the settings screen (see payrollSettings.api). */
+export const PAYROLL_CONFIG: PayrollConfig = { ...PAYROLL_CONFIG_DEFAULTS };
+export const GOSI_CONFIG: GosiConfig = { ...GOSI_CONFIG_DEFAULTS };
+
+/**
+ * Demo-data only: the demo attendance stores a late COUNT, not check-in times,
+ * so each incident is assumed to be this many minutes after shift start. The
+ * configured grace is then subtracted exactly like calculate_payslip() does
+ * with real check-ins (live mode never uses this value).
+ */
+export const DEMO_LATE_ARRIVAL_MINUTES = 45;
+
+/** Minutes deducted per late incident = arrival delay beyond the grace period. */
+export function lateMinutesPerIncident(cfg: PayrollConfig = PAYROLL_CONFIG): number {
+  return Math.max(0, DEMO_LATE_ARRIVAL_MINUTES - cfg.lateGraceMinutes);
+}
 
 /** Employer GOSI share — same base (basic + housing, capped) as the payslip. */
 export function employerGosiFor(
@@ -453,7 +491,7 @@ export function calculatePayslip(
   const overtimeAmount = round2(overtimeHours * hourly * cfg.overtimeMultiplier);
 
   const absenceDeduction = round2(dailyWage * e.absence_days);
-  const lateMinutes = e.late_count * cfg.lateMinutesPerIncident;
+  const lateMinutes = e.late_count * lateMinutesPerIncident(cfg);
   const lateDeduction = round2((lateMinutes / 60) * hourly);
 
   // approved adjustments only, for this period

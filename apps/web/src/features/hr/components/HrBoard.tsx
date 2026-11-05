@@ -47,6 +47,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { MODULES, ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { EmployeeProfile } from '@/features/hr/components/EmployeeProfile';
+import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   useAddAdjustment,
   useAdjustments,
@@ -57,6 +58,7 @@ import {
   useHouseWorkers,
   useIqamas,
   useLeaveRequests,
+  usePayrollSettings,
   usePerformance,
   useUpdateLeave,
 } from '@/features/hr/hooks/useHr';
@@ -162,6 +164,7 @@ export default function HrBoard() {
       {tab === 'documents' && <Documents />}
       {tab === 'performance' && <Performance employees={employees} />}
       {tab === 'visas' && <Visas />}
+      {tab === 'settings' && <PayrollSettings />}
     </div>
   );
 }
@@ -198,6 +201,7 @@ function MiniBar({
 
 function Overview({ employees: all }: { employees: Employee[] }) {
   const employees = currentEmployees(all); // terminated are off the books
+  usePayrollSettings(); // re-render costs when GOSI settings change
   const { data: attendance = [] } = useAttendance();
   const { data: leave = [] } = useLeaveRequests();
 
@@ -1055,12 +1059,13 @@ function Payroll({ employees }: { employees: Employee[] }) {
   const editable = can('hr', 'edit');
   const toast = useToast();
   const { data: adjustments = [] } = useAdjustments();
+  const { data: settings } = usePayrollSettings(); // engine reads the live config
   const [period, setPeriod] = useState(PAYROLL_PERIODS[0] ?? '');
   const [ranPeriod, setRanPeriod] = useState('');
   // Derived from sources, so approving/rejecting an adjustment updates the run live.
   const slips = useMemo<Payslip[] | null>(
     () => (ranPeriod ? runPayroll(employees, ranPeriod, adjustments) : null),
-    [employees, ranPeriod, adjustments],
+    [employees, ranPeriod, adjustments, settings],
   );
   const [openSlip, setOpenSlip] = useState<Payslip | null>(null);
 

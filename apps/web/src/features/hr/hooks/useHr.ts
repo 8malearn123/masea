@@ -19,6 +19,13 @@ import {
   type NewAdjustmentInput,
   type NewDocInput,
 } from '@/features/hr/api/hr.api';
+import {
+  getPayrollSettings,
+  updateGosiConfig,
+  updatePayrollConfig,
+  type PayrollSettings,
+} from '@/features/hr/api/payrollSettings.api';
+import type { GosiConfig, PayrollConfig } from '@/features/hr/api/hr.api';
 import type {
   AdjustmentStatus,
   EmergencyContact,
@@ -195,4 +202,39 @@ export function useUpdateLeave() {
     onSuccess: (_d, { status }) =>
       toast.success(status === 'approved' ? 'تم اعتماد الإجازة' : 'تم تحديث الطلب'),
   });
+}
+
+/* ----------------------- payroll & GOSI settings ------------------------ */
+export const PAYROLL_SETTINGS_KEY = ['hr', 'payroll-settings'] as const;
+
+/** Live payroll/GOSI config. Screens that compute pay subscribe to it so a
+ *  saved setting recomputes the run, payslips and costs immediately. */
+export function usePayrollSettings() {
+  return useQuery<PayrollSettings>({
+    queryKey: PAYROLL_SETTINGS_KEY,
+    queryFn: getPayrollSettings,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+function useSaveSettings<T>(save: (v: T) => Promise<void>, okMsg: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, T>({
+    mutationFn: save,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: PAYROLL_SETTINGS_KEY });
+      void qc.invalidateQueries({ queryKey: ['audit-log'] });
+      toast.success(okMsg);
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ الإعدادات'),
+  });
+}
+
+export function useUpdatePayrollConfig() {
+  return useSaveSettings<PayrollConfig>(updatePayrollConfig, 'تم حفظ إعدادات الرواتب');
+}
+
+export function useUpdateGosiConfig() {
+  return useSaveSettings<GosiConfig>(updateGosiConfig, 'تم حفظ إعدادات التأمينات');
 }
