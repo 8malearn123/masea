@@ -186,6 +186,19 @@ export const WORKER_STATUS_TONE: Record<WorkerStatus, BadgeTone> = {
   medical: 'danger',
 };
 
+/** Labour-source countries for house workers (عاملات) — expat only. */
+export const WORKER_NATIONALITIES = [
+  'الفلبين',
+  'إندونيسيا',
+  'كينيا',
+  'أوغندا',
+  'إثيوبيا',
+  'سريلانكا',
+  'بنغلاديش',
+  'الهند',
+  'باكستان',
+] as const;
+
 export const WORKER_PROFESSIONS = [
   'عاملة منزلية',
   'طباخة',

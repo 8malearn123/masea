@@ -1,4 +1,5 @@
 import type { Payslip } from '@/features/hr/types';
+import { employerGosiFor } from '@/features/hr/api/hr.api';
 import type { JournalEntry, JournalLine } from '@/features/accounting/types';
 
 /**
@@ -11,24 +12,10 @@ import type { JournalEntry, JournalLine } from '@/features/accounting/types';
  */
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-// Employer GOSI rates (mirror of gosi_config in 0022_payroll.sql).
-const GOSI = {
-  ceiling: 45000,
-  saudiOldCompany: 0.1175,
-  saudiNewCompany: 0.12,
-  nonSaudiCompany: 0.02,
-} as const;
-
-/** Employer GOSI share for one payslip (base = basic + housing, capped). */
+/** Employer GOSI share for one payslip — single source: HR's employerGosiFor
+ *  (mirror of gosi_config in 0022_payroll.sql; base = basic + housing, capped). */
 export function employerGosi(p: Payslip): number {
-  const base = Math.min(p.basic + p.housing_allowance, GOSI.ceiling);
-  const rate =
-    p.nationality === 'السعودية'
-      ? p.gosi_system === 'old'
-        ? GOSI.saudiOldCompany
-        : GOSI.saudiNewCompany
-      : GOSI.nonSaudiCompany;
-  return round2(base * rate);
+  return employerGosiFor(p.basic, p.housing_allowance, p.nationality === 'السعودية', p.gosi_system);
 }
 
 export interface PayrollTotals {

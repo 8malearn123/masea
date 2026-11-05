@@ -240,7 +240,7 @@ const LEAVE: LeaveRequest[] = [
     employee_name: 'ريم الزهراني',
     type: 'annual',
     from_date: '2026-06-12',
-    to_date: '2026-06-19',
+    to_date: '2026-06-18',
     days: 7,
     status: 'approved',
     reason: 'إجازة سنوية',
@@ -278,7 +278,20 @@ const LEAVE: LeaveRequest[] = [
 ];
 
 export async function listEmployees(): Promise<Employee[]> {
-  return EMPLOYEES;
+  return EMPLOYEES.map((e) => ({ ...e }));
+}
+
+/** Upsert into the demo store so add/edit survive a cache refetch (staleTime/gc). */
+export function saveEmployee(emp: Employee): Employee {
+  const i = EMPLOYEES.findIndex((e) => e.id === emp.id);
+  if (i >= 0) EMPLOYEES[i] = emp;
+  else EMPLOYEES.unshift(emp);
+  return emp;
+}
+
+/** Employees still on the payroll (active + on leave) — terminated are excluded. */
+export function currentEmployees(employees: Employee[]): Employee[] {
+  return employees.filter((e) => e.status !== 'terminated');
 }
 
 /** Form payload for add/edit. (Persisted locally for now; a richer employees
@@ -290,26 +303,33 @@ export function buildEmployee(input: EmployeeInput): Employee {
 }
 
 export async function listAttendance(): Promise<AttendanceRecord[]> {
-  return ATTENDANCE;
+  return ATTENDANCE.map((a) => ({ ...a }));
 }
 
 export async function listLeaveRequests(): Promise<LeaveRequest[]> {
-  return LEAVE;
+  return LEAVE.map((l) => ({ ...l }));
+}
+
+/** Add a leave request to the demo store (persists across refetch). */
+export function addLeaveRequest(l: LeaveRequest): LeaveRequest {
+  LEAVE.unshift(l);
+  return l;
 }
 
 export async function updateLeaveStatus(id: string, status: LeaveStatus): Promise<void> {
-  if (isDemoId(id)) return; // demo leave request — optimistic update is the truth
+  const local = LEAVE.find((l) => l.id === id);
+  if (local) local.status = status; // keep the demo store in sync with the optimistic update
+  if (isDemoId(id)) return;
   const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id);
   if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
 }
 
-/** Total monthly cost to the company: base + allowances + employer GOSI share. */
+/** Total monthly cost to the company: base + allowances + employer GOSI share
+ *  (same rates/base/ceiling as the payroll run and the accounting accrual). */
 export function monthlyCost(e: Employee): number {
   const saudi = e.nationality === 'السعودية';
-  const employerGosi = Math.round(
-    e.base_salary * (saudi ? GOSI.saudi.company : GOSI.nonSaudi.company),
-  );
-  return e.base_salary + e.allowances + employerGosi;
+  const employerGosi = employerGosiFor(e.base_salary, e.allowances, saudi, e.gosi_system ?? 'new');
+  return Math.round(e.base_salary + e.allowances + employerGosi);
 }
 
 /** Worked hours from "HH:MM" check-in/out (0 if absent). */
@@ -373,7 +393,36 @@ export const GOSI_CONFIG = {
   ceiling: 45000,
   saudiOldEmployee: 0.0975, // نظام قديم (قبل 2024-07-03)
   saudiNewEmployee: 0.1, // نظام جديد
+  saudiOldCompany: 0.1175,
+  saudiNewCompany: 0.12,
+  nonSaudiCompany: 0.02, // أخطار مهنية فقط
 } as const;
+
+/** Employer GOSI share — same base (basic + housing, capped) as the payslip. */
+export function employerGosiFor(
+  basic: number,
+  housing: number,
+  saudi: boolean,
+  system: 'old' | 'new',
+): number {
+  const base = Math.min(basic + housing, GOSI_CONFIG.ceiling);
+  const rate = saudi
+    ? system === 'old'
+      ? GOSI_CONFIG.saudiOldCompany
+      : GOSI_CONFIG.saudiNewCompany
+    : GOSI_CONFIG.nonSaudiCompany;
+  return Math.round(base * rate * 100) / 100;
+}
+
+/** Selectable payroll months: the last `count` months up to the current one ('YYYY-MM'). */
+export function payrollPeriods(now: Date = new Date(), count = 12): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
@@ -536,7 +585,9 @@ export async function decideAdjustment(
   id: string,
   status: Exclude<AdjustmentStatus, 'pending'>,
 ): Promise<void> {
-  if (isDemoId(id)) return; // demo adjustment — optimistic update is the truth
+  const local = ADJUSTMENTS.find((a) => a.id === id);
+  if (local) local.status = status; // keep the demo store in sync with the optimistic update
+  if (isDemoId(id)) return;
   const { error } = await supabase
     .from('payroll_adjustments')
     .update({ status, decided_at: new Date().toISOString() })
@@ -555,7 +606,9 @@ export const ADJUSTMENT_TYPES: AdjustmentType[] = [
 /* ===================== End of service / documents / iqamas ================ */
 
 export function yearsOfService(joinDate: string): number {
-  const ms = Date.now() - new Date(joinDate).getTime();
+  const start = new Date(joinDate).getTime();
+  if (!joinDate || Number.isNaN(start)) return 0; // missing/invalid date → no service yet
+  const ms = Date.now() - start;
   return Math.max(0, Math.round((ms / (365.25 * 86400000)) * 10) / 10);
 }
 
@@ -724,7 +777,11 @@ export async function listIqamas(): Promise<IqamaRecord[]> {
   return IQAMAS;
 }
 export async function listPerformance(): Promise<PerformanceReview[]> {
-  return PERFORMANCE;
+  return PERFORMANCE.map((p) => ({ ...p }));
+}
+export function addPerformanceReview(r: PerformanceReview): PerformanceReview {
+  PERFORMANCE.unshift(r);
+  return r;
 }
 
 /** Add an official document to an employee's file (demo store). */
@@ -851,7 +908,15 @@ const HOUSE_WORKERS: HouseWorker[] = [
 ];
 
 export async function listHouseWorkers(): Promise<HouseWorker[]> {
-  return HOUSE_WORKERS;
+  return HOUSE_WORKERS.map((w) => ({ ...w }));
+}
+
+/** Upsert a house worker into the demo store (persists across refetch). */
+export function saveHouseWorker(w: HouseWorker): HouseWorker {
+  const i = HOUSE_WORKERS.findIndex((x) => x.id === w.id);
+  if (i >= 0) HOUSE_WORKERS[i] = w;
+  else HOUSE_WORKERS.unshift(w);
+  return w;
 }
 
 export type HouseWorkerInput = Omit<HouseWorker, 'id'>;

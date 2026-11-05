@@ -20,7 +20,7 @@ import {
   useLeaveRequests,
   usePerformance,
 } from '@/features/hr/hooks/useHr';
-import { expiryStatus, monthlyCost } from '@/features/hr/api/hr.api';
+import { currentEmployees, expiryStatus, monthlyCost } from '@/features/hr/api/hr.api';
 import {
   DOC_STATUS_TONE,
   EMP_STATUS_LABEL,
@@ -66,12 +66,12 @@ export function HrDashboard() {
   const stats = useMemo(() => {
     const active = employees.filter((e) => e.status === 'active').length;
     const onLeave = employees.filter((e) => e.status === 'on_leave').length;
-    const payroll = employees.reduce((s, e) => s + monthlyCost(e), 0);
+    const payroll = currentEmployees(employees).reduce((s, e) => s + monthlyCost(e), 0);
     const pendingLeave = leaves.filter((l) => l.status === 'pending').length;
     const avgScore = performance.length
       ? Math.round(performance.reduce((s, p) => s + p.score, 0) / performance.length)
       : 0;
-    return { total: employees.length, active, onLeave, payroll, pendingLeave, avgScore };
+    return { total: active + onLeave, active, onLeave, payroll, pendingLeave, avgScore };
   }, [employees, leaves, performance]);
 
   // expiring/expired docs + iqamas (soonest first)

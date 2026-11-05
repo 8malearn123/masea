@@ -62,15 +62,21 @@ import {
 } from '@/features/hr/hooks/useHr';
 import {
   ADJUSTMENT_TYPES,
+  addLeaveRequest,
+  addPerformanceReview,
   buildEmployee,
   buildHouseWorker,
   buildWpsCsv,
   computeEos,
+  currentEmployees,
   expiryStatus,
   monthlyCost,
   PAYROLL_CONFIG,
+  payrollPeriods,
   ratingLabel,
   runPayroll,
+  saveEmployee,
+  saveHouseWorker,
   workedHours,
   type EmployeeInput,
   type HouseWorkerInput,
@@ -92,6 +98,7 @@ import {
   NATIONALITY_OPTIONS,
   SKILL_OPTIONS,
   WORKER_LANGUAGES,
+  WORKER_NATIONALITIES,
   WORKER_PROFESSIONS,
   WORKER_STATUS_LABEL,
   WORKER_STATUS_TONE,
@@ -182,14 +189,15 @@ function MiniBar({
           style={{ width: `${(value / max) * 100}%` }}
         />
       </div>
-      <span className="num w-14 text-left text-sm font-semibold text-navy">
+      <span className="num w-16 shrink-0 whitespace-nowrap text-left text-sm font-semibold text-navy">
         {value} {suffix}
       </span>
     </div>
   );
 }
 
-function Overview({ employees }: { employees: Employee[] }) {
+function Overview({ employees: all }: { employees: Employee[] }) {
+  const employees = currentEmployees(all); // terminated are off the books
   const { data: attendance = [] } = useAttendance();
   const { data: leave = [] } = useLeaveRequests();
 
@@ -302,12 +310,12 @@ function Overview({ employees }: { employees: Employee[] }) {
           <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
             <Coins size={16} /> التكلفة الشهرية حسب الفرع
           </h2>
-          <div className="h-56">
+          <div className="h-56" dir="ltr">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E3E1ED" />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 11 }} width={56} />
+                <YAxis tick={{ fontSize: 11 }} width={64} />
                 <Tooltip formatter={(v: number) => `${sar(v)} ر.س`} />
                 <Bar dataKey="التكلفة" fill="#1B1564" radius={[6, 6, 0, 0]} />
               </BarChart>
@@ -470,13 +478,13 @@ function AdminEmployees({ employees }: { employees: Employee[] }) {
 
   function save(input: EmployeeInput) {
     if (editTarget) {
-      const updated: Employee = { ...editTarget, ...input };
+      const updated: Employee = saveEmployee({ ...editTarget, ...input });
       qc.setQueryData<Employee[]>(['hr', 'employees'], (old) =>
         old?.map((e) => (e.id === updated.id ? updated : e)),
       );
       toast.success('تم تحديث بيانات الموظف');
     } else {
-      const created = buildEmployee(input);
+      const created = saveEmployee(buildEmployee(input));
       qc.setQueryData<Employee[]>(['hr', 'employees'], (old) =>
         old ? [created, ...old] : [created],
       );
@@ -625,8 +633,17 @@ function EmployeeModal({
       setError('اسم الموظف مطلوب');
       return;
     }
+    if (!join_date) {
+      setError('تاريخ التعيين مطلوب (تُحتسب منه نهاية الخدمة)');
+      return;
+    }
+    if (!(base_salary > 0) || !(allowances >= 0)) {
+      setError('أدخل راتبًا أساسيًا أكبر من صفر وبدلات غير سالبة');
+      return;
+    }
+    setError(null);
     onSave({
-      full_name,
+      full_name: full_name.trim(),
       job_title,
       department,
       branch,
@@ -649,7 +666,6 @@ function EmployeeModal({
             label="الاسم الكامل"
             value={full_name}
             onChange={(ev) => setFullName(ev.target.value)}
-            error={error ?? undefined}
           />
           <Input
             label="المسمى الوظيفي"
@@ -743,6 +759,7 @@ function EmployeeModal({
           </div>
         </div>
 
+        {error && <p className="text-xs text-red-600">{error}</p>}
         <Button onClick={submit} className="w-full">
           {employee ? 'حفظ التعديلات' : 'إضافة الموظف'}
         </Button>
@@ -872,6 +889,7 @@ function Leave({ employees }: { employees: Employee[] }) {
   const [addOpen, setAddOpen] = useState(false);
 
   function addLeave(l: LeaveRequest) {
+    addLeaveRequest(l);
     qc.setQueryData<LeaveRequest[]>(['hr', 'leave'], (old) => (old ? [l, ...old] : [l]));
     toast.success('تم تعيين الإجازة للموظف');
     setAddOpen(false);
@@ -943,7 +961,11 @@ function Leave({ employees }: { employees: Employee[] }) {
         emptyTitle="لا توجد طلبات إجازة"
       />
       {addOpen && (
-        <LeaveModal employees={employees} onAdd={addLeave} onClose={() => setAddOpen(false)} />
+        <LeaveModal
+          employees={currentEmployees(employees)}
+          onAdd={addLeave}
+          onClose={() => setAddOpen(false)}
+        />
       )}
     </div>
   );
@@ -1026,16 +1048,20 @@ function LeaveModal({
 }
 
 /* -------------------------------- payroll -------------------------------- */
-const PAYROLL_PERIODS = ['2026-04', '2026-05', '2026-06', '2026-07'] as const;
+const PAYROLL_PERIODS = payrollPeriods();
 
 function Payroll({ employees }: { employees: Employee[] }) {
   const { can } = usePermissions();
   const editable = can('hr', 'edit');
   const toast = useToast();
   const { data: adjustments = [] } = useAdjustments();
-  const [period, setPeriod] = useState('2026-06');
-  const [slips, setSlips] = useState<Payslip[] | null>(null);
+  const [period, setPeriod] = useState(PAYROLL_PERIODS[0] ?? '');
   const [ranPeriod, setRanPeriod] = useState('');
+  // Derived from sources, so approving/rejecting an adjustment updates the run live.
+  const slips = useMemo<Payslip[] | null>(
+    () => (ranPeriod ? runPayroll(employees, ranPeriod, adjustments) : null),
+    [employees, ranPeriod, adjustments],
+  );
   const [openSlip, setOpenSlip] = useState<Payslip | null>(null);
 
   const pendingThisPeriod = adjustments.filter(
@@ -1054,7 +1080,6 @@ function Payroll({ employees }: { employees: Employee[] }) {
 
   function run() {
     const result = runPayroll(employees, period, adjustments);
-    setSlips(result);
     setRanPeriod(period);
     toast.success(`تم تشغيل مسير رواتب ${period} لعدد ${result.length} موظف من المصادر`);
   }
@@ -1280,7 +1305,13 @@ function PayslipModal({
               label="التأمينات الاجتماعية (GOSI)"
               value={slip.gosi_employee > 0 ? sar(slip.gosi_employee) : '0.00'}
               tone="text-red-600"
-              hint={slip.nationality === 'السعودية' ? `نظام ${slip.gosi_system}` : 'وافد — معفى'}
+              hint={
+                slip.nationality === 'السعودية'
+                  ? slip.gosi_system === 'old'
+                    ? 'النظام القديم'
+                    : 'النظام الجديد'
+                  : 'وافد — معفى'
+              }
             />
             <SlipLine
               label="خصم التغيّب"
@@ -1399,7 +1430,11 @@ function AdjustmentsPanel({
         </ul>
       )}
       {addOpen && (
-        <AdjustmentModal employees={employees} period={period} onClose={() => setAddOpen(false)} />
+        <AdjustmentModal
+          employees={currentEmployees(employees)}
+          period={period}
+          onClose={() => setAddOpen(false)}
+        />
       )}
     </Card>
   );
@@ -1617,6 +1652,7 @@ function Performance({ employees }: { employees: Employee[] }) {
   const top = [...reviews].sort((a, b) => b.score - a.score)[0];
 
   function addReview(r: PerformanceReview) {
+    addPerformanceReview(r);
     qc.setQueryData<PerformanceReview[]>(['hr', 'performance'], (old) => (old ? [r, ...old] : [r]));
     toast.success('تم حفظ التقييم');
     setAddOpen(false);
@@ -1676,7 +1712,7 @@ function Performance({ employees }: { employees: Employee[] }) {
       />
       {addOpen && (
         <PerformanceModal
-          employees={employees}
+          employees={currentEmployees(employees)}
           onAdd={addReview}
           onClose={() => setAddOpen(false)}
         />
@@ -1698,9 +1734,17 @@ function PerformanceModal({
   const [period, setPeriod] = useState('الربع الثاني 2026');
   const [score, setScore] = useState(80);
   const [reviewer, setReviewer] = useState('المدير المباشر');
+  const [error, setError] = useState<string | null>(null);
 
   function submit() {
-    if (!empName) return;
+    if (!empName || !period.trim() || !reviewer.trim()) {
+      setError('أكمل بيانات التقييم (الموظف والفترة والمُقيّم).');
+      return;
+    }
+    if (!Number.isFinite(score) || score < 0 || score > 100) {
+      setError('الدرجة يجب أن تكون بين ٠ و ١٠٠.');
+      return;
+    }
     onAdd({
       id: `p-${Date.now()}`,
       employee_name: empName,
@@ -1733,6 +1777,7 @@ function PerformanceModal({
         <p className="text-xs text-purple">
           التقدير: <span className="font-semibold text-navy">{ratingLabel(score)}</span>
         </p>
+        {error && <p className="text-xs text-red-600">{error}</p>}
         <Button onClick={submit} className="w-full">
           <Gauge size={16} /> حفظ التقييم
         </Button>
@@ -1886,13 +1931,13 @@ function HouseWorkers() {
 
   function save(input: HouseWorkerInput) {
     if (editTarget) {
-      const updated: HouseWorker = { ...editTarget, ...input };
+      const updated: HouseWorker = saveHouseWorker({ ...editTarget, ...input });
       qc.setQueryData<HouseWorker[]>(['hr', 'workers'], (old) =>
         old?.map((w) => (w.id === updated.id ? updated : w)),
       );
       toast.success('تم تحديث بيانات العاملة');
     } else {
-      const created = buildHouseWorker(input);
+      const created = saveHouseWorker(buildHouseWorker(input));
       qc.setQueryData<HouseWorker[]>(['hr', 'workers'], (old) =>
         old ? [created, ...old] : [created],
       );
@@ -1933,7 +1978,7 @@ function HouseWorkers() {
             onChange={(e) => setNat(e.target.value)}
             options={[
               { value: 'all', label: 'كل الجنسيات' },
-              ...NATIONALITY_OPTIONS.map((n) => ({ value: n, label: n })),
+              ...WORKER_NATIONALITIES.map((n) => ({ value: n, label: n })),
             ]}
           />
         </div>
@@ -2213,7 +2258,7 @@ function WorkerModal({
             label="الجنسية"
             value={nationality}
             onChange={(e) => setNationality(e.target.value)}
-            options={NATIONALITY_OPTIONS.map((n) => ({ value: n, label: n }))}
+            options={WORKER_NATIONALITIES.map((n) => ({ value: n, label: n }))}
           />
           <Select
             label="المهنة"

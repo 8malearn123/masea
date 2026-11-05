@@ -4,13 +4,13 @@ import { Badge, Button, Card, Select, Table, type Column } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useAdjustments, useEmployees } from '@/features/hr/hooks/useHr';
-import { runPayroll } from '@/features/hr/api/hr.api';
+import { payrollPeriods, runPayroll } from '@/features/hr/api/hr.api';
 import type { Payslip } from '@/features/hr/types';
 import { accountName } from '@/features/accounting/data/chart';
 import { buildPayrollEntry, employerGosi, payrollTotals } from '@/features/accounting/data/payroll';
 import { usePostedPayroll, usePostPayroll } from '@/features/accounting/hooks/useAccounting';
 
-const PERIODS = ['2026-04', '2026-05', '2026-06'] as const;
+const PERIODS = payrollPeriods();
 
 function Stat({
   label,
@@ -36,7 +36,7 @@ export function PayrollScreen() {
   const { data: adjustments = [] } = useAdjustments();
   const { data: postedRefs = [] } = usePostedPayroll();
   const post = usePostPayroll();
-  const [period, setPeriod] = useState('2026-06');
+  const [period, setPeriod] = useState(PERIODS[0] ?? '');
 
   const slips: Payslip[] = useMemo(
     () => runPayroll(employees, period, adjustments),
