@@ -3,12 +3,8 @@ import { Badge } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
 import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
 import { expiryAlerts } from '@/features/hr/lib/documentsEngine';
-import {
-  DOC_OWNER_LABEL,
-  DOC_STATUS_LABEL,
-  DOC_STATUS_TONE,
-  DOC_TYPE_LABEL,
-} from '@/features/hr/types';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
+import { DOC_OWNER_LABEL, DOC_STATUS_LABEL, DOC_STATUS_TONE } from '@/features/hr/types';
 
 /**
  * Company-wide expiry alerts (staff + workers) inside the managed window
@@ -18,6 +14,7 @@ import {
 export function DocExpiryAlerts() {
   const { data: docs = [] } = useHrDocuments();
   const alertDays = useDocAlertDays();
+  const lk = useHrLookups();
   const items = expiryAlerts(docs, alertDays);
 
   return (
@@ -49,7 +46,7 @@ export function DocExpiryAlerts() {
                     </span>
                   </p>
                   <p className="text-[11px] text-purple">
-                    {DOC_TYPE_LABEL[doc.type] ?? doc.type} ·{' '}
+                    {lk.docTypeLabel(doc.type)} ·{' '}
                     <span className="num">{dateAr(doc.expiry_date ?? '')}</span>
                     {' · '}
                     {days < 0 ? (

@@ -1548,6 +1548,53 @@ export async function persistHouseWorker(w: HouseWorker, isNew: boolean): Promis
   return saveHouseWorker(w);
 }
 
+/* ------------------- reference lists in the demo stores (0075) ------------- */
+type RenamableKind =
+  | 'department'
+  | 'job_title'
+  | 'nationality'
+  | 'profession'
+  | 'skill'
+  | 'language';
+
+/** Demo mirror of cascade_hr_lookup_rename: records that store the name follow it. */
+export function renameLookupValueDemo(kind: string, from: string, to: string): void {
+  if (from === to) return;
+  const swap = (arr: string[]) => arr.map((x) => (x === from ? to : x));
+  EMPLOYEES.forEach((e) => {
+    if (kind === 'department' && e.department === from) e.department = to;
+    if (kind === 'job_title' && e.job_title === from) e.job_title = to;
+    if (kind === 'nationality' && e.nationality === from) e.nationality = to;
+  });
+  FALLBACK_WORKERS.forEach((w, i) => {
+    FALLBACK_WORKERS[i] = {
+      ...w,
+      nationality: kind === 'nationality' && w.nationality === from ? to : w.nationality,
+      profession: kind === 'profession' && w.profession === from ? to : w.profession,
+      languages: kind === 'language' ? swap([...w.languages]) : w.languages,
+    };
+  });
+  if (kind === 'skill') Object.values(WORKER_HR).forEach((h) => (h.skills = swap(h.skills)));
+}
+
+/** Demo mirror of hr_lookup_usage: how many records hold each name. */
+export function lookupUsageDemo(kind: RenamableKind): Map<string, number> {
+  const out = new Map<string, number>();
+  const add = (v: string | null | undefined) => {
+    if (v) out.set(v, (out.get(v) ?? 0) + 1);
+  };
+  if (kind === 'department') EMPLOYEES.forEach((e) => add(e.department));
+  if (kind === 'job_title') EMPLOYEES.forEach((e) => add(e.job_title));
+  if (kind === 'nationality') {
+    EMPLOYEES.forEach((e) => add(e.nationality));
+    FALLBACK_WORKERS.forEach((w) => add(w.nationality));
+  }
+  if (kind === 'profession') FALLBACK_WORKERS.forEach((w) => add(w.profession));
+  if (kind === 'language') FALLBACK_WORKERS.forEach((w) => w.languages.forEach(add));
+  if (kind === 'skill') Object.values(WORKER_HR).forEach((h) => h.skills.forEach(add));
+  return out;
+}
+
 export type HouseWorkerInput = Omit<HouseWorker, 'id'>;
 
 export function buildHouseWorker(input: HouseWorkerInput): HouseWorker {

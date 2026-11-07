@@ -272,6 +272,7 @@ describe('demo store (mirror of RLS + renew_document + post_document_cost)', () 
       },
       '2026-11-07',
       '1112',
+      'الإقامة',
     );
     expect(() => assertBalanced(e.lines)).not.toThrow();
     expect(e.lines[0]).toMatchObject({ account_code: '5160', debit: 650 });

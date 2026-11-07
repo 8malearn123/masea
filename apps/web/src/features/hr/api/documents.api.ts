@@ -10,6 +10,8 @@ import { roleCan, type RoleCode } from '@/lib/permissions';
 import { useAuth } from '@/store/auth';
 import { listEmployees, listHouseWorkers } from '@/features/hr/api/hr.api';
 import * as live from '@/features/hr/api/documents.live';
+import { LOOKUP_STORE } from '@/features/hr/api/lookups.store';
+import { lookupLabel } from '@/features/hr/lib/lookups';
 import {
   assertRenewable,
   docStoragePath,
@@ -20,7 +22,6 @@ import {
   type RenewInput,
 } from '@/features/hr/lib/documentsEngine';
 import {
-  DOC_TYPE_LABEL,
   type DocCostRow,
   type DocFile,
   type DocumentDraft,
@@ -148,7 +149,7 @@ function audit(action: 'insert' | 'update', d: Stored, owner: Owner, before?: Pa
   recordAudit({
     action,
     entity: 'employee_documents',
-    record_ref: `${DOC_TYPE_LABEL[d.type] ?? d.type} — ${owner.name}`,
+    record_ref: `${lookupLabel(LOOKUP_STORE, 'doc_type', d.type)} — ${owner.name}`,
     old_data: before ? Object.fromEntries(changed.map((k) => [k, before[k]])) : null,
     new_data: Object.fromEntries(changed.map((k) => [k, d[k]])),
     branch: owner.branch || null,

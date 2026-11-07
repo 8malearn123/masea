@@ -7,7 +7,11 @@ import type { Invoice } from '@/features/payments/types';
 const LIST_KEY = ['payments', 'invoices'] as const;
 
 export function useInvoices() {
-  return useQuery({ queryKey: LIST_KEY, queryFn: listInvoices, staleTime: QUERY_DEFAULTS.staleTime });
+  return useQuery({
+    queryKey: LIST_KEY,
+    queryFn: listInvoices,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
 }
 
 export function useInvoice(id: string) {
@@ -17,7 +21,11 @@ export function useInvoice(id: string) {
 export function useRecordPayment() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<{ reference_no: string }, Error, { invoiceId: string; method: string; amount: number }>({
+  return useMutation<
+    { reference_no: string },
+    Error,
+    { invoiceId: string; method: string; amount: number }
+  >({
     mutationFn: ({ invoiceId, method, amount }) => recordPayment(invoiceId, method, amount),
     onSuccess: (res, { invoiceId, method }) => {
       qc.setQueryData<Invoice[]>(LIST_KEY, (old) =>

@@ -690,10 +690,14 @@ export function useDocCosts() {
 export function usePostDocCost() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<void, Error, { id: string; paidOn: string; bankCode: string }>({
+  return useMutation<
+    void,
+    Error,
+    { id: string; paidOn: string; bankCode: string; typeLabel: string }
+  >({
     mutationFn: (v) =>
       postDocCost(v.id, v.paidOn, v.bankCode, (row) =>
-        postPayrollEntry(buildDocCostEntry(row, v.paidOn, v.bankCode)),
+        postPayrollEntry(buildDocCostEntry(row, v.paidOn, v.bankCode, v.typeLabel)),
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: JOURNAL_KEY });

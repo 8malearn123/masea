@@ -20,12 +20,8 @@ import {
   normalizeIban,
   SAUDI_BANKS,
 } from '@/features/hr/lib/employeeValidation';
-import {
-  CONTRACT_TYPE_LABEL,
-  DEPARTMENTS,
-  NATIONALITY_OPTIONS,
-  type Employee,
-} from '@/features/hr/types';
+import { CONTRACT_TYPE_LABEL, type Employee } from '@/features/hr/types';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 
 type Tab = 'basic' | 'identity' | 'job' | 'pay' | 'account';
 
@@ -149,6 +145,7 @@ export function EmployeeForm({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('basic');
+  const lk = useHrLookups();
   const [f, setF] = useState<FormState>(() => initialState(employee));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const { data: settings } = usePayrollSettings();
@@ -311,7 +308,10 @@ export function EmployeeForm({
               label="الجنسية"
               value={f.nationality}
               onChange={set('nationality')}
-              options={NATIONALITY_OPTIONS.map((n) => ({ value: n, label: n }))}
+              options={lk.options('nationality', {
+                scope: 'staff',
+                keep: employee?.nationality ?? null,
+              })}
             />
             <Select
               label="الجنس"
@@ -379,17 +379,21 @@ export function EmployeeForm({
         {tab === 'job' && (
           <div className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Input
+              <Select
                 label="المسمى الوظيفي"
                 value={f.job_title}
                 onChange={set('job_title')}
+                options={[
+                  { value: '', label: 'اختر المسمى…' },
+                  ...lk.options('job_title', { keep: employee?.job_title ?? null }),
+                ]}
                 {...err('job_title')}
               />
               <Select
                 label="القسم"
                 value={f.department}
                 onChange={set('department')}
-                options={DEPARTMENTS.map((d) => ({ value: d, label: d }))}
+                options={lk.options('department', { keep: employee?.department ?? null })}
               />
               <Select
                 label="الفرع"

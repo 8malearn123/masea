@@ -29,6 +29,7 @@ import { dateAr, sar } from '@/shared/lib/format';
 import { exportCsv } from '@/shared/lib/exportTable';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useUpdateConfig } from '@/features/settings/hooks/useSettings';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import { currentEmployees } from '@/features/hr/api/hr.api';
 import { useEmployees, useHouseWorkers } from '@/features/hr/hooks/useHr';
 import {
@@ -57,16 +58,12 @@ import {
   DOC_OWNER_LABEL,
   DOC_STATUS_LABEL,
   DOC_STATUS_TONE,
-  DOC_TYPE_LABEL,
   type DocFile,
   type DocOwnerKind,
   type DocStatus,
   type DocumentDraft,
   type HrDocument,
 } from '@/features/hr/types';
-
-const TYPE_OPTIONS = Object.entries(DOC_TYPE_LABEL).map(([value, label]) => ({ value, label }));
-const typeLabel = (t: string) => DOC_TYPE_LABEL[t] ?? t;
 
 /* --------------------------------- bits ----------------------------------- */
 function DaysLeft({ expiry }: { expiry: string | null }) {
@@ -154,6 +151,7 @@ export function DocumentFormModal({
   onClose: () => void;
 }) {
   const save = useSaveHrDocument();
+  const lk = useHrLookups();
   const { data: employees = [] } = useEmployees();
   const { data: workers = [] } = useHouseWorkers();
   const [draft, setDraft] = useState<DocumentDraft>(() => ({
@@ -222,7 +220,7 @@ export function DocumentFormModal({
             label="نوع الوثيقة"
             value={draft.type}
             onChange={(e) => set('type', e.target.value)}
-            options={TYPE_OPTIONS}
+            options={lk.docTypes(draft.type)}
           />
           <Input
             label="رقم الوثيقة"
@@ -277,6 +275,7 @@ export function DocumentFormModal({
 
 /* --------------------------------- renew ---------------------------------- */
 export function RenewDocumentModal({ doc, onClose }: { doc: HrDocument; onClose: () => void }) {
+  const typeLabel = useHrLookups().docTypeLabel;
   const renew = useRenewHrDocument();
   const nextYear = (() => {
     const base = doc.expiry_date && doc.expiry_date > todayIso() ? doc.expiry_date : todayIso();
@@ -444,6 +443,8 @@ type StatusFilter = 'all' | DocStatus | 'archived';
 
 /** «المستندات» — staff + worker documents with filters, renewal, files and export. */
 export function DocumentsRegister() {
+  const lk = useHrLookups();
+  const typeLabel = lk.docTypeLabel;
   const { can } = usePermissions();
   const canManage = can('hr', 'manage');
   const { data: docs = [], isLoading, isError, refetch } = useHrDocuments();
@@ -648,7 +649,7 @@ export function DocumentsRegister() {
           aria-label="نوع الوثيقة"
           value={type}
           onChange={(e) => setType(e.target.value)}
-          options={[{ value: 'all', label: 'كل الأنواع' }, ...TYPE_OPTIONS]}
+          options={[{ value: 'all', label: 'كل الأنواع' }, ...lk.docTypes()]}
         />
         <Select
           aria-label="الحالة"
@@ -877,6 +878,7 @@ export function OwnerDocuments({
   ownerName: string;
   editable: boolean;
 }) {
+  const typeLabel = useHrLookups().docTypeLabel;
   const { data: docs = [], isLoading, isError, refetch } = useHrDocuments();
   const alertDays = useDocAlertDays();
   const [showArchive, setShowArchive] = useState(false);

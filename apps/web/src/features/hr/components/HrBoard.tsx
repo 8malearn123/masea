@@ -44,6 +44,7 @@ import { LeaveBoard } from '@/features/hr/components/LeaveBoard';
 import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
 import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
 import { EosBoard } from '@/features/hr/components/EosBoard';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   DocumentsRegister,
@@ -75,13 +76,8 @@ import {
   type HouseWorkerInput,
 } from '@/features/hr/api/hr.api';
 import {
-  DEPARTMENTS,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
-  SKILL_OPTIONS,
-  WORKER_LANGUAGES,
-  WORKER_NATIONALITIES,
-  WORKER_PROFESSIONS,
   WORKER_STATUS_LABEL,
   WORKER_STATUS_TONE,
   type Employee,
@@ -463,6 +459,7 @@ function AdminEmployees({
   const editable = can('hr', 'edit');
   // pay is money: only hr.manage sets salaries (guard_employee_pay, 0068)
   const canManagePay = can('hr', 'manage');
+  const lk = useHrLookups();
   const saveEmp = useSaveEmployee();
   const [branch, setBranch] = useState('all');
   const [dept, setDept] = useState('all');
@@ -625,7 +622,7 @@ function AdminEmployees({
             onChange={(e) => setDept(e.target.value)}
             options={[
               { value: 'all', label: 'كل الأقسام' },
-              ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+              ...lk.ofKind('department').map((d) => ({ value: d.name_ar, label: d.name_ar })),
             ]}
           />
           <Select
@@ -957,6 +954,7 @@ function HouseWorkers() {
   const editable = can('hr', 'edit');
   const { data: workers = [], isLoading, isError, refetch } = useHouseWorkers();
   const saveWorker = useSaveHouseWorker();
+  const lk = useHrLookups();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [nat, setNat] = useState('all');
@@ -1016,7 +1014,10 @@ function HouseWorkers() {
             onChange={(e) => setNat(e.target.value)}
             options={[
               { value: 'all', label: 'كل الجنسيات' },
-              ...WORKER_NATIONALITIES.map((n) => ({ value: n, label: n })),
+              ...lk
+                .ofKind('nationality')
+                .filter((n) => n.scope !== 'staff')
+                .map((n) => ({ value: n.name_ar, label: n.name_ar })),
             ]}
           />
         </div>
@@ -1247,8 +1248,11 @@ function WorkerModal({
   const w = worker;
   const [full_name, setFullName] = useState(w?.full_name ?? '');
   const [photoUrl, setPhotoUrl] = useState(w?.photo_url ?? '');
-  const [nationality, setNationality] = useState(w?.nationality ?? 'الفلبين');
-  const [profession, setProfession] = useState(w?.profession ?? 'عاملة منزلية');
+  const lk = useHrLookups();
+  const [nationality, setNationality] = useState(
+    w?.nationality ?? lk.names('nationality', { scope: 'worker' })[0] ?? '',
+  );
+  const [profession, setProfession] = useState(w?.profession ?? lk.names('profession')[0] ?? '');
   const [age, setAge] = useState(w?.age ?? 30);
   const [experience_years, setExp] = useState(w?.experience_years ?? 3);
   const [monthly_salary, setSalary] = useState(w?.monthly_salary ?? 1400);
@@ -1319,13 +1323,13 @@ function WorkerModal({
             label="الجنسية"
             value={nationality}
             onChange={(e) => setNationality(e.target.value)}
-            options={WORKER_NATIONALITIES.map((n) => ({ value: n, label: n }))}
+            options={lk.options('nationality', { scope: 'worker', keep: w?.nationality ?? null })}
           />
           <Select
             label="المهنة"
             value={profession}
             onChange={(e) => setProfession(e.target.value)}
-            options={WORKER_PROFESSIONS.map((p) => ({ value: p, label: p }))}
+            options={lk.options('profession', { keep: w?.profession ?? null })}
           />
           <Input
             label="العمر"
@@ -1372,13 +1376,13 @@ function WorkerModal({
         </div>
         <ChipMulti
           label="اللغات"
-          options={WORKER_LANGUAGES}
+          options={lk.names('language', { keep: w?.languages ?? [] })}
           selected={languages}
           onToggle={(v) => toggle(languages, setLanguages, v)}
         />
         <ChipMulti
           label="المهارات والصفات"
-          options={SKILL_OPTIONS}
+          options={lk.names('skill', { keep: w?.skills ?? [] })}
           selected={skills}
           onToggle={(v) => toggle(skills, setSkills, v)}
         />

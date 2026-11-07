@@ -32,6 +32,7 @@ import {
   useManualAttendance,
   useMonthAttendance,
 } from '@/features/hr/hooks/useHr';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import { currentEmployees, payrollPeriods } from '@/features/hr/api/hr.api';
 import {
   isHoliday,
@@ -44,7 +45,6 @@ import {
   ATT_METHOD_LABEL,
   ATT_STATUS_LABEL,
   ATT_STATUS_TONE,
-  DEPARTMENTS,
   WEEKDAY_LABEL,
   type AttendanceConfig,
   type AttendanceMethod,
@@ -108,6 +108,7 @@ interface DayRow {
 
 function DaySheet({ employees }: { employees: Employee[] }) {
   const { can } = usePermissions();
+  const lk = useHrLookups();
   const role = useAuth((s) => s.profile?.role);
   const today = nowRiyadh().date;
   const [date, setDate] = useState(today);
@@ -270,7 +271,7 @@ function DaySheet({ employees }: { employees: Employee[] }) {
             onChange={(e) => setDept(e.target.value)}
             options={[
               { value: 'all', label: 'كل الأقسام' },
-              ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+              ...lk.ofKind('department').map((d) => ({ value: d.name_ar, label: d.name_ar })),
             ]}
           />
           {can('hr', 'manage') && date < today && workday && (

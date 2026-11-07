@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { BookOpenText, FileText, Landmark } from 'lucide-react';
 import { Badge, Button, Card, Input, Select, StatTile, Table, type Column } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
-import { DOC_OWNER_LABEL, DOC_TYPE_LABEL, type DocCostRow } from '@/features/hr/types';
+import { DOC_OWNER_LABEL, type DocCostRow } from '@/features/hr/types';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import { useDocCosts, usePostDocCost } from '@/features/accounting/hooks/useAccounting';
 import { useAccAccess } from '@/features/accounting/hooks/useAccountingPro';
 
@@ -22,6 +23,7 @@ export function DocFeesScreen() {
   const canPost = allowed('bank', 'post');
   const { data: rows = [], isLoading, isError, refetch } = useDocCosts();
   const post = usePostDocCost();
+  const lk = useHrLookups();
   const [bank, setBank] = useState('1112');
   const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
   const pending = rows.filter((r) => !r.posted);
@@ -47,7 +49,7 @@ export function DocFeesScreen() {
       header: 'الوثيقة',
       cell: (r) => (
         <div>
-          {DOC_TYPE_LABEL[r.type] ?? r.type}
+          {lk.docTypeLabel(r.type)}
           <div className="num text-[11px] text-purple">{r.number}</div>
         </div>
       ),
@@ -83,7 +85,9 @@ export function DocFeesScreen() {
             size="sm"
             variant="success"
             loading={post.isPending && post.variables?.id === r.id}
-            onClick={() => post.mutate({ id: r.id, paidOn, bankCode: bank })}
+            onClick={() =>
+              post.mutate({ id: r.id, paidOn, bankCode: bank, typeLabel: lk.docTypeLabel(r.type) })
+            }
           >
             <BookOpenText size={14} /> ترحيل
           </Button>

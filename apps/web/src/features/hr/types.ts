@@ -100,15 +100,6 @@ export interface EmergencyContact {
   phone: string;
 }
 
-export const NATIONALITY_OPTIONS = [
-  'السعودية',
-  'الهند',
-  'الفلبين',
-  'بنغلاديش',
-  'مصر',
-  'باكستان',
-] as const;
-
 /* ------------------------------ deductions ------------------------------- */
 export type DeductionType = 'absence' | 'late' | 'warning' | 'other';
 
@@ -136,16 +127,6 @@ export const EMP_STATUS_TONE: Record<EmployeeStatus, BadgeTone> = {
   on_leave: 'gold',
   terminated: 'neutral',
 };
-
-export const DEPARTMENTS = [
-  'الإدارة',
-  'العمليات',
-  'المالية',
-  'الموارد البشرية',
-  'المبيعات',
-  'مركز الاتصال',
-  'السكن',
-] as const;
 
 /* ------------------------------ attendance ------------------------------- */
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave';
@@ -334,67 +315,8 @@ export const WORKER_STATUS_TONE: Record<WorkerStatus, BadgeTone> = {
   medical: 'danger',
 };
 
-/** Labour-source countries for house workers (عاملات) — expat only. */
-export const WORKER_NATIONALITIES = [
-  'الفلبين',
-  'إندونيسيا',
-  'كينيا',
-  'أوغندا',
-  'إثيوبيا',
-  'سريلانكا',
-  'بنغلاديش',
-  'الهند',
-  'باكستان',
-] as const;
-
-export const WORKER_PROFESSIONS = [
-  'عاملة منزلية',
-  'طباخة',
-  'مربية أطفال',
-  'عاملة نظافة',
-  'سائق',
-] as const;
-export const SKILL_OPTIONS = [
-  'محبة للأطفال',
-  'تجيد الطبخ',
-  'العناية بكبار السن',
-  'التنظيف',
-  'الكي',
-  'رعاية ذوي الإعاقة',
-  'تجيد القيادة',
-] as const;
-export const WORKER_LANGUAGES = [
-  'العربية',
-  'الإنجليزية',
-  'الفلبينية',
-  'الإندونيسية',
-  'السواحيلية',
-  'الأردية',
-  'البنغالية',
-  'السنهالية',
-] as const;
-
 /* ------------------------- documents / iqamas ---------------------------- */
-/** employee_documents.type codes (0021) ↔ Arabic labels shown in the UI. */
-export const DOC_TYPE_LABEL: Record<string, string> = {
-  national_id: 'الهوية الوطنية',
-  iqama: 'الإقامة',
-  passport: 'جواز سفر',
-  work_permit: 'رخصة العمل',
-  visa: 'التأشيرة',
-  contract: 'عقد عمل',
-  cv: 'السيرة الذاتية',
-  certificate: 'شهادة علمية/مهنية',
-  medical: 'التأمين الطبي',
-  driving_license: 'رخصة قيادة',
-  photo: 'صورة شخصية',
-  other: 'أخرى',
-};
-/** Arabic label → stored code (unknown labels are stored as 'other'). */
-export function docTypeCode(label: string): string {
-  return Object.entries(DOC_TYPE_LABEL).find(([, l]) => l === label)?.[0] ?? 'other';
-}
-export const DOC_TYPE_OPTIONS = Object.values(DOC_TYPE_LABEL).filter((l) => l !== 'صورة شخصية');
+/** employee_documents.type stores a doc_type code from hr_lookups (0075). */
 
 export type DocStatus = 'valid' | 'expiring' | 'expired';
 
@@ -682,3 +604,58 @@ export interface EosSettlement extends EosCalc {
   posted_at: string | null;
   paid_at: string | null;
 }
+
+/* ------------------------ reference lists (0075) -------------------------- */
+export type HrLookupKind =
+  | 'department'
+  | 'job_title'
+  | 'nationality'
+  | 'profession'
+  | 'skill'
+  | 'language'
+  | 'doc_type';
+/** Who a nationality applies to (other lists use «both»). */
+export type LookupScope = 'staff' | 'worker' | 'both';
+
+export interface HrLookup {
+  kind: HrLookupKind;
+  code: string;
+  name_ar: string;
+  scope: LookupScope;
+  is_active: boolean;
+  /** the system relies on it — renamable, never disabled */
+  is_system: boolean;
+  sort_order: number;
+}
+
+export const LOOKUP_KINDS: { kind: HrLookupKind; title: string; hint: string }[] = [
+  {
+    kind: 'department',
+    title: 'الأقسام',
+    hint: 'أقسام الموظفين — تظهر في ملف الموظف وفلاتر الحضور والتقارير.',
+  },
+  { kind: 'job_title', title: 'المسميات الوظيفية', hint: 'يُختار منها المسمى في ملف الموظف.' },
+  {
+    kind: 'nationality',
+    title: 'الجنسيات',
+    hint: 'لكل جنسية نطاق: للموظفين، للعمالة، أو للكل. «السعودية» ثابتة.',
+  },
+  {
+    kind: 'profession',
+    title: 'مهن العمالة',
+    hint: 'مهن العاملات والعمال — ترتبط بقواعد التسعير.',
+  },
+  { kind: 'skill', title: 'المهارات والصفات', hint: 'تظهر في ملف العاملة وكتالوج العملاء.' },
+  { kind: 'language', title: 'اللغات', hint: 'لغات العمالة.' },
+  {
+    kind: 'doc_type',
+    title: 'أنواع الوثائق',
+    hint: 'الأنواع الأساسية (الإقامة، الجواز، رخصة العمل…) لا تُعطَّل.',
+  },
+];
+
+export const LOOKUP_SCOPE_LABEL: Record<LookupScope, string> = {
+  staff: 'للموظفين',
+  worker: 'للعمالة',
+  both: 'للكل',
+};

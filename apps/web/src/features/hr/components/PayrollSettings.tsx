@@ -30,6 +30,7 @@ import type { GosiConfig, PayrollConfig } from '@/features/hr/api/hr.api';
 import { LeaveTypesSettings } from '@/features/hr/components/LeaveTypesSettings';
 import { AttendanceSettings } from '@/features/hr/components/AttendanceSettings';
 import { DocAlertSettings } from '@/features/hr/components/DocumentsBoard';
+import { HrListsSettings } from '@/features/hr/components/HrListsSettings';
 
 /* ------------------------------- helpers --------------------------------- */
 type Errors<T> = Partial<Record<keyof T, string>>;
@@ -149,6 +150,8 @@ export default function PayrollSettings() {
       <AttendanceSettings editable={canManage} />
 
       <DocAlertSettings editable={canManage} />
+
+      <HrListsSettings editable={canManage} />
 
       <SettingsHistory />
     </div>

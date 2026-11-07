@@ -17,9 +17,9 @@ import { useEmployees, useLeaveRequests, usePerformance } from '@/features/hr/ho
 import { currentEmployees, monthlyCost } from '@/features/hr/api/hr.api';
 import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
 import { expiryAlerts } from '@/features/hr/lib/documentsEngine';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import {
   DOC_STATUS_TONE,
-  DOC_TYPE_LABEL,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
   LEAVE_STATUS_LABEL,
@@ -58,6 +58,7 @@ export function HrDashboard() {
   const { data: leaves = [] } = useLeaveRequests();
   const { data: documents = [] } = useHrDocuments();
   const alertDays = useDocAlertDays();
+  const lk = useHrLookups();
   const { data: performance = [] } = usePerformance();
 
   const stats = useMemo(() => {
@@ -79,11 +80,11 @@ export function HrDashboard() {
         .map((a) => ({
           id: a.doc.id,
           name: a.doc.owner_name,
-          kind: DOC_TYPE_LABEL[a.doc.type] ?? a.doc.type,
+          kind: lk.docTypeLabel(a.doc.type),
           expiry: a.doc.expiry_date ?? '',
           status: a.status,
         })),
-    [documents, alertDays],
+    [documents, alertDays, lk],
   );
 
   const pendingLeaves = useMemo(

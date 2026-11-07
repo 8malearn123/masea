@@ -1,5 +1,4 @@
 import {
-  DOC_TYPE_LABEL,
   type DocCostRow,
   type EosSettlement,
   type Payslip,
@@ -238,9 +237,14 @@ export function buildEosProvisionEntry(delta: number, period: string): JournalEn
 }
 
 /** Government fee of a renewed document (0074): DR 5160 / CR bank — post_document_cost. */
-export function buildDocCostEntry(row: DocCostRow, paidOn: string, bankCode: string): JournalEntry {
+export function buildDocCostEntry(
+  row: DocCostRow,
+  paidOn: string,
+  bankCode: string,
+  typeLabel = 'وثيقة',
+): JournalEntry {
   const ref = row.id.replace(/[^a-z0-9]/gi, '').slice(-8);
-  const label = DOC_TYPE_LABEL[row.type] ?? 'وثيقة';
+  const label = typeLabel;
   return {
     id: `je-doc-${row.id}`,
     entry_no: 6400 + (Number.parseInt(ref.slice(-3), 36) % 90 || 0),

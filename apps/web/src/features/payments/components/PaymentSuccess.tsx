@@ -26,13 +26,32 @@ export default function PaymentSuccess() {
         <p className="mt-1 text-sm text-purple">شكرًا لك — تم تسجيل الدفعة وإصدار الإيصال.</p>
 
         <div className="mt-7 rounded-2xl border border-navy-100 p-5 text-right">
-          <Row label="رقم العملية" value={<span className="num font-bold text-gold-600">{state?.reference_no ?? '—'}</span>} />
+          <Row
+            label="رقم العملية"
+            value={
+              <span className="num font-bold text-gold-600">{state?.reference_no ?? '—'}</span>
+            }
+          />
           <Row label="العقد" value={<span className="num">{state?.contract_no ?? '—'}</span>} />
           <Row label="العميل" value={state?.customer_name ?? '—'} />
-          <Row label="وسيلة الدفع" value={state ? METHOD_LABEL[state.method] ?? state.method : '—'} />
-          <Row label="التاريخ" value={<span className="num">{dateAr(new Date().toISOString())}</span>} />
+          <Row
+            label="وسيلة الدفع"
+            value={state ? (METHOD_LABEL[state.method] ?? state.method) : '—'}
+          />
+          <Row
+            label="التاريخ"
+            value={<span className="num">{dateAr(new Date().toISOString())}</span>}
+          />
           <div className="my-2 border-t border-navy-100" />
-          <Row label="المبلغ المدفوع" value={<span className="num text-lg font-bold text-green-600">{sar(state?.total ?? 0)} ر.س</span>} strong />
+          <Row
+            label="المبلغ المدفوع"
+            value={
+              <span className="num text-lg font-bold text-green-600">
+                {sar(state?.total ?? 0)} ر.س
+              </span>
+            }
+            strong
+          />
         </div>
 
         <div className="mt-6 flex justify-center gap-3">
@@ -48,7 +67,15 @@ export default function PaymentSuccess() {
   );
 }
 
-function Row({ label, value, strong }: { label: string; value: React.ReactNode; strong?: boolean }) {
+function Row({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: React.ReactNode;
+  strong?: boolean;
+}) {
   return (
     <div className="flex items-center justify-between py-1.5">
       <span className={strong ? 'font-bold text-navy' : 'text-sm text-purple'}>{label}</span>
