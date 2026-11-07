@@ -4,6 +4,12 @@ import { isDemoMode } from '@/shared/lib/demoBackend';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
+  approveEosSettlement,
+  calculateEos,
+  cancelEosSettlement,
+  listEosSettlements,
+  prepareEosSettlement,
+  type EosPrepareInput,
   attendanceCheck,
   closeAttendanceDay,
   getAttendanceConfig,
@@ -58,6 +64,7 @@ import {
 } from '@/features/hr/api/payrollSettings.api';
 import type { GosiConfig, PayrollConfig } from '@/features/hr/api/hr.api';
 import type {
+  TerminationReason,
   AttendanceConfig,
   PublicHoliday,
   AdjustmentStatus,
@@ -650,4 +657,55 @@ export function useSetBranchAttendance() {
     () => 'تم حفظ موقع الفرع',
     [BRANCH_ATT_KEY],
   );
+}
+
+/* ----------------------------- end of service ---------------------------- */
+const EOS_KEY = ['hr', 'eos'] as const;
+
+export function useEosSettlements() {
+  return useQuery({ queryKey: EOS_KEY, queryFn: listEosSettlements, staleTime: 15_000 });
+}
+
+/** Live entitlement preview (server eos_calculate with a backend). */
+export function useEosPreview(
+  employee: Employee | null | undefined,
+  end: string,
+  reason: TerminationReason,
+  art77 = false,
+) {
+  return useQuery({
+    queryKey: [...EOS_KEY, 'preview', employee?.id ?? '', end, reason, art77],
+    queryFn: () => calculateEos(employee as Employee, end, reason, art77),
+    enabled: !!employee && !!end,
+    staleTime: 30_000,
+  });
+}
+
+function useEosMutation<V>(fn: (v: V) => Promise<void>, ok: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, V>({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: EOS_KEY });
+      void qc.invalidateQueries({ queryKey: ['audit-log'] });
+      toast.success(ok);
+    },
+    onError: (e) => toast.error(e.message || 'تعذّرت العملية'),
+  });
+}
+export function usePrepareEos() {
+  return useEosMutation(
+    (v: EosPrepareInput) => prepareEosSettlement(v),
+    'تم إعداد التسوية — بانتظار الاعتماد',
+  );
+}
+export function useApproveEos() {
+  return useEosMutation(
+    (id: string) => approveEosSettlement(id),
+    'تم اعتماد التسوية — أصبحت مجمّدة',
+  );
+}
+export function useCancelEos() {
+  return useEosMutation((id: string) => cancelEosSettlement(id), 'أُلغيت مسودة التسوية');
 }

@@ -9,7 +9,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
-import { Badge, Button, Card, ErrorState, Input, Skeleton } from '@/shared/ui';
+import { Badge, Button, Card, ErrorState, Input, Select, Skeleton } from '@/shared/ui';
+import { EOS_WAGE_BASIS_LABEL, type EosWageBasis } from '@/features/hr/types';
 import { sar } from '@/shared/lib/format';
 import { auditFieldLabel, type AuditEntry } from '@/shared/lib/auditTrail';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -160,6 +161,7 @@ interface PayrollForm {
   lateGraceMinutes: string;
   defaultHousingPct: string;
   defaultTransportPct: string;
+  eosWageBasis: EosWageBasis;
 }
 const toPayrollForm = (c: PayrollConfig): PayrollForm => ({
   standardWorkDays: String(c.standardWorkDays),
@@ -169,6 +171,7 @@ const toPayrollForm = (c: PayrollConfig): PayrollForm => ({
   lateGraceMinutes: String(c.lateGraceMinutes),
   defaultHousingPct: String(c.defaultHousingPct),
   defaultTransportPct: String(c.defaultTransportPct),
+  eosWageBasis: c.eosWageBasis,
 });
 const fromPayrollForm = (f: PayrollForm): PayrollConfig => ({
   standardWorkDays: num(f.standardWorkDays),
@@ -178,6 +181,7 @@ const fromPayrollForm = (f: PayrollForm): PayrollConfig => ({
   lateGraceMinutes: num(f.lateGraceMinutes),
   defaultHousingPct: num(f.defaultHousingPct),
   defaultTransportPct: num(f.defaultTransportPct),
+  eosWageBasis: f.eosWageBasis,
 });
 
 /** Worked example so HR sees what a value means in riyals before saving. */
@@ -284,6 +288,16 @@ function PayrollConfigCard({ initial, editable }: { initial: PayrollConfig; edit
           disabled={!editable}
           error={errors.defaultTransportPct}
           hint="يُقترح للموظف الجديد كنسبة من الأساسي"
+        />
+        <Select
+          label="أجر احتساب مكافأة نهاية الخدمة"
+          value={form.eosWageBasis}
+          disabled={!editable}
+          onChange={(e) => setForm((f) => ({ ...f, eosWageBasis: e.target.value as EosWageBasis }))}
+          options={(Object.keys(EOS_WAGE_BASIS_LABEL) as EosWageBasis[]).map((b) => ({
+            value: b,
+            label: EOS_WAGE_BASIS_LABEL[b],
+          }))}
         />
       </div>
 

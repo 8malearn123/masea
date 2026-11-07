@@ -17,6 +17,13 @@ import {
 } from '@/features/hr/lib/leaveEngine';
 import { leaveTypeSchema } from '@/features/hr/lib/leaveTypeSchema';
 import {
+  eosAward,
+  eosCalculate,
+  eosWages,
+  provisionTarget,
+  serviceYears,
+} from '@/features/hr/lib/eosEngine';
+import {
   assertMethodAllowed,
   DEFAULT_ATTENDANCE_CONFIG,
   distanceM,
@@ -29,6 +36,9 @@ import { z } from 'zod';
 import { ADJ_IS_ADDITION } from '@/features/hr/types';
 import type {
   AccountOption,
+  EosCalc,
+  EosSettlement,
+  EosWageBasis,
   AttendanceConfig,
   AttendanceMethod,
   BranchAttendance,
@@ -1024,6 +1034,8 @@ export interface PayrollConfig {
   /** suggested allowances for a new hire, as % of basic (employee form). */
   defaultHousingPct: number;
   defaultTransportPct: number;
+  /** wage the end-of-service award is computed on (0073) */
+  eosWageBasis: EosWageBasis;
 }
 
 /** GOSI rates — mirror of `gosi_config` (0022). Rates are fractions (0.0975 = 9.75٪). */
@@ -1045,6 +1057,7 @@ export const PAYROLL_CONFIG_DEFAULTS: Readonly<PayrollConfig> = Object.freeze({
   lateGraceMinutes: 15,
   defaultHousingPct: 25,
   defaultTransportPct: 10,
+  eosWageBasis: 'full',
 });
 export const GOSI_CONFIG_DEFAULTS: Readonly<GosiConfig> = Object.freeze({
   ceiling: 45000,
@@ -1330,21 +1343,17 @@ export const ADJUSTMENT_TYPES: AdjustmentType[] = [
 
 /* ===================== End of service / documents / iqamas ================ */
 
+/** Years of service until today — same rule as eos_service_years (days ÷ 365). */
 export function yearsOfService(joinDate: string): number {
-  const start = new Date(joinDate).getTime();
-  if (!joinDate || Number.isNaN(start)) return 0; // missing/invalid date → no service yet
-  const ms = Date.now() - start;
-  return Math.max(0, Math.round((ms / (365.25 * 86400000)) * 10) / 10);
+  if (!joinDate || Number.isNaN(Date.parse(joinDate))) return 0; // missing/invalid → no service yet
+  return serviceYears(joinDate, new Date().toISOString().slice(0, 10));
 }
 
-/** Saudi labour-law gratuity: ½ month wage per year (first 5), full month after. */
+/** Award if the employee left today by employer termination (م84) — single engine (eosEngine). */
 export function computeEos(e: Employee): { years: number; wage: number; amount: number } {
-  const wage = e.base_salary + e.allowances;
   const years = yearsOfService(e.join_date);
-  const half = Math.min(years, 5) * 0.5;
-  const full = Math.max(years - 5, 0);
-  const amount = Math.round((half + full) * wage);
-  return { years, wage, amount };
+  const wage = eosWages(e, PAYROLL_CONFIG.eosWageBasis).eos;
+  return { years, wage, amount: years ? eosAward(years, wage, 'employer_termination').award : 0 };
 }
 
 export function expiryStatus(expiry: string | null): DocStatus {
@@ -1825,4 +1834,180 @@ export async function payPayrollRun(
   if (!bankCode.startsWith('111')) throw new Error('اختر حساب بنك أو صندوق');
   postEntry(r.run);
   r.run = { ...r.run, status: 'paid', paid_at: paidOn };
+}
+
+/* =========================== End of service (0073) =======================
+ * Demo mirror of eos_calculate / prepare / approve (four eyes) / post / pay and
+ * the monthly provision true-up. Same rules and messages as the server.
+ * ========================================================================= */
+const EOS: EosSettlement[] = [];
+/** demo balance of 2210 «مخصص مكافأة نهاية الخدمة» (provision true-ups − settlements) */
+let EOS_PROVISION_BALANCE = 0;
+const EOS_PROVISION_POSTED = new Set<string>();
+
+export interface EosPrepareInput {
+  employee_id: string;
+  art77: boolean;
+  other_additions: number;
+  other_deductions: number;
+  note: string;
+}
+
+/** Entitlement preview for an employee leaving on `end` for `reason`. */
+export async function calculateEos(
+  e: Employee,
+  end: string,
+  reason: TerminationReason,
+  art77 = false,
+): Promise<EosCalc> {
+  if (!isDemoMode()) return live.liveEosCalculate(e.id, end, reason, art77);
+  return eosCalculate(e, end, reason, art77, PAYROLL_CONFIG.eosWageBasis, LEAVE, LEAVE_TYPES);
+}
+
+export async function listEosSettlements(): Promise<EosSettlement[]> {
+  if (!isDemoMode()) return live.liveListEos();
+  return scopeByEmployee(EOS.filter((x) => x.status !== 'cancelled')).map((x) => ({ ...x }));
+}
+
+export async function prepareEosSettlement(input: EosPrepareInput): Promise<void> {
+  if (!isDemoMode()) return live.livePrepareEos(input);
+  const e = EMPLOYEES.find((x) => x.id === input.employee_id);
+  if (!e || e.status !== 'terminated' || !e.termination_date || !e.termination_reason)
+    throw new Error('سجّل إنهاء خدمة الموظف أولاً');
+  if (input.art77 && e.termination_reason !== 'employer_termination')
+    throw new Error('تعويض المادة 77 للإنهاء من صاحب العمل فقط');
+  if (input.other_additions < 0 || input.other_deductions < 0)
+    throw new Error('المبالغ لا تكون سالبة');
+  if ((input.other_additions > 0 || input.other_deductions > 0) && !input.note.trim())
+    throw new Error('اذكر سبب الإضافات أو الخصومات');
+  if (EOS.some((x) => x.employee_id === e.id && (x.status === 'approved' || x.status === 'paid')))
+    throw new Error('تسوية هذا الموظف معتمدة — لا تُعاد');
+  const c = eosCalculate(
+    e,
+    e.termination_date,
+    e.termination_reason,
+    input.art77,
+    PAYROLL_CONFIG.eosWageBasis,
+    LEAVE,
+    LEAVE_TYPES,
+  );
+  for (let i = EOS.length - 1; i >= 0; i--)
+    if (EOS[i]!.employee_id === e.id && EOS[i]!.status === 'draft') EOS.splice(i, 1);
+  const me = actor();
+  EOS.unshift({
+    ...c,
+    id: `eos-${e.id}-${Date.now()}`,
+    employee_id: e.id,
+    employee_name: e.full_name,
+    end_date: e.termination_date,
+    reason: e.termination_reason,
+    art77: input.art77,
+    other_additions: input.other_additions,
+    other_deductions: input.other_deductions,
+    note: input.note.trim(),
+    net: round2(c.total + input.other_additions - input.other_deductions),
+    status: 'draft',
+    prepared_by: me.id,
+    prepared_by_name: me.name,
+    approved_by_name: '',
+    posted_at: null,
+    paid_at: null,
+  });
+}
+
+export async function approveEosSettlement(id: string): Promise<void> {
+  if (!isDemoMode()) return live.liveEosAction('approve_eos_settlement', { p_id: id });
+  const s = EOS.find((x) => x.id === id);
+  if (!s) throw new Error('التسوية غير موجودة');
+  if (s.status !== 'draft') throw new Error('التسوية ليست بانتظار الاعتماد');
+  const me = actor();
+  if (s.prepared_by === me.id)
+    throw new Error('لا يعتمد التسويةَ من أعدّها — يعتمدها شخص آخر (مبدأ الأربع أعين)');
+  if (s.net < 0) throw new Error('صافي التسوية سالب — راجع الخصومات');
+  s.status = 'approved';
+  s.approved_by_name = me.name;
+}
+
+export async function cancelEosSettlement(id: string): Promise<void> {
+  if (!isDemoMode()) return live.liveEosAction('cancel_eos_settlement', { p_id: id });
+  const s = EOS.find((x) => x.id === id);
+  if (!s || s.status !== 'draft') throw new Error('لا تُلغى إلا التسوية غير المعتمدة');
+  s.status = 'cancelled';
+}
+
+/** Accounting: settlement entry (award drawn from the provision 2210). */
+export async function postEosSettlement(
+  id: string,
+  postEntry: (s: EosSettlement) => void,
+): Promise<void> {
+  if (!isDemoMode()) return live.liveEosAction('post_eos_settlement', { p_id: id });
+  const s = EOS.find((x) => x.id === id);
+  if (!s) throw new Error('التسوية غير موجودة');
+  if (s.status !== 'approved' && s.status !== 'paid')
+    throw new Error('لا تُرحَّل إلا تسوية معتمدة');
+  if (s.posted_at) return;
+  postEntry(s);
+  EOS_PROVISION_BALANCE = round2(EOS_PROVISION_BALANCE - s.award);
+  s.posted_at = new Date().toISOString();
+}
+
+export async function payEosSettlement(
+  id: string,
+  paidOn: string,
+  bankCode: string,
+  postEntry: (s: EosSettlement) => void,
+): Promise<void> {
+  if (!isDemoMode())
+    return live.liveEosAction('pay_eos_settlement', {
+      p_id: id,
+      p_paid_on: paidOn,
+      p_bank_code: bankCode,
+    });
+  const s = EOS.find((x) => x.id === id);
+  if (!s) throw new Error('التسوية غير موجودة');
+  if (!s.posted_at) throw new Error('رحّل قيد التسوية أولاً');
+  if (s.status === 'paid') return;
+  if (!bankCode.startsWith('111')) throw new Error('اختر حساب بنك أو صندوق');
+  postEntry(s);
+  s.status = 'paid';
+  s.paid_at = paidOn;
+}
+
+export interface ProvisionStatus {
+  target: number;
+  balance: number;
+  delta: number;
+  posted: boolean;
+}
+
+/** Provision for a month: the liability vs the current balance of 2210. */
+export async function getEosProvision(period: string): Promise<ProvisionStatus> {
+  if (!isDemoMode()) return live.liveEosProvision(period);
+  const end = monthEndOf(period);
+  const target = provisionTarget(EMPLOYEES, end, PAYROLL_CONFIG.eosWageBasis);
+  return {
+    target,
+    balance: EOS_PROVISION_BALANCE,
+    delta: round2(target - EOS_PROVISION_BALANCE),
+    posted: EOS_PROVISION_POSTED.has(period),
+  };
+}
+
+export async function postEosProvision(
+  period: string,
+  postEntry: (delta: number) => void,
+): Promise<void> {
+  if (!isDemoMode()) return live.liveEosAction('post_eos_provision', { p_period: period });
+  if (EOS_PROVISION_POSTED.has(period)) throw new Error(`مخصص ${period} مُرحَّل بالفعل`);
+  const st = await getEosProvision(period);
+  if (st.delta !== 0) postEntry(st.delta);
+  EOS_PROVISION_BALANCE = st.target;
+  EOS_PROVISION_POSTED.add(period);
+}
+
+function monthEndOf(period: string): string {
+  const d = new Date(`${period}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
 }

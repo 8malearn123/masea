@@ -1,4 +1,4 @@
-import type { Payslip, PayrollRun } from '@/features/hr/types';
+import type { EosSettlement, Payslip, PayrollRun } from '@/features/hr/types';
 import { employerGosiFor } from '@/features/hr/api/hr.api';
 import type { JournalEntry, JournalLine } from '@/features/accounting/types';
 
@@ -140,6 +140,92 @@ export function buildPayrollPaymentEntry(
         debit: 0,
         credit: t.payable,
         description: 'تحويل الرواتب (حماية الأجور)',
+      },
+    ],
+  };
+}
+
+/* ------------------------- end of service (0073) -------------------------- */
+const eosRef = (id: string) => id.replace(/[^a-z0-9]/gi, '').slice(-8);
+
+/** Settlement entry (mirror of post_eos_settlement): award from the provision. */
+export function buildEosSettlementEntry(s: EosSettlement): JournalEntry {
+  const l = (account_code: string, debit: number, credit: number, description: string) => ({
+    account_code,
+    debit,
+    credit,
+    description,
+  });
+  const lines: JournalLine[] = [
+    ...(s.award > 0 ? [l('2210', s.award, 0, 'مكافأة نهاية الخدمة (من المخصص)')] : []),
+    ...(s.leave_amount > 0 ? [l('5100', s.leave_amount, 0, 'بدل رصيد الإجازات')] : []),
+    ...(s.art77_amount + s.other_additions > 0
+      ? [l('5150', round2(s.art77_amount + s.other_additions), 0, 'تعويضات ومستحقات أخرى')]
+      : []),
+    ...(s.other_deductions > 0
+      ? [l('1160', 0, s.other_deductions, 'مبالغ مستحقة على الموظف')]
+      : []),
+    l('2130', 0, s.net, 'مستحقات نهاية الخدمة'),
+  ];
+  return {
+    id: `je-eos-${s.id}`,
+    entry_no: 6500 + (Number.parseInt(eosRef(s.id).slice(-3), 36) % 400),
+    entry_date: s.end_date,
+    branch: null,
+    description: `تسوية نهاية خدمة — ${s.employee_name}`,
+    reference: `EOS-${eosRef(s.id)}`,
+    source_type: 'payroll',
+    status: 'posted',
+    lines,
+  };
+}
+
+export function buildEosPaymentEntry(
+  s: EosSettlement,
+  paidOn: string,
+  bankCode: string,
+): JournalEntry {
+  return {
+    id: `je-eos-pay-${s.id}`,
+    entry_no: 6900 + (Number.parseInt(eosRef(s.id).slice(-3), 36) % 90),
+    entry_date: paidOn,
+    branch: null,
+    description: `صرف تسوية نهاية خدمة — ${s.employee_name}`,
+    reference: `EOS-PAY-${eosRef(s.id)}`,
+    source_type: 'payroll',
+    status: 'posted',
+    lines: [
+      { account_code: '2130', debit: s.net, credit: 0, description: 'إطفاء مستحقات نهاية الخدمة' },
+      { account_code: bankCode, debit: 0, credit: s.net, description: 'صرف تسوية نهاية الخدمة' },
+    ],
+  };
+}
+
+/** Monthly true-up: DR 5150 / CR 2210 (reversed when the liability fell). */
+export function buildEosProvisionEntry(delta: number, period: string): JournalEntry {
+  const d = round2(Math.abs(delta));
+  const up = delta > 0;
+  return {
+    id: `je-eos-prov-${period}`,
+    entry_no: 6200 + (Number(period.slice(5, 7)) || 0),
+    entry_date: monthEnd(period),
+    branch: null,
+    description: `مخصص مكافأة نهاية الخدمة ${period}`,
+    reference: `EOS-PROV-${period}`,
+    source_type: 'payroll',
+    status: 'posted',
+    lines: [
+      {
+        account_code: '5150',
+        debit: up ? d : 0,
+        credit: up ? 0 : d,
+        description: 'مصروف مكافأة نهاية الخدمة',
+      },
+      {
+        account_code: '2210',
+        debit: up ? 0 : d,
+        credit: up ? d : 0,
+        description: 'مخصص مكافأة نهاية الخدمة',
       },
     ],
   };

@@ -38,6 +38,8 @@ import {
   type AdjustmentType,
   type Payslip,
   type PayrollRun,
+  type EosCalc,
+  type EosSettlement,
   type PerformanceReview,
   type WorkerStatus,
 } from '@/features/hr/types';
@@ -1021,4 +1023,135 @@ export async function livePayRun(runId: string, paidOn: string, bankCode: string
     p_bank_code: bankCode,
   });
   fail(error, 'تسجيل صرف الرواتب');
+}
+
+/* ------------------------------ end of service ---------------------------- */
+function mapEosCalc(r: Row): EosCalc {
+  const b = str(r.wage_basis);
+  return {
+    service_years: num(r.service_years),
+    wage: num(r.wage),
+    full_wage: num(r.full_wage ?? r.wage),
+    wage_basis: b === 'basic' || b === 'basic_housing' ? b : 'full',
+    award_full: num(r.award_full),
+    award_ratio: num(r.award_ratio),
+    award: num(r.award),
+    leave_days: num(r.leave_days),
+    leave_amount: num(r.leave_amount),
+    art77_amount: num(r.art77_amount),
+    total: num(r.total ?? num(r.award) + num(r.leave_amount) + num(r.art77_amount)),
+  };
+}
+
+export async function liveEosCalculate(
+  employeeId: string,
+  end: string,
+  reason: TerminationReason,
+  art77: boolean,
+): Promise<EosCalc> {
+  const { data, error } = await supabase.rpc('eos_calculate', {
+    p_employee_id: employeeId,
+    p_end: end,
+    p_reason: reason,
+    p_art77: art77,
+  });
+  if (error) throw new Error(error.message);
+  return mapEosCalc((data ?? {}) as Row);
+}
+
+export async function liveListEos(): Promise<EosSettlement[]> {
+  const { data, error } = await supabase
+    .from('eos_settlements')
+    .select('*, employees(full_name)')
+    .neq('status', 'cancelled')
+    .order('prepared_at', { ascending: false });
+  fail(error, 'تحميل تسويات نهاية الخدمة');
+  const rows = (data ?? []) as unknown as Row[];
+  const ids = [
+    ...new Set(rows.flatMap((r) => [str(r.prepared_by), str(r.approved_by)]).filter(Boolean)),
+  ];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data: u } = await supabase.rpc('user_display_names', { p_ids: ids });
+    ((u ?? []) as Row[]).forEach((x) => names.set(str(x.id), str(x.full_name)));
+  }
+  return rows.map((r) => ({
+    ...mapEosCalc(r),
+    id: str(r.id),
+    employee_id: str(r.employee_id),
+    employee_name: empName(r),
+    end_date: str(r.end_date),
+    reason: str(r.reason) as TerminationReason,
+    art77: r.art77 === true,
+    other_additions: num(r.other_additions),
+    other_deductions: num(r.other_deductions),
+    note: str(r.note),
+    net: num(r.net),
+    status: (['draft', 'approved', 'paid', 'cancelled'].includes(str(r.status))
+      ? str(r.status)
+      : 'draft') as EosSettlement['status'],
+    prepared_by: (r.prepared_by as string | null) ?? null,
+    prepared_by_name: names.get(str(r.prepared_by)) ?? '—',
+    approved_by_name: names.get(str(r.approved_by)) ?? '',
+    posted_at: (r.posted_at as string | null) ?? null,
+    paid_at: (r.paid_at as string | null) ?? null,
+  }));
+}
+
+export async function livePrepareEos(input: {
+  employee_id: string;
+  art77: boolean;
+  other_additions: number;
+  other_deductions: number;
+  note: string;
+}): Promise<void> {
+  const { error } = await supabase.rpc('prepare_eos_settlement', {
+    p_employee_id: input.employee_id,
+    p_art77: input.art77,
+    p_additions: input.other_additions,
+    p_deductions: input.other_deductions,
+    p_note: input.note || null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** approve / cancel / post / pay / provision — all server functions with their own checks. */
+export async function liveEosAction(fn: string, params: Record<string, unknown>): Promise<void> {
+  const { error } = await supabase.rpc(fn, params);
+  if (error) throw new Error(error.message);
+}
+
+export async function liveEosProvision(
+  period: string,
+): Promise<{ target: number; balance: number; delta: number; posted: boolean }> {
+  const end = new Date(`${period}-01T00:00:00Z`);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  end.setUTCDate(0);
+  const asOf = end.toISOString().slice(0, 10);
+  const [t, posted] = await Promise.all([
+    supabase.rpc('eos_provision_target', { p_as_of: asOf }),
+    supabase
+      .from('journal_entries')
+      .select('id')
+      .eq('reference', `EOS-PROV-${period}`)
+      .maybeSingle(),
+  ]);
+  if (t.error) throw new Error(t.error.message);
+  // balance of 2210 up to the month end
+  const { data: lines } = await supabase
+    .from('journal_entry_lines')
+    .select(
+      'debit, credit, chart_of_accounts!inner(code), journal_entries!inner(entry_date, status)',
+    )
+    .eq('chart_of_accounts.code', '2210')
+    .eq('journal_entries.status', 'posted')
+    .lte('journal_entries.entry_date', asOf);
+  const balance = ((lines ?? []) as Row[]).reduce((s, l) => s + num(l.credit) - num(l.debit), 0);
+  const target = Math.round(num(t.data) * 100) / 100;
+  return {
+    target,
+    balance: Math.round(balance * 100) / 100,
+    delta: Math.round((target - balance) * 100) / 100,
+    posted: !!posted.data,
+  };
 }

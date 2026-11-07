@@ -72,6 +72,7 @@ export const payrollConfigSchema = z.object({
     .number({ message: 'أدخل رقمًا' })
     .min(0, { message: 'بين 0 و100٪' })
     .max(100, { message: 'بين 0 و100٪' }),
+  eosWageBasis: z.enum(['full', 'basic_housing', 'basic']),
 });
 
 export const gosiConfigSchema = z.object({
@@ -107,6 +108,7 @@ const PAYROLL_COLS: Record<keyof PayrollConfig, string> = {
   lateGraceMinutes: 'late_grace_minutes',
   defaultHousingPct: 'default_housing_pct',
   defaultTransportPct: 'default_transport_pct',
+  eosWageBasis: 'eos_wage_basis',
 };
 const GOSI_COLS: Record<keyof GosiConfig, string> = {
   ceiling: 'ceiling',
@@ -117,18 +119,23 @@ const GOSI_COLS: Record<keyof GosiConfig, string> = {
   nonSaudiCompany: 'nonsaudi_company',
 };
 
-function toRow<T extends object>(obj: T, cols: Record<keyof T, string>): Record<string, number> {
-  const row: Record<string, number> = {};
+type Cell = number | string;
+/** numbers stay numbers; the one text setting (eos_wage_basis) stays text */
+const cell = (v: unknown): Cell =>
+  typeof v === 'string' && Number.isNaN(Number(v)) ? v : Number(v);
+
+function toRow<T extends object>(obj: T, cols: Record<keyof T, string>): Record<string, Cell> {
+  const row: Record<string, Cell> = {};
   (Object.keys(cols) as (keyof T)[]).forEach((k) => {
-    row[cols[k]] = Number(obj[k]);
+    row[cols[k]] = cell(obj[k]);
   });
   return row;
 }
 
 function fromRow<T extends object>(row: Record<string, unknown>, cols: Record<keyof T, string>): T {
-  const out = {} as Record<keyof T, number>;
+  const out = {} as Record<keyof T, Cell>;
   (Object.keys(cols) as (keyof T)[]).forEach((k) => {
-    out[k] = Number(row[cols[k]]);
+    out[k] = cell(row[cols[k]]);
   });
   return out as T;
 }
@@ -138,13 +145,13 @@ function diff<T extends object>(
   before: T,
   after: T,
   cols: Record<keyof T, string>,
-): { old: Record<string, number>; next: Record<string, number> } {
-  const old: Record<string, number> = {};
-  const next: Record<string, number> = {};
+): { old: Record<string, Cell>; next: Record<string, Cell> } {
+  const old: Record<string, Cell> = {};
+  const next: Record<string, Cell> = {};
   (Object.keys(cols) as (keyof T)[]).forEach((k) => {
     if (before[k] !== after[k]) {
-      old[cols[k]] = Number(before[k]);
-      next[cols[k]] = Number(after[k]);
+      old[cols[k]] = cell(before[k]);
+      next[cols[k]] = cell(after[k]);
     }
   });
   return { old, next };
@@ -179,7 +186,7 @@ export async function getPayrollSettings(): Promise<PayrollSettings> {
 
 async function writeRow(
   table: 'payroll_config' | 'gosi_config',
-  row: Record<string, number>,
+  row: Record<string, Cell>,
 ): Promise<void> {
   const { error } = await supabase
     .from(table)

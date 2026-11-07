@@ -1,8 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
-import { payPayrollRun, postPayrollRun } from '@/features/hr/api/hr.api';
 import {
+  getEosProvision,
+  payEosSettlement,
+  payPayrollRun,
+  postEosProvision,
+  postEosSettlement,
+  postPayrollRun,
+} from '@/features/hr/api/hr.api';
+import {
+  buildEosPaymentEntry,
+  buildEosProvisionEntry,
+  buildEosSettlementEntry,
   buildPayrollEntry,
   buildPayrollPaymentEntry,
   totalsFromRun,
@@ -616,4 +626,51 @@ export function usePayPayrollRun() {
     },
     onError: (e) => toast.error(e.message || 'تعذّر تسجيل الصرف'),
   });
+}
+
+/* -------------------- end of service → ledger (0073) -------------------- */
+export function useEosProvision(period: string) {
+  return useQuery({
+    queryKey: ['accounting', 'eos-provision', period],
+    queryFn: () => getEosProvision(period),
+    staleTime: 0,
+  });
+}
+
+function useEosLedger<V>(fn: (v: V) => Promise<void>, ok: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, V>({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['hr', 'eos'] });
+      void qc.invalidateQueries({ queryKey: ['accounting', 'eos-provision'] });
+      toast.success(ok);
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر الترحيل'),
+  });
+}
+
+export function usePostEosProvision() {
+  return useEosLedger(
+    (period: string) =>
+      postEosProvision(period, (delta) => postPayrollEntry(buildEosProvisionEntry(delta, period))),
+    'تم ترحيل قيد مخصص نهاية الخدمة',
+  );
+}
+export function usePostEosSettlement() {
+  return useEosLedger(
+    (id: string) => postEosSettlement(id, (s) => postPayrollEntry(buildEosSettlementEntry(s))),
+    'تم ترحيل قيد التسوية',
+  );
+}
+export function usePayEosSettlement() {
+  return useEosLedger(
+    (v: { id: string; paidOn: string; bankCode: string }) =>
+      payEosSettlement(v.id, v.paidOn, v.bankCode, (s) =>
+        postPayrollEntry(buildEosPaymentEntry(s, v.paidOn, v.bankCode)),
+      ),
+    'تم تسجيل صرف التسوية',
+  );
 }

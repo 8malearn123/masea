@@ -57,6 +57,7 @@ export interface Employee {
 
 export type TerminationReason =
   | 'resignation'
+  | 'resignation_art87'
   | 'employer_termination'
   | 'contract_end'
   | 'article_80'
@@ -66,6 +67,7 @@ export type TerminationReason =
 
 export const TERMINATION_REASON_LABEL: Record<TerminationReason, string> = {
   resignation: 'استقالة',
+  resignation_art87: 'استقالة بمكافأة كاملة (م87)',
   employer_termination: 'إنهاء من صاحب العمل',
   contract_end: 'انتهاء العقد',
   article_80: 'فصل وفق المادة 80',
@@ -576,3 +578,59 @@ export const RUN_STATUS_TONE: Record<PayrollRunStatus, BadgeTone> = {
   approved: 'success',
   paid: 'navy',
 };
+
+/* ----------------------------- end of service ---------------------------- */
+export type EosWageBasis = 'full' | 'basic_housing' | 'basic';
+export const EOS_WAGE_BASIS_LABEL: Record<EosWageBasis, string> = {
+  full: 'الأجر الكامل (الأساسي + كل البدلات)',
+  basic_housing: 'الأساسي + بدل السكن',
+  basic: 'الأساسي فقط',
+};
+
+export type EosStatus = 'draft' | 'approved' | 'paid' | 'cancelled';
+export const EOS_STATUS_LABEL: Record<EosStatus, string> = {
+  draft: 'مسودة — بانتظار الاعتماد',
+  approved: 'معتمدة ومجمّدة',
+  paid: 'مصروفة',
+  cancelled: 'ملغاة',
+};
+export const EOS_STATUS_TONE: Record<EosStatus, BadgeTone> = {
+  draft: 'gold',
+  approved: 'success',
+  paid: 'navy',
+  cancelled: 'neutral',
+};
+
+/** The computed entitlement (eos_calculate, 0073). */
+export interface EosCalc {
+  service_years: number;
+  wage: number;
+  full_wage: number;
+  wage_basis: EosWageBasis;
+  award_full: number;
+  award_ratio: number;
+  award: number;
+  leave_days: number;
+  leave_amount: number;
+  art77_amount: number;
+  total: number;
+}
+
+export interface EosSettlement extends EosCalc {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  end_date: string;
+  reason: TerminationReason;
+  art77: boolean;
+  other_additions: number;
+  other_deductions: number;
+  note: string;
+  net: number;
+  status: EosStatus;
+  prepared_by: string | null;
+  prepared_by_name: string;
+  approved_by_name: string;
+  posted_at: string | null;
+  paid_at: string | null;
+}

@@ -44,6 +44,7 @@ import { EmployeeForm } from '@/features/hr/components/EmployeeForm';
 import { LeaveBoard } from '@/features/hr/components/LeaveBoard';
 import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
 import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
+import { EosBoard } from '@/features/hr/components/EosBoard';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   useAttendance,
@@ -52,6 +53,7 @@ import {
   useHouseWorkers,
   useIqamas,
   useAddPerformance,
+  useEosPreview,
   useLeaveRequests,
   usePayrollSettings,
   usePerformance,
@@ -63,7 +65,6 @@ import {
 import {
   buildEmployee,
   buildHouseWorker,
-  computeEos,
   currentEmployees,
   expiryStatus,
   monthlyCost,
@@ -149,7 +150,7 @@ export default function HrBoard() {
       {tab === 'attendance' && <AttendanceBoard employees={employees} />}
       {tab === 'leave' && <LeaveBoard employees={employees} />}
       {tab === 'payroll' && <PayrollBoard employees={employees} />}
-      {tab === 'eos' && <Eos employees={employees} />}
+      {tab === 'eos' && <EosBoard employees={employees} />}
       {tab === 'documents' && <Documents />}
       {tab === 'performance' && <Performance employees={employees} />}
       {tab === 'visas' && <Visas />}
@@ -684,6 +685,30 @@ function AdminEmployees({
   );
 }
 
+/** Estimated entitlement for the chosen date/reason (the settlement fixes it after approval). */
+function EosPreviewLine({
+  employee,
+  date,
+  reason,
+}: {
+  employee: Employee;
+  date: string;
+  reason: TerminationReason;
+}) {
+  const { data: c } = useEosPreview(employee, date, reason);
+  if (!c) return null;
+  return (
+    <div className="rounded-xl bg-navy-50 px-3 py-2 text-xs text-navy">
+      المستحق التقديري: مكافأة <span className="num font-semibold">{sar(c.award)}</span>
+      {c.award_ratio < 1 && c.award_ratio > 0 && ` (${Math.round(c.award_ratio * 100)}٪ — استقالة)`}
+      {c.award_ratio === 0 && ' (لا يستحق)'} + بدل إجازات{' '}
+      <span className="num font-semibold">{sar(c.leave_amount)}</span> ={' '}
+      <span className="num font-bold">{sar(c.total)}</span> ر.س · خدمة{' '}
+      <span className="num">{c.service_years.toFixed(2)}</span> سنة
+    </div>
+  );
+}
+
 /** End of service — date + reason (base of the EOS settlement). Reversible by reactivation. */
 function TerminateModal({ employee, onClose }: { employee: Employee; onClose: () => void }) {
   const terminate = useTerminateEmployee();
@@ -721,6 +746,7 @@ function TerminateModal({ employee, onClose }: { employee: Employee; onClose: ()
           />
         </div>
         <Input label="ملاحظة (اختياري)" value={note} onChange={(e) => setNote(e.target.value)} />
+        <EosPreviewLine employee={employee} date={date} reason={reason} />
         <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
           يخرج الموظف من مسيرات الرواتب القادمة ويبقى ملفه محفوظًا. يُعتمد السبب في حساب مكافأة
           نهاية الخدمة. للتصحيح استخدم «إعادة تفعيل».
@@ -731,58 +757,6 @@ function TerminateModal({ employee, onClose }: { employee: Employee; onClose: ()
         </Button>
       </div>
     </Modal>
-  );
-}
-
-/* --------------------------- end of service ------------------------------ */
-interface EosRow {
-  id: string;
-  name: string;
-  years: number;
-  wage: number;
-  amount: number;
-}
-
-function Eos({ employees }: { employees: Employee[] }) {
-  const rows: EosRow[] = employees
-    .filter((e) => e.status !== 'terminated')
-    .map((e) => {
-      const { years, wage, amount } = computeEos(e);
-      return { id: e.id, name: e.full_name, years, wage, amount };
-    });
-  const total = rows.reduce((s, r) => s + r.amount, 0);
-
-  const columns: Column<EosRow>[] = [
-    {
-      key: 'name',
-      header: 'الموظف',
-      cell: (r) => <span className="font-semibold text-navy">{r.name}</span>,
-    },
-    { key: 'years', header: 'سنوات الخدمة', cell: (r) => <span className="num">{r.years}</span> },
-    {
-      key: 'wage',
-      header: 'الأجر الشامل',
-      cell: (r) => <span className="num">{sar(r.wage)}</span>,
-    },
-    {
-      key: 'amount',
-      header: 'مكافأة نهاية الخدمة',
-      cell: (r) => <span className="num font-bold text-gold-600">{sar(r.amount)} ر.س</span>,
-    },
-  ];
-
-  return (
-    <div>
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <Stat label="إجمالي التزام نهاية الخدمة" value={sar(total)} tone="text-gold-600" />
-        <Stat label="عدد المستحقّين" value={String(rows.length)} />
-      </div>
-      <Card className="mb-4 text-xs leading-relaxed text-purple">
-        تُحتسب وفق نظام العمل السعودي: نصف شهر عن كل سنة من السنوات الخمس الأولى، وشهر كامل عن كل
-        سنة بعدها (على أساس الأجر الشامل). تُطبَّق نسب الاستقالة عند انتهاء الخدمة باستقالة الموظف.
-      </Card>
-      <Table columns={columns} rows={rows} rowKey={(r) => r.id} emptyTitle="لا يوجد مستحقّون" />
-    </div>
   );
 }
 
