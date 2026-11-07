@@ -13,7 +13,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Badge, Card } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
-import { useEmployees, useLeaveRequests, usePerformance } from '@/features/hr/hooks/useHr';
+import { useEmployees, useLeaveRequests } from '@/features/hr/hooks/useHr';
+import { usePerformanceReviews } from '@/features/hr/hooks/usePerformance';
 import { currentEmployees, monthlyCost } from '@/features/hr/api/hr.api';
 import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
 import { expiryAlerts } from '@/features/hr/lib/documentsEngine';
@@ -59,7 +60,8 @@ export function HrDashboard() {
   const { data: documents = [] } = useHrDocuments();
   const alertDays = useDocAlertDays();
   const lk = useHrLookups();
-  const { data: performance = [] } = usePerformance();
+  const { data: allReviews = [] } = usePerformanceReviews();
+  const performance = allReviews.filter((r) => r.is_active);
 
   const stats = useMemo(() => {
     const active = employees.filter((e) => e.status === 'active').length;

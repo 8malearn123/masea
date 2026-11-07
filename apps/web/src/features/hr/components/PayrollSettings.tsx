@@ -31,6 +31,7 @@ import { LeaveTypesSettings } from '@/features/hr/components/LeaveTypesSettings'
 import { AttendanceSettings } from '@/features/hr/components/AttendanceSettings';
 import { DocAlertSettings } from '@/features/hr/components/DocumentsBoard';
 import { HrListsSettings } from '@/features/hr/components/HrListsSettings';
+import { PerfSettings } from '@/features/hr/components/PerfSettings';
 
 /* ------------------------------- helpers --------------------------------- */
 type Errors<T> = Partial<Record<keyof T, string>>;
@@ -150,6 +151,8 @@ export default function PayrollSettings() {
       <AttendanceSettings editable={canManage} />
 
       <DocAlertSettings editable={canManage} />
+
+      <PerfSettings editable={canManage} />
 
       <HrListsSettings editable={canManage} />
 

@@ -36,7 +36,6 @@ import {
   type PayrollRun,
   type EosCalc,
   type EosSettlement,
-  type PerformanceReview,
   type WorkerStatus,
 } from '@/features/hr/types';
 
@@ -636,40 +635,6 @@ export async function liveAddEmergency(c: Omit<EmergencyContact, 'id'>): Promise
 }
 
 /* ------------------------------ performance ------------------------------- */
-export async function liveListPerformance(): Promise<PerformanceReview[]> {
-  const { data, error } = await supabase
-    .from('performance_reviews')
-    .select('id, employee_id, period, score, reviewer_name, review_date, employees(full_name)')
-    .eq('is_active', true)
-    .order('review_date', { ascending: false });
-  fail(error, 'تحميل التقييمات');
-  return ((data ?? []) as unknown as Row[]).map((r) => ({
-    id: str(r.id),
-    employee_id: str(r.employee_id),
-    employee_name: empName(r),
-    period: str(r.period),
-    score: num(r.score),
-    reviewer: str(r.reviewer_name),
-    date: str(r.review_date),
-  }));
-}
-
-export async function liveAddPerformance(p: PerformanceReview): Promise<PerformanceReview> {
-  const { data, error } = await supabase
-    .from('performance_reviews')
-    .insert({
-      employee_id: p.employee_id,
-      period: p.period,
-      score: p.score,
-      reviewer_name: p.reviewer,
-      review_date: p.date,
-    })
-    .select('id')
-    .single();
-  fail(error, 'حفظ التقييم');
-  return { ...p, id: str((data as Row).id) };
-}
-
 /* -------------------------- payroll adjustments --------------------------- */
 const ADJ_TYPES: AdjustmentType[] = ['bonus', 'allowance', 'overtime', 'penalty', 'advance'];
 

@@ -7,11 +7,9 @@ import {
   Clock,
   Coins,
   Link2,
-  Gauge,
   HeartHandshake,
   IdCard,
   Pencil,
-  Plus,
   RotateCcw,
   Search,
   TrendingUp,
@@ -44,6 +42,7 @@ import { LeaveBoard } from '@/features/hr/components/LeaveBoard';
 import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
 import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
 import { EosBoard } from '@/features/hr/components/EosBoard';
+import { PerformanceBoard } from '@/features/hr/components/PerformanceBoard';
 import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
@@ -55,11 +54,9 @@ import {
   useAttendance,
   useEmployees,
   useHouseWorkers,
-  useAddPerformance,
   useEosPreview,
   useLeaveRequests,
   usePayrollSettings,
-  usePerformance,
   useReactivateEmployee,
   useSaveEmployee,
   useTerminateEmployee,
@@ -70,7 +67,6 @@ import {
   buildHouseWorker,
   currentEmployees,
   monthlyCost,
-  ratingLabel,
   workedHours,
   type EmployeeInput,
   type HouseWorkerInput,
@@ -83,7 +79,6 @@ import {
   type Employee,
   type EmployeeStatus,
   type HouseWorker,
-  type PerformanceReview,
   TERMINATION_REASON_LABEL,
   type TerminationReason,
   type WorkerStatus,
@@ -144,7 +139,7 @@ export default function HrBoard() {
       {tab === 'payroll' && <PayrollBoard employees={employees} />}
       {tab === 'eos' && <EosBoard employees={employees} />}
       {tab === 'documents' && <DocumentsRegister />}
-      {tab === 'performance' && <Performance employees={employees} />}
+      {tab === 'performance' && <PerformanceBoard employees={employees} />}
       {tab === 'visas' && <IqamasVisasBoard />}
       {tab === 'settings' && <PayrollSettings />}
     </div>
@@ -747,151 +742,6 @@ function TerminateModal({ employee, onClose }: { employee: Employee; onClose: ()
         {error && <p className="text-xs text-red-600">{error}</p>}
         <Button variant="danger" className="w-full" loading={terminate.isPending} onClick={submit}>
           <UserMinus size={16} /> تأكيد إنهاء الخدمة
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
-/* ----------------------------- performance ------------------------------- */
-function Performance({ employees }: { employees: Employee[] }) {
-  const { can } = usePermissions();
-  const addPerf = useAddPerformance();
-  const { data: reviews = [], isLoading, isError, refetch } = usePerformance();
-  const [addOpen, setAddOpen] = useState(false);
-  const avg = reviews.length
-    ? Math.round(reviews.reduce((s, r) => s + r.score, 0) / reviews.length)
-    : 0;
-  const top = [...reviews].sort((a, b) => b.score - a.score)[0];
-
-  function addReview(r: PerformanceReview) {
-    addPerf.mutate(r, { onSuccess: () => setAddOpen(false) });
-  }
-
-  const columns: Column<PerformanceReview>[] = [
-    {
-      key: 'employee_name',
-      header: 'الموظف',
-      cell: (r) => <span className="font-semibold text-navy">{r.employee_name}</span>,
-    },
-    { key: 'period', header: 'الفترة', cell: (r) => r.period },
-    {
-      key: 'score',
-      header: 'الدرجة',
-      cell: (r) => <span className="num font-bold text-navy">{r.score}٪</span>,
-    },
-    {
-      key: 'rating',
-      header: 'التقدير',
-      cell: (r) => (
-        <Badge tone={r.score >= 80 ? 'success' : r.score >= 70 ? 'gold' : 'danger'}>
-          {ratingLabel(r.score)}
-        </Badge>
-      ),
-    },
-    { key: 'reviewer', header: 'المُقيّم', cell: (r) => r.reviewer },
-    {
-      key: 'date',
-      header: 'التاريخ',
-      cell: (r) => <span className="num text-xs">{dateAr(r.date)}</span>,
-    },
-  ];
-
-  return (
-    <div>
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <Stat label="متوسط الأداء" value={`${avg}٪`} tone="text-navy" />
-        <Stat label="عدد التقييمات" value={String(reviews.length)} />
-        <Stat label="الأعلى أداءً" value={top ? `${top.score}٪` : '—'} tone="text-green-600" />
-      </div>
-      {can('hr', 'edit') && (
-        <div className="mb-4 flex justify-end">
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus size={16} /> تقييم جديد
-          </Button>
-        </div>
-      )}
-      <Table
-        columns={columns}
-        rows={reviews}
-        rowKey={(r) => r.id}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={() => void refetch()}
-        emptyTitle="لا توجد تقييمات"
-      />
-      {addOpen && (
-        <PerformanceModal
-          employees={currentEmployees(employees)}
-          onAdd={addReview}
-          onClose={() => setAddOpen(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function PerformanceModal({
-  employees,
-  onAdd,
-  onClose,
-}: {
-  employees: Employee[];
-  onAdd: (r: PerformanceReview) => void;
-  onClose: () => void;
-}) {
-  const [empId, setEmpId] = useState(employees[0]?.id ?? '');
-  const [period, setPeriod] = useState('الربع الثاني 2026');
-  const [score, setScore] = useState(80);
-  const [reviewer, setReviewer] = useState('المدير المباشر');
-  const [error, setError] = useState<string | null>(null);
-
-  function submit() {
-    const emp = employees.find((e) => e.id === empId);
-    if (!emp || !period.trim() || !reviewer.trim()) {
-      setError('أكمل بيانات التقييم (الموظف والفترة والمُقيّم).');
-      return;
-    }
-    if (!Number.isFinite(score) || score < 0 || score > 100) {
-      setError('الدرجة يجب أن تكون بين ٠ و ١٠٠.');
-      return;
-    }
-    onAdd({
-      id: `p-${Date.now()}`,
-      employee_id: emp.id,
-      employee_name: emp.full_name,
-      period,
-      score,
-      reviewer,
-      date: new Date().toISOString().slice(0, 10),
-    });
-  }
-
-  return (
-    <Modal open onClose={onClose} title="تقييم أداء جديد">
-      <div className="space-y-3">
-        <Select
-          label="الموظف"
-          value={empId}
-          onChange={(e) => setEmpId(e.target.value)}
-          options={employees.map((e) => ({ value: e.id, label: e.full_name }))}
-        />
-        <Input label="الفترة" value={period} onChange={(e) => setPeriod(e.target.value)} />
-        <Input
-          label="الدرجة (٠–١٠٠)"
-          type="number"
-          min={0}
-          max={100}
-          value={score}
-          onChange={(e) => setScore(Number(e.target.value))}
-        />
-        <Input label="المُقيّم" value={reviewer} onChange={(e) => setReviewer(e.target.value)} />
-        <p className="text-xs text-purple">
-          التقدير: <span className="font-semibold text-navy">{ratingLabel(score)}</span>
-        </p>
-        {error && <p className="text-xs text-red-600">{error}</p>}
-        <Button onClick={submit} className="w-full">
-          <Gauge size={16} /> حفظ التقييم
         </Button>
       </div>
     </Modal>

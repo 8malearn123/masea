@@ -29,7 +29,6 @@ import {
   createAdjustment,
   createEmergencyContact,
   createLeaveRequest,
-  createPerformanceReview,
   decideAdjustment,
   listAccountOptions,
   demoLeaveContext,
@@ -48,7 +47,6 @@ import {
   listEmployees,
   listHouseWorkers,
   listLeaveRequests,
-  listPerformance,
   updateLeaveStatus,
   type NewAdjustmentInput,
 } from '@/features/hr/api/hr.api';
@@ -72,7 +70,6 @@ import type {
   LeaveTypeConfig,
   PayrollAdjustment,
   Payslip,
-  PerformanceReview,
 } from '@/features/hr/types';
 
 const EMP_KEY = ['hr', 'employees'] as const;
@@ -104,14 +101,6 @@ export function useLeaveRequests() {
   return useQuery({
     queryKey: LEAVE_KEY,
     queryFn: listLeaveRequests,
-    staleTime: QUERY_DEFAULTS.staleTime,
-  });
-}
-
-export function usePerformance() {
-  return useQuery({
-    queryKey: ['hr', 'performance'],
-    queryFn: listPerformance,
     staleTime: QUERY_DEFAULTS.staleTime,
   });
 }
@@ -307,19 +296,6 @@ export function useAddLeave() {
       );
     },
     onError: (e) => toast.error(e.message || 'تعذّر حفظ الإجازة'),
-  });
-}
-
-export function useAddPerformance() {
-  const qc = useQueryClient();
-  const toast = useToast();
-  return useMutation<PerformanceReview, Error, PerformanceReview>({
-    mutationFn: createPerformanceReview,
-    onSuccess: (r) => {
-      qc.setQueryData<PerformanceReview[]>(['hr', 'performance'], (old) => [r, ...(old ?? [])]);
-      toast.success('تم حفظ التقييم');
-    },
-    onError: (e) => toast.error(e.message || 'تعذّر حفظ التقييم'),
   });
 }
 

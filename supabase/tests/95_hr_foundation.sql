@@ -132,12 +132,11 @@ end $$;
 -- cannot decide a salary adjustment (hr.manage) nor touch another branch
 update payroll_adjustments set status = 'approved' where employee_id = 'e1000000-0000-0000-0000-00000000000a';
 do $$ begin
-  insert into performance_reviews (employee_id, period, score) values ('e1000000-0000-0000-0000-00000000000b', 'الربع الرابع 2026', 90);
+  perform save_performance_review(null, 'e1000000-0000-0000-0000-00000000000b', 'الربع الرابع 2026', '2026-10-01', '2026-12-31', '{"quality":90,"teamwork":90,"customers":90}');
   raise exception 'FAIL: BM reviewed another branch employee';
 exception when insufficient_privilege then null;
 end $$;
-insert into performance_reviews (employee_id, period, score, reviewer_name)
-values ('e1000000-0000-0000-0000-00000000000a', 'الربع الرابع 2026', 91, 'مدير الفرع');
+select save_performance_review(null, 'e1000000-0000-0000-0000-00000000000a', 'الربع الرابع 2026', '2026-10-01', '2026-12-31', '{"quality":91,"teamwork":91,"customers":91}');
 update payroll_config set overtime_multiplier = 3 where id = 1;
 select pg_temp.logout();
 
@@ -157,8 +156,7 @@ select pg_temp.check((select count(*) from employees where id::text like 'e10000
 update leave_requests set status = 'approved' where employee_id = 'e1000000-0000-0000-0000-00000000000c';
 update employees set basic_salary = 18500 where id = 'e1000000-0000-0000-0000-00000000000a';
 update employees set job_title = 'مدير العمليات الإقليمي' where id = 'e1000000-0000-0000-0000-00000000000a';
-insert into performance_reviews (employee_id, period, score, reviewer_name)
-values ('e1000000-0000-0000-0000-00000000000b', 'الربع الرابع 2026', 88, 'المدير العام');
+select save_performance_review(null, 'e1000000-0000-0000-0000-00000000000b', 'الربع الرابع 2026', '2026-10-01', '2026-12-31', '{"quality":88,"teamwork":88,"customers":88}');
 update payroll_adjustments set status = 'approved', decided_at = now()
  where employee_id = 'e1000000-0000-0000-0000-00000000000a' and period = '2026-11';
 update payroll_config set late_grace_minutes = 20 where id = 1;

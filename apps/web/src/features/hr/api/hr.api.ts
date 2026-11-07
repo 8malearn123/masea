@@ -57,7 +57,6 @@ import type {
   PayrollRow,
   Payslip,
   PayrollRun,
-  PerformanceReview,
   TerminationReason,
 } from '@/features/hr/types';
 
@@ -1351,69 +1350,6 @@ export function computeEos(e: Employee): { years: number; wage: number; amount: 
   const years = yearsOfService(e.join_date);
   const wage = eosWages(e, PAYROLL_CONFIG.eosWageBasis).eos;
   return { years, wage, amount: years ? eosAward(years, wage, 'employer_termination').award : 0 };
-}
-
-export function ratingLabel(score: number): string {
-  if (score >= 90) return 'ممتاز';
-  if (score >= 80) return 'جيد جدًا';
-  if (score >= 70) return 'جيد';
-  return 'يحتاج تحسين';
-}
-
-const PERFORMANCE: PerformanceReview[] = [
-  {
-    id: 'p1',
-    employee_name: 'فهد الشهري',
-    period: 'الربع الأول 2026',
-    score: 94,
-    reviewer: 'المدير العام',
-    date: '2026-04-05',
-  },
-  {
-    id: 'p2',
-    employee_name: 'نورة العتيبي',
-    period: 'الربع الأول 2026',
-    score: 88,
-    reviewer: 'مدير الفرع',
-    date: '2026-04-06',
-  },
-  {
-    id: 'p3',
-    employee_name: 'بدر المالكي',
-    period: 'الربع الأول 2026',
-    score: 82,
-    reviewer: 'المدير العام',
-    date: '2026-04-06',
-  },
-  {
-    id: 'p4',
-    employee_name: 'ريم الزهراني',
-    period: 'الربع الأول 2026',
-    score: 68,
-    reviewer: 'مدير الفرع',
-    date: '2026-04-07',
-  },
-  {
-    id: 'p5',
-    employee_name: 'خالد الدوسري',
-    period: 'الربع الأول 2026',
-    score: 90,
-    reviewer: 'المدير العام',
-    date: '2026-04-07',
-  },
-];
-
-export async function listPerformance(): Promise<PerformanceReview[]> {
-  if (!isDemoMode()) return live.liveListPerformance();
-  return scopeByEmployee(PERFORMANCE).map((p) => ({ ...p }));
-}
-export function addPerformanceReview(r: PerformanceReview): PerformanceReview {
-  PERFORMANCE.unshift(r);
-  return r;
-}
-export async function createPerformanceReview(r: PerformanceReview): Promise<PerformanceReview> {
-  if (!isDemoMode()) return live.liveAddPerformance(r);
-  return addPerformanceReview(r);
 }
 
 /* --------------------------- emergency contacts -------------------------- */

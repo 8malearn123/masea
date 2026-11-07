@@ -320,6 +320,14 @@ const CONFIG: ConfigItem[] = [
     unit: 'يوم',
     sort_order: 40,
   },
+  {
+    key: 'perf_late_day_weight',
+    label_ar: 'يوم التأخير يُحتسب في تقييم الانضباط كنسبة من يوم حضور',
+    grp: 'الموارد البشرية',
+    value: 0.5,
+    unit: 'يوم',
+    sort_order: 41,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;

@@ -401,14 +401,90 @@ export interface DocCostRow {
 }
 
 /* ----------------------------- performance ------------------------------- */
+/** Where a criterion's score comes from (0076). */
+export type PerfSource = 'manual' | 'sales_count' | 'sales_amount' | 'attendance';
+export const PERF_SOURCE_LABEL: Record<PerfSource, string> = {
+  manual: 'تقدير المقيّم',
+  sales_count: 'آلي: عدد العقود مقابل المستهدف',
+  sales_amount: 'آلي: قيمة المبيعات مقابل المستهدف',
+  attendance: 'آلي: الانضباط من الحضور',
+};
+
+/** perf_criteria row — managed from HR settings. */
+export interface PerfCriterion {
+  code: string;
+  name_ar: string;
+  source: PerfSource;
+  weight: number;
+  /** role codes; empty = every role */
+  roles: string[];
+  is_active: boolean;
+  sort_order: number;
+}
+
+/** perf_bands row — «ممتاز» from 90 … */
+export interface PerfBand {
+  code: string;
+  name_ar: string;
+  min_score: number;
+  tone: 'success' | 'gold' | 'danger' | 'navy';
+  is_active: boolean;
+}
+
+export interface PerfAuto {
+  sales_count: { achieved: number; target: number; score: number | null };
+  sales_amount: { achieved: number; target: number; score: number | null };
+  attendance: { present: number; late: number; absent: number; score: number | null };
+}
+
+/** One criterion inside a review — frozen when the review is saved. */
+export interface PerfCriterionScore {
+  code: string;
+  name: string;
+  source: PerfSource;
+  weight: number;
+  /** null = no data (no target / no attendance) → left out of the weighting */
+  score: number | null;
+  detail: Record<string, number | null> | null;
+}
+
 export interface PerformanceReview {
   id: string;
-  employee_id?: string;
+  employee_id: string;
   employee_name: string;
   period: string;
-  score: number; // 0..100
+  period_from: string;
+  period_to: string;
+  score: number; // 0..100, weighted on the server
+  criteria: PerfCriterionScore[];
+  notes: string;
   reviewer: string;
   date: string;
+  is_active: boolean;
+}
+
+export interface PerfReviewInput {
+  id: string | null;
+  employee_id: string;
+  period: string;
+  period_from: string;
+  period_to: string;
+  /** manual criterion code → 0..100 */
+  manual: Record<string, number>;
+  notes: string;
+}
+
+/** targets row (0006 + 0076) for one employee-month. */
+export interface PerfTarget {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  branch: string;
+  /** 'YYYY-MM' */
+  period: string;
+  contracts_target: number;
+  sales_amount_target: number;
+  notes: string;
 }
 
 /* -------------------------------- payroll -------------------------------- */
