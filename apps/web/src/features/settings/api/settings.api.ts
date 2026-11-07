@@ -312,6 +312,14 @@ const CONFIG: ConfigItem[] = [
     unit: 'يوم',
     sort_order: 26,
   },
+  {
+    key: 'doc_expiry_alert_days',
+    label_ar: 'التنبيه قبل انتهاء الوثائق والإقامات',
+    grp: 'الموارد البشرية',
+    value: 60,
+    unit: 'يوم',
+    sort_order: 40,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;
@@ -395,7 +403,9 @@ export async function updateConfig(key: string, value: number): Promise<void> {
     .select('key');
   if (error) throw new Error(`تعذّر حفظ القيمة: ${error.message}`);
   if (!data || (data as unknown[]).length === 0) {
-    throw new Error('لم تُحفظ القيمة — تعديل قيم النظام للمدير العام فقط، أو أن المفتاح غير موجود');
+    throw new Error(
+      'لم تُحفظ القيمة — تعديل قيم النظام للمدير العام (وإعدادات الموارد البشرية لمديرها)، أو أن المفتاح غير موجود',
+    );
   }
 }
 

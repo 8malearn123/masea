@@ -14,9 +14,7 @@ import { useAuth } from '@/store/auth';
 import { ROLE_META, type RoleCode } from '@/lib/permissions';
 import { tokenFromQr } from '@/features/hr/lib/attendanceEngine';
 import {
-  DOC_TYPE_LABEL,
   TERMINATION_REASON_LABEL,
-  docTypeCode,
   type AccountOption,
   type AttendanceConfig,
   type BranchAttendance,
@@ -27,9 +25,7 @@ import {
   type AttendanceStatus,
   type EmergencyContact,
   type Employee,
-  type EmployeeDocument,
   type HouseWorker,
-  type IqamaRecord,
   type LeaveRequest,
   type LeaveBalance,
   type LeaveStatus,
@@ -606,74 +602,6 @@ export async function liveLeaveBalance(employeeId: string, asOf: string): Promis
     sick_full_left: num(b.sick_full_left),
     sick_total_limit: num(b.sick_total_limit),
   };
-}
-
-/* -------------------------- documents / iqamas ---------------------------- */
-export async function liveListDocuments(): Promise<EmployeeDocument[]> {
-  const { data, error } = await supabase
-    .from('employee_documents')
-    .select(
-      'id, employee_id, type, doc_number, file_name, issue_date, expiry_date, employees(full_name)',
-    )
-    .order('expiry_date', { ascending: true, nullsFirst: false });
-  fail(error, 'تحميل المستندات');
-  return ((data ?? []) as unknown as Row[]).map((r) => ({
-    id: str(r.id),
-    employee_id: str(r.employee_id),
-    employee_name: empName(r),
-    type: DOC_TYPE_LABEL[str(r.type)] ?? str(r.type),
-    number: str(r.doc_number) || str(r.file_name),
-    issue_date: str(r.issue_date),
-    expiry_date: (r.expiry_date as string | null) ?? null,
-  }));
-}
-
-export async function liveAddDocument(d: Omit<EmployeeDocument, 'id'>): Promise<EmployeeDocument> {
-  const { data, error } = await supabase
-    .from('employee_documents')
-    .insert({
-      employee_id: d.employee_id,
-      type: docTypeCode(d.type),
-      doc_number: d.number,
-      issue_date: d.issue_date || null,
-      expiry_date: d.expiry_date,
-    })
-    .select('id')
-    .single();
-  fail(error, 'رفع المستند');
-  return { ...d, id: str((data as Row).id) };
-}
-
-/** Iqamas = the employees' iqama documents (+ whether a valid work permit exists). */
-export async function liveListIqamas(): Promise<IqamaRecord[]> {
-  const { data, error } = await supabase
-    .from('employee_documents')
-    .select(
-      'id, employee_id, type, doc_number, issue_date, expiry_date, employees(full_name, job_title, employee_details(iqama_no))',
-    )
-    .in('type', ['iqama', 'work_permit']);
-  fail(error, 'تحميل الإقامات');
-  const rows = (data ?? []) as unknown as Row[];
-  const permitOk = new Set(
-    rows
-      .filter((r) => r.type === 'work_permit' && (!r.expiry_date || str(r.expiry_date) >= today()))
-      .map((r) => str(r.employee_id)),
-  );
-  return rows
-    .filter((r) => r.type === 'iqama' && r.expiry_date)
-    .map((r) => {
-      const e = one(r.employees) ?? {};
-      return {
-        id: str(r.id),
-        employee_id: str(r.employee_id),
-        employee_name: str(e.full_name),
-        iqama_no: str(r.doc_number) || str(one(e.employee_details)?.iqama_no),
-        profession: str(e.job_title) || '—',
-        issue_date: str(r.issue_date),
-        expiry_date: str(r.expiry_date),
-        work_permit: permitOk.has(str(r.employee_id)),
-      };
-    });
 }
 
 /* --------------------------- emergency contacts --------------------------- */

@@ -7,28 +7,24 @@ import {
   Phone,
   ShieldCheck,
   Plus,
-  Upload,
-  AlertTriangle,
   CalendarCheck,
+  AlertTriangle,
 } from 'lucide-react';
-import { Badge, Button, Card, Input, Modal, Select } from '@/shared/ui';
+import { Badge, Button, Card, Input, Modal } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { ROLE_META } from '@/lib/permissions';
-import { expiryStatus } from '@/features/hr/api/hr.api';
+import { usePermissions } from '@/hooks/usePermissions';
+import { OwnerDocuments } from '@/features/hr/components/DocumentsBoard';
+import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
+import { docStatus, isCurrent } from '@/features/hr/lib/documentsEngine';
 import {
   useLeaveBalance,
   useLeaveRequests,
   useLeaveTypes,
-  useAddDocument,
   useAddEmergencyContact,
-  useDocuments,
   useEmergencyContacts,
-  useIqamas,
 } from '@/features/hr/hooks/useHr';
 import {
-  DOC_STATUS_LABEL,
-  DOC_STATUS_TONE,
-  DOC_TYPE_OPTIONS,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
   LEAVE_STATUS_LABEL,
@@ -36,8 +32,6 @@ import {
   TERMINATION_REASON_LABEL,
   type Employee,
 } from '@/features/hr/types';
-
-const DOC_TYPES = DOC_TYPE_OPTIONS;
 
 type Tab = 'overview' | 'personal' | 'job' | 'finance' | 'leave' | 'docs' | 'emergency';
 
@@ -60,49 +54,31 @@ export function EmployeeProfile({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('overview');
-  const { data: allDocs = [] } = useDocuments();
-  const { data: allIqamas = [] } = useIqamas();
+  const { data: allDocs = [] } = useHrDocuments();
+  const alertDays = useDocAlertDays();
+  const canManageDocs = usePermissions().can('hr', 'manage');
   const { data: allEmergency = [] } = useEmergencyContacts();
-  const addDoc = useAddDocument();
   const addEmer = useAddEmergencyContact();
 
   // rows link by employee_id (backend); demo seeds without an id fall back to the name
   const mine = (r: { employee_id?: string; employee_name: string }) =>
     r.employee_id ? r.employee_id === employee.id : r.employee_name === employee.full_name;
-  const docs = allDocs.filter(mine);
-  const iqamas = allIqamas.filter(mine);
+  const docs = allDocs.filter(
+    (d) => d.owner_kind === 'employee' && d.owner_id === employee.id && isCurrent(d),
+  );
   const contacts = allEmergency.filter(mine);
 
   const idType = employee.id_type ?? (employee.nationality === 'السعودية' ? 'saudi' : 'expat');
-  const docNum = (t: string) => docs.find((d) => d.type.includes(t))?.number;
-  const iqama = employee.iqama_no ?? docNum('إقامة') ?? '';
-  const passport = employee.passport_no ?? docNum('جواز') ?? '';
-  const nationalId = employee.national_id ?? docNum('هوية') ?? '';
+  const docNum = (t: string) => docs.find((d) => d.type === t)?.number;
+  const iqama = employee.iqama_no ?? docNum('iqama') ?? '';
+  const passport = employee.passport_no ?? docNum('passport') ?? '';
+  const nationalId = employee.national_id ?? docNum('national_id') ?? '';
   const gosiSystem = employee.gosi_system ?? 'new';
   const countsSaudization = employee.counts_in_saudization ?? idType === 'saudi';
 
-  const alertsCount = docs.filter((d) => expiryStatus(d.expiry_date) !== 'valid').length;
+  const alertsCount = docs.filter((d) => docStatus(d.expiry_date, alertDays) !== 'valid').length;
 
-  const [doc, setDoc] = useState({
-    type: DOC_TYPES[0]!,
-    number: '',
-    issue_date: '',
-    expiry_date: '',
-  });
   const [contact, setContact] = useState({ name: '', relation: '', phone: '' });
-
-  function uploadDoc() {
-    if (!doc.number.trim()) return;
-    addDoc.mutate({
-      employee_id: employee.id,
-      employee_name: employee.full_name,
-      type: doc.type,
-      number: doc.number.trim(),
-      issue_date: doc.issue_date || new Date().toISOString().slice(0, 10),
-      expiry_date: doc.expiry_date || null,
-    });
-    setDoc({ type: DOC_TYPES[0]!, number: '', issue_date: '', expiry_date: '' });
-  }
 
   function addContact() {
     if (!contact.name.trim() || !contact.phone.trim()) return;
@@ -274,103 +250,12 @@ export function EmployeeProfile({
         {tab === 'leave' && <ProfileLeave employee={employee} />}
 
         {tab === 'docs' && (
-          <div className="space-y-3">
-            {docs.length === 0 && iqamas.length === 0 ? (
-              <Card className="py-6 text-center text-sm text-purple">
-                لا توجد مستندات لهذا الموظف بعد.
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {docs.map((d) => {
-                  const st = expiryStatus(d.expiry_date);
-                  return (
-                    <div
-                      key={d.id}
-                      className="flex items-center justify-between rounded-xl border border-navy-50 px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-navy">{d.type}</p>
-                        <p className="num text-[11px] text-purple">
-                          {d.number} · انتهاء: {d.expiry_date ? dateAr(d.expiry_date) : 'دائم'}
-                        </p>
-                      </div>
-                      <Badge tone={DOC_STATUS_TONE[st]}>{DOC_STATUS_LABEL[st]}</Badge>
-                    </div>
-                  );
-                })}
-                {iqamas.map((i) => {
-                  const st = expiryStatus(i.expiry_date);
-                  return (
-                    <div
-                      key={i.id}
-                      className="flex items-center justify-between rounded-xl border border-navy-50 px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-navy">
-                          إقامة · {i.profession}
-                          {i.work_permit ? ' · رخصة عمل سارية' : ''}
-                        </p>
-                        <p className="num text-[11px] text-purple">
-                          {i.iqama_no} · انتهاء: {dateAr(i.expiry_date)}
-                        </p>
-                      </div>
-                      <Badge tone={DOC_STATUS_TONE[st]}>{DOC_STATUS_LABEL[st]}</Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {editable && (
-              <Card className="bg-navy-50/40">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-navy">
-                  <Upload size={14} /> رفع مستند رسمي
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Select
-                    value={doc.type}
-                    onChange={(e) => setDoc((d) => ({ ...d, type: e.target.value }))}
-                    options={DOC_TYPES.map((t) => ({ value: t, label: t }))}
-                  />
-                  <Input
-                    placeholder="الرقم"
-                    value={doc.number}
-                    onChange={(e) => setDoc((d) => ({ ...d, number: e.target.value }))}
-                  />
-                  <div>
-                    <label className="mb-1 block text-[11px] text-purple">تاريخ الإصدار</label>
-                    <input
-                      type="date"
-                      value={doc.issue_date}
-                      onChange={(e) => setDoc((d) => ({ ...d, issue_date: e.target.value }))}
-                      className="w-full rounded-xl border border-navy-100 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] text-purple">
-                      تاريخ الانتهاء (اختياري)
-                    </label>
-                    <input
-                      type="date"
-                      value={doc.expiry_date}
-                      onChange={(e) => setDoc((d) => ({ ...d, expiry_date: e.target.value }))}
-                      className="w-full rounded-xl border border-navy-100 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                    />
-                  </div>
-                </div>
-                <Button
-                  className="mt-3 w-full"
-                  size="sm"
-                  loading={addDoc.isPending}
-                  onClick={uploadDoc}
-                >
-                  <span className="flex items-center justify-center gap-1.5">
-                    <Plus size={14} /> إضافة المستند
-                  </span>
-                </Button>
-              </Card>
-            )}
-          </div>
+          <OwnerDocuments
+            kind="employee"
+            ownerId={employee.id}
+            ownerName={employee.full_name}
+            editable={editable && canManageDocs}
+          />
         )}
 
         {tab === 'emergency' && (

@@ -46,12 +46,9 @@ import type {
   AdjustmentStatus,
   AdjustmentType,
   AttendanceRecord,
-  DocStatus,
   EmergencyContact,
   Employee,
-  EmployeeDocument,
   HouseWorker,
-  IqamaRecord,
   LeaveBalance,
   LeaveRequest,
   LeaveStatus,
@@ -1341,7 +1338,7 @@ export const ADJUSTMENT_TYPES: AdjustmentType[] = [
   'advance',
 ];
 
-/* ===================== End of service / documents / iqamas ================ */
+/* ============================ End of service ============================== */
 
 /** Years of service until today — same rule as eos_service_years (days ÷ 365). */
 export function yearsOfService(joinDate: string): number {
@@ -1356,110 +1353,12 @@ export function computeEos(e: Employee): { years: number; wage: number; amount: 
   return { years, wage, amount: years ? eosAward(years, wage, 'employer_termination').award : 0 };
 }
 
-export function expiryStatus(expiry: string | null): DocStatus {
-  if (!expiry) return 'valid';
-  const diff = new Date(expiry).getTime() - Date.now();
-  if (diff < 0) return 'expired';
-  if (diff < 60 * 86400000) return 'expiring';
-  return 'valid';
-}
-
 export function ratingLabel(score: number): string {
   if (score >= 90) return 'ممتاز';
   if (score >= 80) return 'جيد جدًا';
   if (score >= 70) return 'جيد';
   return 'يحتاج تحسين';
 }
-
-const DOCUMENTS: EmployeeDocument[] = [
-  {
-    id: 'doc1',
-    employee_name: 'فهد الشهري',
-    type: 'عقد عمل',
-    number: 'CON-1001',
-    issue_date: '2023-03-01',
-    expiry_date: '2026-03-01',
-  },
-  {
-    id: 'doc2',
-    employee_name: 'راجيش كومار',
-    type: 'إقامة',
-    number: '2412345678',
-    issue_date: '2024-02-01',
-    expiry_date: '2026-07-15',
-  },
-  {
-    id: 'doc3',
-    employee_name: 'راجيش كومار',
-    type: 'جواز سفر',
-    number: 'P1234567',
-    issue_date: '2021-05-10',
-    expiry_date: '2031-05-10',
-  },
-  {
-    id: 'doc4',
-    employee_name: 'بدر المالكي',
-    type: 'شهادة محاسبة (SOCPA)',
-    number: 'SOC-7788',
-    issue_date: '2022-01-01',
-    expiry_date: '2027-01-01',
-  },
-  {
-    id: 'doc5',
-    employee_name: 'سعد آل مريح',
-    type: 'رخصة قيادة',
-    number: 'DL-99001',
-    issue_date: '2020-08-01',
-    expiry_date: '2026-06-25',
-  },
-  {
-    id: 'doc6',
-    employee_name: 'منى الغامدي',
-    type: 'عقد عمل',
-    number: 'CON-1008',
-    issue_date: '2024-03-18',
-    expiry_date: null,
-  },
-];
-
-const IQAMAS: IqamaRecord[] = [
-  {
-    id: 'iq1',
-    employee_name: 'راجيش كومار',
-    iqama_no: '2412345678',
-    profession: 'مشرف سكن',
-    issue_date: '2024-02-01',
-    expiry_date: '2026-07-15',
-    work_permit: true,
-  },
-  {
-    id: 'iq2',
-    employee_name: 'سونيل راي (عامل)',
-    iqama_no: '2498765432',
-    profession: 'سائق',
-    issue_date: '2024-04-10',
-    expiry_date: '2026-06-30',
-    work_permit: true,
-  },
-  {
-    id: 'iq3',
-    employee_name: 'براكاش كومار (عامل)',
-    iqama_no: '2455667788',
-    profession: 'عامل منزلي',
-    issue_date: '2023-11-01',
-    expiry_date: '2026-06-18',
-    work_permit: false,
-  },
-  {
-    id: 'iq4',
-    employee_name: 'ماريا سانتوس (عاملة)',
-    iqama_no: '2433445566',
-    profession: 'عاملة نظافة',
-    issue_date: '2024-01-15',
-    expiry_date: '2027-01-15',
-    work_permit: true,
-  },
-];
 
 const PERFORMANCE: PerformanceReview[] = [
   {
@@ -1504,14 +1403,6 @@ const PERFORMANCE: PerformanceReview[] = [
   },
 ];
 
-export async function listDocuments(): Promise<EmployeeDocument[]> {
-  if (!isDemoMode()) return live.liveListDocuments();
-  return scopeByEmployee(DOCUMENTS).map((d) => ({ ...d }));
-}
-export async function listIqamas(): Promise<IqamaRecord[]> {
-  if (!isDemoMode()) return live.liveListIqamas();
-  return scopeByEmployee(IQAMAS).map((i) => ({ ...i }));
-}
 export async function listPerformance(): Promise<PerformanceReview[]> {
   if (!isDemoMode()) return live.liveListPerformance();
   return scopeByEmployee(PERFORMANCE).map((p) => ({ ...p }));
@@ -1523,18 +1414,6 @@ export function addPerformanceReview(r: PerformanceReview): PerformanceReview {
 export async function createPerformanceReview(r: PerformanceReview): Promise<PerformanceReview> {
   if (!isDemoMode()) return live.liveAddPerformance(r);
   return addPerformanceReview(r);
-}
-
-/** Add an official document to an employee's file (demo store). */
-export type NewDocInput = Omit<EmployeeDocument, 'id'>;
-export function addEmployeeDocument(input: NewDocInput): EmployeeDocument {
-  const doc: EmployeeDocument = { ...input, id: `doc-${Date.now()}` };
-  DOCUMENTS.unshift(doc);
-  return doc;
-}
-export async function createEmployeeDocument(input: NewDocInput): Promise<EmployeeDocument> {
-  if (!isDemoMode()) return live.liveAddDocument(input);
-  return addEmployeeDocument(input);
 }
 
 /* --------------------------- emergency contacts -------------------------- */

@@ -409,25 +409,73 @@ export const DOC_STATUS_TONE: Record<DocStatus, BadgeTone> = {
   expired: 'danger',
 };
 
-export interface EmployeeDocument {
+/** Whose document: a staff member (employees) or a worker (worker_profiles). */
+export type DocOwnerKind = 'employee' | 'worker';
+export const DOC_OWNER_LABEL: Record<DocOwnerKind, string> = {
+  employee: 'موظف',
+  worker: 'عمالة',
+};
+
+/** employee_documents row (0074) — staff and worker documents in one register. */
+export interface HrDocument {
   id: string;
-  employee_id?: string;
-  employee_name: string;
+  owner_kind: DocOwnerKind;
+  owner_id: string;
+  owner_name: string;
+  branch: string;
+  /** job title (staff) / profession (worker) */
+  profession: string;
+  /** stored code — see DOC_TYPE_LABEL */
+  type: string;
+  number: string;
+  issue_date: string | null;
+  expiry_date: string | null;
+  file_path: string | null;
+  file_name: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  renewal_cost: number;
+  /** cost already posted to the ledger (frozen) */
+  cost_posted: boolean;
+  notes: string;
+  is_active: boolean;
+  /** set when a renewal replaced this version */
+  superseded_by: string | null;
+  created_at: string;
+}
+
+/** Fields HR edits on a document (file handled separately). */
+export interface DocumentDraft {
+  owner_kind: DocOwnerKind;
+  owner_id: string;
   type: string;
   number: string;
   issue_date: string;
-  expiry_date: string | null;
+  expiry_date: string;
+  renewal_cost: number;
+  notes: string;
 }
 
-export interface IqamaRecord {
+/** A file picked in the browser, ready for upload. */
+export interface DocFile {
+  name: string;
+  type: string;
+  size: number;
+  blob: Blob;
+}
+
+/** Accounting view of a document carrying a renewal cost. */
+export interface DocCostRow {
   id: string;
-  employee_id?: string;
-  employee_name: string;
-  iqama_no: string;
-  profession: string;
-  issue_date: string;
-  expiry_date: string;
-  work_permit: boolean;
+  owner_kind: DocOwnerKind;
+  owner_name: string;
+  branch: string;
+  type: string;
+  number: string;
+  expiry_date: string | null;
+  renewal_cost: number;
+  posted: boolean;
+  created_at: string;
 }
 
 /* ----------------------------- performance ------------------------------- */

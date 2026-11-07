@@ -40,6 +40,7 @@ import {
 } from '@/features/accounting/components/PurchasesScreens';
 import { PayrollScreen } from '@/features/accounting/components/PayrollScreen';
 import { EosAccountingScreen } from '@/features/accounting/components/EosAccountingScreen';
+import { DocFeesScreen } from '@/features/accounting/components/DocFeesScreen';
 import { BanksScreen } from '@/features/accounting/components/BanksScreen';
 import { VatScreen } from '@/features/accounting/components/VatScreen';
 import { AssetsScreen } from '@/features/accounting/components/AssetsScreen';
@@ -145,6 +146,7 @@ const NAV: Group[] = [
       { key: 'trial', label: 'ميزان المراجعة' },
       { key: 'payroll', label: 'ترحيل الرواتب' },
       { key: 'eos', label: 'نهاية الخدمة' },
+      { key: 'doc_fees', label: 'الرسوم الحكومية' },
     ],
   },
   {
@@ -381,6 +383,7 @@ export default function AccountingBoard() {
           {active === 'trial' && <TrialBalanceProScreen onOpenAccount={openAccount} />}
           {active === 'payroll' && <PayrollScreen />}
           {active === 'eos' && <EosAccountingScreen />}
+          {active === 'doc_fees' && <DocFeesScreen />}
           {active === 'banks' && <BanksScreen />}
           {active === 'bank_rec' && <BankRecScreen />}
           {active === 'receivables' && <ReceivablesScreen key="ar" side="ar" />}

@@ -9,7 +9,10 @@ import {
   postEosSettlement,
   postPayrollRun,
 } from '@/features/hr/api/hr.api';
+import { listDocCosts, postDocCost } from '@/features/hr/api/documents.api';
+import { DOC_COSTS_KEY, HR_DOCS_KEY } from '@/features/hr/hooks/useHrDocuments';
 import {
+  buildDocCostEntry,
   buildEosPaymentEntry,
   buildEosProvisionEntry,
   buildEosSettlementEntry,
@@ -673,4 +676,31 @@ export function usePayEosSettlement() {
       ),
     'تم تسجيل صرف التسوية',
   );
+}
+
+/* ---------------- government fees of HR documents (0074) ---------------- */
+export function useDocCosts() {
+  return useQuery({
+    queryKey: DOC_COSTS_KEY,
+    queryFn: listDocCosts,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function usePostDocCost() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { id: string; paidOn: string; bankCode: string }>({
+    mutationFn: (v) =>
+      postDocCost(v.id, v.paidOn, v.bankCode, (row) =>
+        postPayrollEntry(buildDocCostEntry(row, v.paidOn, v.bankCode)),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: DOC_COSTS_KEY });
+      void qc.invalidateQueries({ queryKey: HR_DOCS_KEY });
+      toast.success('تم ترحيل الرسوم الحكومية');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر الترحيل'),
+  });
 }

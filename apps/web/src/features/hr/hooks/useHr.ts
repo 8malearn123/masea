@@ -28,7 +28,6 @@ import {
   computePayslips,
   createAdjustment,
   createEmergencyContact,
-  createEmployeeDocument,
   createLeaveRequest,
   createPerformanceReview,
   decideAdjustment,
@@ -45,16 +44,13 @@ import {
   runPayroll,
   listAdjustments,
   listAttendance,
-  listDocuments,
   listEmergencyContacts,
   listEmployees,
   listHouseWorkers,
-  listIqamas,
   listLeaveRequests,
   listPerformance,
   updateLeaveStatus,
   type NewAdjustmentInput,
-  type NewDocInput,
 } from '@/features/hr/api/hr.api';
 import {
   getPayrollSettings,
@@ -70,7 +66,6 @@ import type {
   AdjustmentStatus,
   EmergencyContact,
   Employee,
-  EmployeeDocument,
   HouseWorker,
   LeaveRequest,
   LeaveStatus,
@@ -113,22 +108,6 @@ export function useLeaveRequests() {
   });
 }
 
-export function useDocuments() {
-  return useQuery({
-    queryKey: ['hr', 'documents'],
-    queryFn: listDocuments,
-    staleTime: QUERY_DEFAULTS.staleTime,
-  });
-}
-
-export function useIqamas() {
-  return useQuery({
-    queryKey: ['hr', 'iqamas'],
-    queryFn: listIqamas,
-    staleTime: QUERY_DEFAULTS.staleTime,
-  });
-}
-
 export function usePerformance() {
   return useQuery({
     queryKey: ['hr', 'performance'],
@@ -150,19 +129,6 @@ export function useEmergencyContacts() {
     queryKey: ['hr', 'emergency'],
     queryFn: listEmergencyContacts,
     staleTime: QUERY_DEFAULTS.staleTime,
-  });
-}
-
-export function useAddDocument() {
-  const qc = useQueryClient();
-  const toast = useToast();
-  return useMutation<EmployeeDocument, Error, NewDocInput>({
-    mutationFn: createEmployeeDocument,
-    onSuccess: (doc) => {
-      qc.setQueryData<EmployeeDocument[]>(['hr', 'documents'], (old) => [doc, ...(old ?? [])]);
-      toast.success('تم رفع المستند');
-    },
-    onError: (e) => toast.error(e.message || 'تعذّر رفع المستند'),
   });
 }
 

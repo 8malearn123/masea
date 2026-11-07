@@ -80,6 +80,14 @@ export const CHART: Account[] = [
     normal_balance: 'debit',
   },
   {
+    code: '5160',
+    name_ar: 'الرسوم الحكومية (إقامات وتأشيرات ورخص عمل)',
+    type: 'expense',
+    parent_code: '5000',
+    is_postable: true,
+    normal_balance: 'debit',
+  },
+  {
     code: '3000',
     name_ar: 'حقوق الملكية',
     type: 'equity',

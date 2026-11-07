@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  AlertTriangle,
   Award,
   Building2,
   CalendarCheck,
@@ -47,11 +46,14 @@ import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
 import { EosBoard } from '@/features/hr/components/EosBoard';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
+  DocumentsRegister,
+  IqamasVisasBoard,
+  OwnerDocuments,
+} from '@/features/hr/components/DocumentsBoard';
+import {
   useAttendance,
-  useDocuments,
   useEmployees,
   useHouseWorkers,
-  useIqamas,
   useAddPerformance,
   useEosPreview,
   useLeaveRequests,
@@ -66,7 +68,6 @@ import {
   buildEmployee,
   buildHouseWorker,
   currentEmployees,
-  expiryStatus,
   monthlyCost,
   ratingLabel,
   workedHours,
@@ -75,8 +76,6 @@ import {
 } from '@/features/hr/api/hr.api';
 import {
   DEPARTMENTS,
-  DOC_STATUS_LABEL,
-  DOC_STATUS_TONE,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
   SKILL_OPTIONS,
@@ -85,12 +84,9 @@ import {
   WORKER_PROFESSIONS,
   WORKER_STATUS_LABEL,
   WORKER_STATUS_TONE,
-  type DocStatus,
   type Employee,
-  type EmployeeDocument,
   type EmployeeStatus,
   type HouseWorker,
-  type IqamaRecord,
   type PerformanceReview,
   TERMINATION_REASON_LABEL,
   type TerminationReason,
@@ -151,9 +147,9 @@ export default function HrBoard() {
       {tab === 'leave' && <LeaveBoard employees={employees} />}
       {tab === 'payroll' && <PayrollBoard employees={employees} />}
       {tab === 'eos' && <EosBoard employees={employees} />}
-      {tab === 'documents' && <Documents />}
+      {tab === 'documents' && <DocumentsRegister />}
       {tab === 'performance' && <Performance employees={employees} />}
-      {tab === 'visas' && <Visas />}
+      {tab === 'visas' && <IqamasVisasBoard />}
       {tab === 'settings' && <PayrollSettings />}
     </div>
   );
@@ -760,85 +756,6 @@ function TerminateModal({ employee, onClose }: { employee: Employee; onClose: ()
   );
 }
 
-/* ------------------------------ documents -------------------------------- */
-type DocRow = EmployeeDocument & { status: DocStatus };
-
-function Documents() {
-  const { data: docs = [], isLoading, isError, refetch } = useDocuments();
-  const [filter, setFilter] = useState('all');
-  const withStatus: DocRow[] = docs.map((d) => ({ ...d, status: expiryStatus(d.expiry_date) }));
-  const rows = filter === 'all' ? withStatus : withStatus.filter((d) => d.status === filter);
-  const expiring = withStatus.filter((d) => d.status === 'expiring').length;
-  const expired = withStatus.filter((d) => d.status === 'expired').length;
-
-  const columns: Column<DocRow>[] = [
-    {
-      key: 'employee_name',
-      header: 'الموظف',
-      cell: (d) => <span className="font-semibold text-navy">{d.employee_name}</span>,
-    },
-    { key: 'type', header: 'المستند', cell: (d) => d.type },
-    {
-      key: 'number',
-      header: 'الرقم',
-      cell: (d) => <span className="num text-xs">{d.number}</span>,
-    },
-    {
-      key: 'expiry_date',
-      header: 'تاريخ الانتهاء',
-      cell: (d) => (
-        <span className="num text-xs">{d.expiry_date ? dateAr(d.expiry_date) : 'دائم'}</span>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'الحالة',
-      cell: (d) => <Badge tone={DOC_STATUS_TONE[d.status]}>{DOC_STATUS_LABEL[d.status]}</Badge>,
-    },
-  ];
-
-  return (
-    <div>
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        <Stat
-          label="مستندات سارية"
-          value={String(withStatus.length - expiring - expired)}
-          tone="text-green-600"
-        />
-        <Stat label="قاربت الانتهاء" value={String(expiring)} tone="text-gold-600" />
-        <Stat label="منتهية" value={String(expired)} tone="text-red-600" />
-      </div>
-      {expiring + expired > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
-          <AlertTriangle size={16} /> يوجد {expiring + expired} مستند يحتاج تجديدًا أو متابعة.
-        </div>
-      )}
-      <Card className="mb-4">
-        <Select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          options={[
-            { value: 'all', label: 'كل المستندات' },
-            ...(Object.keys(DOC_STATUS_LABEL) as DocStatus[]).map((s) => ({
-              value: s,
-              label: DOC_STATUS_LABEL[s],
-            })),
-          ]}
-        />
-      </Card>
-      <Table
-        columns={columns}
-        rows={rows}
-        rowKey={(d) => d.id}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={() => void refetch()}
-        emptyTitle="لا توجد مستندات"
-      />
-    </div>
-  );
-}
-
 /* ----------------------------- performance ------------------------------- */
 function Performance({ employees }: { employees: Employee[] }) {
   const { can } = usePermissions();
@@ -981,78 +898,6 @@ function PerformanceModal({
         </Button>
       </div>
     </Modal>
-  );
-}
-
-/* --------------------------- visas / iqamas ------------------------------ */
-type IqamaRow = IqamaRecord & { status: DocStatus };
-
-function Visas() {
-  const { data: iqamas = [], isLoading, isError, refetch } = useIqamas();
-  const rows: IqamaRow[] = iqamas.map((i) => ({ ...i, status: expiryStatus(i.expiry_date) }));
-  const expiring = rows.filter((r) => r.status === 'expiring').length;
-  const expired = rows.filter((r) => r.status === 'expired').length;
-
-  const columns: Column<IqamaRow>[] = [
-    {
-      key: 'employee_name',
-      header: 'الاسم',
-      cell: (r) => <span className="font-semibold text-navy">{r.employee_name}</span>,
-    },
-    {
-      key: 'iqama_no',
-      header: 'رقم الإقامة',
-      cell: (r) => <span className="num text-xs">{r.iqama_no}</span>,
-    },
-    { key: 'profession', header: 'المهنة', cell: (r) => r.profession },
-    {
-      key: 'expiry_date',
-      header: 'انتهاء الإقامة',
-      cell: (r) => <span className="num text-xs">{dateAr(r.expiry_date)}</span>,
-    },
-    {
-      key: 'work_permit',
-      header: 'رخصة العمل',
-      cell: (r) => (
-        <Badge tone={r.work_permit ? 'success' : 'danger'}>
-          {r.work_permit ? 'سارية' : 'منتهية'}
-        </Badge>
-      ),
-    },
-    {
-      key: 'status',
-      header: 'حالة الإقامة',
-      cell: (r) => <Badge tone={DOC_STATUS_TONE[r.status]}>{DOC_STATUS_LABEL[r.status]}</Badge>,
-    },
-  ];
-
-  return (
-    <div>
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        <Stat
-          label="إقامات سارية"
-          value={String(rows.length - expiring - expired)}
-          tone="text-green-600"
-        />
-        <Stat label="قاربت الانتهاء" value={String(expiring)} tone="text-gold-600" />
-        <Stat label="منتهية" value={String(expired)} tone="text-red-600" />
-      </div>
-      {expiring + expired > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
-          <AlertTriangle size={16} /> {expiring + expired} إقامة تحتاج تجديدًا عاجلاً — تابع مع
-          الجوازات/أبشر أعمال.
-        </div>
-      )}
-      <Table
-        columns={columns}
-        rows={rows}
-        rowKey={(r) => r.id}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={() => void refetch()}
-        emptyTitle="لا توجد إقامات"
-      />
-    </div>
   );
 }
 
@@ -1333,8 +1178,9 @@ function WorkerDetailModal({
   onEdit: () => void;
   onClose: () => void;
 }) {
+  const canManageDocs = usePermissions().can('hr', 'manage');
   return (
-    <Modal open onClose={onClose} title="ملف العاملة">
+    <Modal open onClose={onClose} title="ملف العاملة" size="lg">
       <div className="max-h-[74vh] space-y-5 overflow-y-auto pl-1">
         <div className="flex items-center gap-4">
           <WorkerAvatar worker={worker} size="h-20 w-20" />
@@ -1368,6 +1214,16 @@ function WorkerDetailModal({
             <p className="text-sm leading-relaxed text-purple">{worker.bio}</p>
           </div>
         )}
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-navy">الوثائق والإقامة</p>
+          <OwnerDocuments
+            kind="worker"
+            ownerId={worker.id}
+            ownerName={worker.full_name}
+            editable={canManageDocs}
+          />
+        </div>
 
         {editable && (
           <Button onClick={onEdit} className="w-full">

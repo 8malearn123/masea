@@ -13,16 +13,13 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Badge, Card } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
-import {
-  useDocuments,
-  useEmployees,
-  useIqamas,
-  useLeaveRequests,
-  usePerformance,
-} from '@/features/hr/hooks/useHr';
-import { currentEmployees, expiryStatus, monthlyCost } from '@/features/hr/api/hr.api';
+import { useEmployees, useLeaveRequests, usePerformance } from '@/features/hr/hooks/useHr';
+import { currentEmployees, monthlyCost } from '@/features/hr/api/hr.api';
+import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
+import { expiryAlerts } from '@/features/hr/lib/documentsEngine';
 import {
   DOC_STATUS_TONE,
+  DOC_TYPE_LABEL,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
   LEAVE_STATUS_LABEL,
@@ -59,8 +56,8 @@ function Kpi({
 export function HrDashboard() {
   const { data: employees = [] } = useEmployees();
   const { data: leaves = [] } = useLeaveRequests();
-  const { data: documents = [] } = useDocuments();
-  const { data: iqamas = [] } = useIqamas();
+  const { data: documents = [] } = useHrDocuments();
+  const alertDays = useDocAlertDays();
   const { data: performance = [] } = usePerformance();
 
   const stats = useMemo(() => {
@@ -74,27 +71,20 @@ export function HrDashboard() {
     return { total: active + onLeave, active, onLeave, payroll, pendingLeave, avgScore };
   }, [employees, leaves, performance]);
 
-  // expiring/expired docs + iqamas (soonest first)
-  const expiring = useMemo(() => {
-    const docs = documents.map((d) => ({
-      id: d.id,
-      name: d.employee_name,
-      kind: d.type,
-      expiry: d.expiry_date,
-      status: expiryStatus(d.expiry_date),
-    }));
-    const iq = iqamas.map((i) => ({
-      id: i.id,
-      name: i.employee_name,
-      kind: 'الإقامة',
-      expiry: i.expiry_date,
-      status: expiryStatus(i.expiry_date),
-    }));
-    return [...docs, ...iq]
-      .filter((x) => x.status !== 'valid')
-      .sort((a, b) => (a.expiry ?? '').localeCompare(b.expiry ?? ''))
-      .slice(0, 8);
-  }, [documents, iqamas]);
+  // expiring/expired current documents (staff + workers), soonest first
+  const expiring = useMemo(
+    () =>
+      expiryAlerts(documents, alertDays)
+        .slice(0, 8)
+        .map((a) => ({
+          id: a.doc.id,
+          name: a.doc.owner_name,
+          kind: DOC_TYPE_LABEL[a.doc.type] ?? a.doc.type,
+          expiry: a.doc.expiry_date ?? '',
+          status: a.status,
+        })),
+    [documents, alertDays],
+  );
 
   const pendingLeaves = useMemo(
     () => leaves.filter((l) => l.status === 'pending').slice(0, 6),

@@ -1,4 +1,10 @@
-import type { EosSettlement, Payslip, PayrollRun } from '@/features/hr/types';
+import {
+  DOC_TYPE_LABEL,
+  type DocCostRow,
+  type EosSettlement,
+  type Payslip,
+  type PayrollRun,
+} from '@/features/hr/types';
 import { employerGosiFor } from '@/features/hr/api/hr.api';
 import type { JournalEntry, JournalLine } from '@/features/accounting/types';
 
@@ -226,6 +232,36 @@ export function buildEosProvisionEntry(delta: number, period: string): JournalEn
         debit: up ? 0 : d,
         credit: up ? d : 0,
         description: 'مخصص مكافأة نهاية الخدمة',
+      },
+    ],
+  };
+}
+
+/** Government fee of a renewed document (0074): DR 5160 / CR bank — post_document_cost. */
+export function buildDocCostEntry(row: DocCostRow, paidOn: string, bankCode: string): JournalEntry {
+  const ref = row.id.replace(/[^a-z0-9]/gi, '').slice(-8);
+  const label = DOC_TYPE_LABEL[row.type] ?? 'وثيقة';
+  return {
+    id: `je-doc-${row.id}`,
+    entry_no: 6400 + (Number.parseInt(ref.slice(-3), 36) % 90 || 0),
+    entry_date: paidOn,
+    branch: row.branch || null,
+    description: `رسوم حكومية (${label}) — ${row.owner_name}`,
+    reference: `DOC-${ref}`,
+    source_type: 'payroll',
+    status: 'posted',
+    lines: [
+      {
+        account_code: '5160',
+        debit: row.renewal_cost,
+        credit: 0,
+        description: `رسوم حكومية — ${row.owner_name}`,
+      },
+      {
+        account_code: bankCode,
+        debit: 0,
+        credit: row.renewal_cost,
+        description: 'سداد رسوم حكومية',
       },
     ],
   };
