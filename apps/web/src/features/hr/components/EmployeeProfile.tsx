@@ -24,24 +24,13 @@ import {
 import {
   DOC_STATUS_LABEL,
   DOC_STATUS_TONE,
+  DOC_TYPE_OPTIONS,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
   type Employee,
 } from '@/features/hr/types';
 
-const DOC_TYPES = [
-  'الهوية الوطنية',
-  'الإقامة',
-  'جواز سفر',
-  'رخصة العمل',
-  'التأشيرة',
-  'عقد عمل',
-  'السيرة الذاتية',
-  'شهادة علمية/مهنية',
-  'التأمين الطبي',
-  'رخصة قيادة',
-  'أخرى',
-];
+const DOC_TYPES = DOC_TYPE_OPTIONS;
 
 type Tab = 'overview' | 'personal' | 'job' | 'finance' | 'docs' | 'emergency';
 
@@ -70,9 +59,12 @@ export function EmployeeProfile({
   const addDoc = useAddDocument();
   const addEmer = useAddEmergencyContact();
 
-  const docs = allDocs.filter((d) => d.employee_name === employee.full_name);
-  const iqamas = allIqamas.filter((i) => i.employee_name === employee.full_name);
-  const contacts = allEmergency.filter((c) => c.employee_name === employee.full_name);
+  // rows link by employee_id (backend); demo seeds without an id fall back to the name
+  const mine = (r: { employee_id?: string; employee_name: string }) =>
+    r.employee_id ? r.employee_id === employee.id : r.employee_name === employee.full_name;
+  const docs = allDocs.filter(mine);
+  const iqamas = allIqamas.filter(mine);
+  const contacts = allEmergency.filter(mine);
 
   const idType = employee.id_type ?? (employee.nationality === 'السعودية' ? 'saudi' : 'expat');
   const docNum = (t: string) => docs.find((d) => d.type.includes(t))?.number;
@@ -95,6 +87,7 @@ export function EmployeeProfile({
   function uploadDoc() {
     if (!doc.number.trim()) return;
     addDoc.mutate({
+      employee_id: employee.id,
       employee_name: employee.full_name,
       type: doc.type,
       number: doc.number.trim(),
@@ -106,7 +99,7 @@ export function EmployeeProfile({
 
   function addContact() {
     if (!contact.name.trim() || !contact.phone.trim()) return;
-    addEmer.mutate({ employee_name: employee.full_name, ...contact });
+    addEmer.mutate({ employee_id: employee.id, employee_name: employee.full_name, ...contact });
     setContact({ name: '', relation: '', phone: '' });
   }
 

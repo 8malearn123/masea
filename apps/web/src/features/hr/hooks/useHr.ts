@@ -1,11 +1,19 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
-  addAdjustment,
-  addEmergencyContact,
-  addEmployeeDocument,
+  computePayslips,
+  createAdjustment,
+  createEmergencyContact,
+  createEmployeeDocument,
+  createLeaveRequest,
+  createPerformanceReview,
   decideAdjustment,
+  persistEmployee,
+  persistHouseWorker,
+  runPayroll,
   listAdjustments,
   listAttendance,
   listDocuments,
@@ -29,11 +37,18 @@ import type { GosiConfig, PayrollConfig } from '@/features/hr/api/hr.api';
 import type {
   AdjustmentStatus,
   EmergencyContact,
+  Employee,
   EmployeeDocument,
+  HouseWorker,
   LeaveRequest,
   LeaveStatus,
   PayrollAdjustment,
+  Payslip,
+  PerformanceReview,
 } from '@/features/hr/types';
+
+const EMP_KEY = ['hr', 'employees'] as const;
+const PAYSLIPS_KEY = ['hr', 'payslips'] as const;
 
 const ADJ_KEY = ['hr', 'adjustments'] as const;
 
@@ -41,7 +56,7 @@ const LEAVE_KEY = ['hr', 'leave'] as const;
 
 export function useEmployees() {
   return useQuery({
-    queryKey: ['hr', 'employees'],
+    queryKey: EMP_KEY,
     queryFn: listEmployees,
     staleTime: QUERY_DEFAULTS.staleTime,
   });
@@ -107,7 +122,7 @@ export function useAddDocument() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<EmployeeDocument, Error, NewDocInput>({
-    mutationFn: async (input) => addEmployeeDocument(input),
+    mutationFn: createEmployeeDocument,
     onSuccess: (doc) => {
       qc.setQueryData<EmployeeDocument[]>(['hr', 'documents'], (old) => [doc, ...(old ?? [])]);
       toast.success('تم رفع المستند');
@@ -120,7 +135,7 @@ export function useAddEmergencyContact() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<EmergencyContact, Error, Omit<EmergencyContact, 'id'>>({
-    mutationFn: async (input) => addEmergencyContact(input),
+    mutationFn: createEmergencyContact,
     onSuccess: (c) => {
       qc.setQueryData<EmergencyContact[]>(['hr', 'emergency'], (old) => [c, ...(old ?? [])]);
       toast.success('تمت إضافة جهة الطوارئ');
@@ -141,7 +156,7 @@ export function useAddAdjustment() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<PayrollAdjustment, Error, NewAdjustmentInput>({
-    mutationFn: async (input) => addAdjustment(input),
+    mutationFn: createAdjustment,
     onSuccess: (a) => {
       qc.setQueryData<PayrollAdjustment[]>(ADJ_KEY, (old) => [a, ...(old ?? [])]);
       toast.success('تم رفع طلب التعديل للاعتماد');
@@ -172,8 +187,10 @@ export function useDecideAdjustment() {
       if (ctx?.prev) qc.setQueryData(ADJ_KEY, ctx.prev);
       toast.error(e.message || 'تعذّر اتخاذ القرار');
     },
-    onSuccess: (_d, { status }) =>
-      toast.success(status === 'approved' ? 'تم اعتماد التعديل' : 'تم رفض الطلب'),
+    onSuccess: (_d, { status }) => {
+      void qc.invalidateQueries({ queryKey: PAYSLIPS_KEY }); // the run reflects the decision
+      toast.success(status === 'approved' ? 'تم اعتماد التعديل' : 'تم رفض الطلب');
+    },
   });
 }
 
@@ -199,8 +216,11 @@ export function useUpdateLeave() {
       if (ctx?.prev) qc.setQueryData(LEAVE_KEY, ctx.prev);
       toast.error(e.message || 'تعذّر تحديث الطلب');
     },
-    onSuccess: (_d, { status }) =>
-      toast.success(status === 'approved' ? 'تم اعتماد الإجازة' : 'تم تحديث الطلب'),
+    onSuccess: (_d, { status }) => {
+      // an approved leave changes the employee status (في إجازة) on the backend
+      if (!isDemoMode()) void qc.invalidateQueries({ queryKey: EMP_KEY });
+      toast.success(status === 'approved' ? 'تم اعتماد الإجازة' : 'تم تحديث الطلب');
+    },
   });
 }
 
@@ -225,6 +245,7 @@ function useSaveSettings<T>(save: (v: T) => Promise<void>, okMsg: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: PAYROLL_SETTINGS_KEY });
       void qc.invalidateQueries({ queryKey: ['audit-log'] });
+      void qc.invalidateQueries({ queryKey: PAYSLIPS_KEY });
       toast.success(okMsg);
     },
     onError: (e) => toast.error(e.message || 'تعذّر حفظ الإعدادات'),
@@ -237,4 +258,108 @@ export function useUpdatePayrollConfig() {
 
 export function useUpdateGosiConfig() {
   return useSaveSettings<GosiConfig>(updateGosiConfig, 'تم حفظ إعدادات التأمينات');
+}
+
+/* ------------------------------ writes ----------------------------------- */
+export function useSaveEmployee() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    Employee,
+    Error,
+    { employee: Employee; isNew: boolean; canManagePay: boolean }
+  >({
+    mutationFn: ({ employee, isNew, canManagePay }) =>
+      persistEmployee(employee, isNew, canManagePay),
+    onSuccess: (saved, { isNew }) => {
+      qc.setQueryData<Employee[]>(EMP_KEY, (old) =>
+        isNew ? [saved, ...(old ?? [])] : (old ?? []).map((e) => (e.id === saved.id ? saved : e)),
+      );
+      if (!isDemoMode()) void qc.invalidateQueries({ queryKey: EMP_KEY });
+      toast.success(isNew ? 'تمت إضافة الموظف' : 'تم تحديث بيانات الموظف');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ الموظف'),
+  });
+}
+
+export function useAddLeave() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<LeaveRequest, Error, LeaveRequest>({
+    mutationFn: createLeaveRequest,
+    onSuccess: (l) => {
+      qc.setQueryData<LeaveRequest[]>(LEAVE_KEY, (old) => [l, ...(old ?? [])]);
+      if (!isDemoMode()) void qc.invalidateQueries({ queryKey: EMP_KEY });
+      toast.success(
+        l.status === 'approved' ? 'تم تعيين الإجازة للموظف' : 'تم رفع طلب الإجازة للاعتماد',
+      );
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ الإجازة'),
+  });
+}
+
+export function useAddPerformance() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<PerformanceReview, Error, PerformanceReview>({
+    mutationFn: createPerformanceReview,
+    onSuccess: (r) => {
+      qc.setQueryData<PerformanceReview[]>(['hr', 'performance'], (old) => [r, ...(old ?? [])]);
+      toast.success('تم حفظ التقييم');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ التقييم'),
+  });
+}
+
+export function useSaveHouseWorker() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<HouseWorker, Error, { worker: HouseWorker; isNew: boolean }>({
+    mutationFn: ({ worker, isNew }) => persistHouseWorker(worker, isNew),
+    onSuccess: (w, { isNew }) => {
+      qc.setQueryData<HouseWorker[]>(['hr', 'workers'], (old) =>
+        isNew ? [w, ...(old ?? [])] : (old ?? []).map((x) => (x.id === w.id ? w : x)),
+      );
+      // same record as the customer catalog / contracts / quotes
+      void qc.invalidateQueries({ queryKey: ['worker_profiles'] });
+      toast.success(isNew ? 'تمت إضافة العاملة' : 'تم تحديث بيانات العاملة');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ العاملة'),
+  });
+}
+
+/* ------------------------------ payroll run ------------------------------ */
+/**
+ * Payslips for a period. Live: calculate_payslip() on the backend (the source
+ * of truth). Demo: the mirror engine, recomputed whenever employees,
+ * adjustments or settings change. `period = null` → not run yet.
+ */
+export function usePayslips(
+  employees: Employee[],
+  period: string | null,
+  adjustments: PayrollAdjustment[],
+  settingsStamp: unknown,
+) {
+  const demo = isDemoMode();
+  const demoSlips = useMemo<Payslip[] | null>(
+    () => (demo && period ? runPayroll(employees, period, adjustments) : null),
+    // settingsStamp: the engine reads live config, so recompute when it changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [demo, employees, period, adjustments, settingsStamp],
+  );
+  const q = useQuery<Payslip[]>({
+    queryKey: [...PAYSLIPS_KEY, period, employees.map((e) => e.id).join(',')],
+    queryFn: () => computePayslips(employees, period ?? '', adjustments),
+    enabled: !demo && !!period && employees.length > 0,
+    staleTime: 30_000,
+  });
+  if (demo)
+    return { data: demoSlips, isLoading: false, isError: false, error: null, refetch: q.refetch };
+  return {
+    data: period ? (q.data ?? null) : null,
+    isLoading: q.isLoading && !!period,
+    isError: q.isError,
+    error: q.error,
+    refetch: q.refetch,
+  };
 }

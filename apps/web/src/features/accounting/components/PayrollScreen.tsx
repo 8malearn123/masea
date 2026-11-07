@@ -3,8 +3,13 @@ import { BookOpenText, CheckCircle2, Link2, Wallet } from 'lucide-react';
 import { Badge, Button, Card, Select, Table, type Column } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useAdjustments, useEmployees, usePayrollSettings } from '@/features/hr/hooks/useHr';
-import { payrollPeriods, runPayroll } from '@/features/hr/api/hr.api';
+import {
+  useAdjustments,
+  useEmployees,
+  usePayrollSettings,
+  usePayslips,
+} from '@/features/hr/hooks/useHr';
+import { payrollPeriods } from '@/features/hr/api/hr.api';
 import type { Payslip } from '@/features/hr/types';
 import { accountName } from '@/features/accounting/data/chart';
 import { buildPayrollEntry, employerGosi, payrollTotals } from '@/features/accounting/data/payroll';
@@ -39,10 +44,9 @@ export function PayrollScreen() {
   const post = usePostPayroll();
   const [period, setPeriod] = useState(PERIODS[0] ?? '');
 
-  const slips: Payslip[] = useMemo(
-    () => runPayroll(employees, period, adjustments),
-    [employees, period, adjustments, settings],
-  );
+  // same source as the HR run: calculate_payslip() live, the mirror engine in demo
+  const { data: slipsData } = usePayslips(employees, period, adjustments, settings);
+  const slips: Payslip[] = useMemo(() => slipsData ?? [], [slipsData]);
   const totals = useMemo(() => payrollTotals(slips), [slips]);
   const entry = useMemo(() => buildPayrollEntry(slips, period, null), [slips, period]);
   const isPosted = postedRefs.includes(`PAYROLL-${period}`);

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Award,
@@ -11,6 +10,7 @@ import {
   Clock,
   Coins,
   Download,
+  Link2,
   FileText,
   Gauge,
   HandCoins,
@@ -35,9 +35,11 @@ import {
   Badge,
   Button,
   Card,
+  ErrorState,
   Input,
   Modal,
   Select,
+  SkeletonCard,
   Table,
   useToast,
   type Column,
@@ -57,15 +59,18 @@ import {
   useEmployees,
   useHouseWorkers,
   useIqamas,
+  useAddLeave,
+  useAddPerformance,
   useLeaveRequests,
   usePayrollSettings,
+  usePayslips,
   usePerformance,
+  useSaveEmployee,
+  useSaveHouseWorker,
   useUpdateLeave,
 } from '@/features/hr/hooks/useHr';
 import {
   ADJUSTMENT_TYPES,
-  addLeaveRequest,
-  addPerformanceReview,
   buildEmployee,
   buildHouseWorker,
   buildWpsCsv,
@@ -76,9 +81,6 @@ import {
   PAYROLL_CONFIG,
   payrollPeriods,
   ratingLabel,
-  runPayroll,
-  saveEmployee,
-  saveHouseWorker,
   workedHours,
   type EmployeeInput,
   type HouseWorkerInput,
@@ -139,7 +141,12 @@ function Stat({
 export default function HrBoard() {
   const { section } = useParams();
   const tab = sectionFromSlug(section);
-  const { data: employees = [] } = useEmployees();
+  const {
+    data: employees = [],
+    isLoading: empLoading,
+    isError: empError,
+    refetch: refetchEmployees,
+  } = useEmployees();
 
   return (
     <div>
@@ -156,7 +163,14 @@ export default function HrBoard() {
       </div>
 
       {tab === 'overview' && <Overview employees={employees} />}
-      {tab === 'employees' && <Employees employees={employees} />}
+      {tab === 'employees' && (
+        <Employees
+          employees={employees}
+          isLoading={empLoading}
+          isError={empError}
+          onRetry={() => void refetchEmployees()}
+        />
+      )}
       {tab === 'attendance' && <Attendance />}
       {tab === 'leave' && <Leave employees={employees} />}
       {tab === 'payroll' && <Payroll employees={employees} />}
@@ -436,7 +450,13 @@ function Overview({ employees: all }: { employees: Employee[] }) {
 }
 
 /* ------------------------------- employees ------------------------------- */
-function Employees({ employees }: { employees: Employee[] }) {
+interface LoadState {
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
+}
+
+function Employees({ employees, ...load }: { employees: Employee[] } & LoadState) {
   const [view, setView] = useState<'admins' | 'workers'>('admins');
   return (
     <div>
@@ -456,16 +476,22 @@ function Employees({ employees }: { employees: Employee[] }) {
           <HeartHandshake size={15} /> العاملات
         </button>
       </div>
-      {view === 'admins' ? <AdminEmployees employees={employees} /> : <HouseWorkers />}
+      {view === 'admins' ? <AdminEmployees employees={employees} {...load} /> : <HouseWorkers />}
     </div>
   );
 }
 
-function AdminEmployees({ employees }: { employees: Employee[] }) {
-  const qc = useQueryClient();
+function AdminEmployees({
+  employees,
+  isLoading,
+  isError,
+  onRetry,
+}: { employees: Employee[] } & LoadState) {
   const { can } = usePermissions();
-  const toast = useToast();
   const editable = can('hr', 'edit');
+  // pay is money: only hr.manage sets salaries (guard_employee_pay, 0068)
+  const canManagePay = can('hr', 'manage');
+  const saveEmp = useSaveEmployee();
   const [branch, setBranch] = useState('all');
   const [dept, setDept] = useState('all');
   const [search, setSearch] = useState('');
@@ -481,21 +507,17 @@ function AdminEmployees({ employees }: { employees: Employee[] }) {
   );
 
   function save(input: EmployeeInput) {
-    if (editTarget) {
-      const updated: Employee = saveEmployee({ ...editTarget, ...input });
-      qc.setQueryData<Employee[]>(['hr', 'employees'], (old) =>
-        old?.map((e) => (e.id === updated.id ? updated : e)),
-      );
-      toast.success('تم تحديث بيانات الموظف');
-    } else {
-      const created = saveEmployee(buildEmployee(input));
-      qc.setQueryData<Employee[]>(['hr', 'employees'], (old) =>
-        old ? [created, ...old] : [created],
-      );
-      toast.success('تمت إضافة الموظف');
-    }
-    setAddOpen(false);
-    setEditTarget(null);
+    const isNew = !editTarget;
+    const employee = editTarget ? { ...editTarget, ...input } : buildEmployee(input);
+    saveEmp.mutate(
+      { employee, isNew, canManagePay },
+      {
+        onSuccess: () => {
+          setAddOpen(false);
+          setEditTarget(null);
+        },
+      },
+    );
   }
 
   const columns: Column<Employee>[] = [
@@ -586,12 +608,22 @@ function AdminEmployees({ employees }: { employees: Employee[] }) {
           </Button>
         )}
       </div>
-      <Table columns={columns} rows={rows} rowKey={(e) => e.id} emptyTitle="لا يوجد موظفون" />
+      <Table
+        columns={columns}
+        rows={rows}
+        rowKey={(e) => e.id}
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={onRetry}
+        emptyTitle="لا يوجد موظفون"
+      />
 
       {(addOpen || editTarget) && (
         <EmployeeModal
           key={editTarget?.id ?? 'new'}
           employee={editTarget}
+          canManagePay={canManagePay}
+          saving={saveEmp.isPending}
           onSave={save}
           onClose={() => {
             setAddOpen(false);
@@ -608,10 +640,14 @@ function AdminEmployees({ employees }: { employees: Employee[] }) {
 
 function EmployeeModal({
   employee,
+  canManagePay,
+  saving,
   onSave,
   onClose,
 }: {
   employee: Employee | null;
+  canManagePay: boolean;
+  saving: boolean;
   onSave: (input: EmployeeInput) => void;
   onClose: () => void;
 }) {
@@ -621,7 +657,7 @@ function EmployeeModal({
   const [department, setDepartment] = useState(e?.department ?? 'الإدارة');
   const [branch, setBranch] = useState(e?.branch ?? 'نجران');
   const [nationality, setNationality] = useState(e?.nationality ?? 'السعودية');
-  const [base_salary, setBase] = useState(e?.base_salary ?? 5000);
+  const [base_salary, setBase] = useState(e?.base_salary ?? (canManagePay ? 5000 : 0));
   const [allowances, setAllow] = useState(e?.allowances ?? 0);
   const [status, setStatus] = useState<EmployeeStatus>(e?.status ?? 'active');
   const [role, setRole] = useState<RoleCode>(e?.role ?? 'sales');
@@ -641,7 +677,7 @@ function EmployeeModal({
       setError('تاريخ التعيين مطلوب (تُحتسب منه نهاية الخدمة)');
       return;
     }
-    if (!(base_salary > 0) || !(allowances >= 0)) {
+    if (canManagePay && (!(base_salary > 0) || !(allowances >= 0))) {
       setError('أدخل راتبًا أساسيًا أكبر من صفر وبدلات غير سالبة');
       return;
     }
@@ -700,6 +736,8 @@ function EmployeeModal({
             min={0}
             value={base_salary}
             onChange={(ev) => setBase(Number(ev.target.value))}
+            disabled={!canManagePay}
+            hint={canManagePay ? undefined : 'الراتب من صلاحية الموارد البشرية'}
           />
           <Input
             label="البدلات"
@@ -707,6 +745,7 @@ function EmployeeModal({
             min={0}
             value={allowances}
             onChange={(ev) => setAllow(Number(ev.target.value))}
+            disabled={!canManagePay}
           />
           <Input
             label="تاريخ التعيين"
@@ -764,7 +803,7 @@ function EmployeeModal({
         </div>
 
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <Button onClick={submit} className="w-full">
+        <Button onClick={submit} className="w-full" loading={saving}>
           {employee ? 'حفظ التعديلات' : 'إضافة الموظف'}
         </Button>
       </div>
@@ -884,19 +923,15 @@ function daysBetween(a: string, b: string): number {
 }
 
 function Leave({ employees }: { employees: Employee[] }) {
-  const qc = useQueryClient();
   const { can } = usePermissions();
-  const toast = useToast();
   const canApprove = can('hr', 'edit') || can('hr', 'approve');
+  const addLeaveMut = useAddLeave();
   const { data: rows = [], isLoading, isError, refetch } = useLeaveRequests();
   const update = useUpdateLeave();
   const [addOpen, setAddOpen] = useState(false);
 
   function addLeave(l: LeaveRequest) {
-    addLeaveRequest(l);
-    qc.setQueryData<LeaveRequest[]>(['hr', 'leave'], (old) => (old ? [l, ...old] : [l]));
-    toast.success('تم تعيين الإجازة للموظف');
-    setAddOpen(false);
+    addLeaveMut.mutate(l, { onSuccess: () => setAddOpen(false) });
   }
 
   const columns: Column<LeaveRequest>[] = [
@@ -984,7 +1019,7 @@ function LeaveModal({
   onAdd: (l: LeaveRequest) => void;
   onClose: () => void;
 }) {
-  const [empName, setEmpName] = useState(employees[0]?.full_name ?? '');
+  const [empId, setEmpId] = useState(employees[0]?.id ?? '');
   const [type, setType] = useState<LeaveType>('annual');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -993,13 +1028,15 @@ function LeaveModal({
   const days = daysBetween(from, to);
 
   function submit() {
-    if (!empName || !from || !to || days <= 0) {
+    const emp = employees.find((e) => e.id === empId);
+    if (!emp || !from || !to || days <= 0) {
       setError('أكمل بيانات الإجازة (الموظف والتواريخ).');
       return;
     }
     onAdd({
       id: `l-${Date.now()}`,
-      employee_name: empName,
+      employee_id: emp.id,
+      employee_name: emp.full_name,
       type,
       from_date: from,
       to_date: to,
@@ -1014,9 +1051,9 @@ function LeaveModal({
       <div className="space-y-3">
         <Select
           label="الموظف"
-          value={empName}
-          onChange={(e) => setEmpName(e.target.value)}
-          options={employees.map((e) => ({ value: e.full_name, label: e.full_name }))}
+          value={empId}
+          onChange={(e) => setEmpId(e.target.value)}
+          options={employees.map((e) => ({ value: e.id, label: e.full_name }))}
         />
         <Select
           label="نوع الإجازة"
@@ -1063,10 +1100,12 @@ function Payroll({ employees }: { employees: Employee[] }) {
   const [period, setPeriod] = useState(PAYROLL_PERIODS[0] ?? '');
   const [ranPeriod, setRanPeriod] = useState('');
   // Derived from sources, so approving/rejecting an adjustment updates the run live.
-  const slips = useMemo<Payslip[] | null>(
-    () => (ranPeriod ? runPayroll(employees, ranPeriod, adjustments) : null),
-    [employees, ranPeriod, adjustments, settings],
-  );
+  const {
+    data: slips,
+    isLoading: slipsLoading,
+    isError: slipsError,
+    refetch: refetchSlips,
+  } = usePayslips(employees, ranPeriod || null, adjustments, settings);
   const [openSlip, setOpenSlip] = useState<Payslip | null>(null);
 
   const pendingThisPeriod = adjustments.filter(
@@ -1084,9 +1123,11 @@ function Payroll({ employees }: { employees: Employee[] }) {
   }, [slips]);
 
   function run() {
-    const result = runPayroll(employees, period, adjustments);
     setRanPeriod(period);
-    toast.success(`تم تشغيل مسير رواتب ${period} لعدد ${result.length} موظف من المصادر`);
+    if (period === ranPeriod) void refetchSlips();
+    toast.success(
+      `تم تشغيل مسير رواتب ${period} لعدد ${currentEmployees(employees).length} موظف من المصادر`,
+    );
   }
 
   function exportWps() {
@@ -1196,7 +1237,17 @@ function Payroll({ employees }: { employees: Employee[] }) {
         )}
       </Card>
 
-      {slips === null ? (
+      {ranPeriod && (slipsLoading || slipsError) ? (
+        <Table
+          columns={columns}
+          rows={[]}
+          rowKey={(r) => r.employee_id}
+          isLoading={slipsLoading}
+          isError={slipsError}
+          onRetry={() => void refetchSlips()}
+          emptyTitle="لا يوجد مسير رواتب"
+        />
+      ) : !slips ? (
         <Card className="py-10 text-center">
           <Wallet size={28} className="mx-auto text-navy-200" />
           <p className="mt-3 text-sm text-purple">
@@ -1279,7 +1330,7 @@ function PayslipModal({
           <span className="text-purple">
             حضور <span className="num font-semibold text-navy">{slip.present_days}</span> يوم · غياب{' '}
             <span className="num font-semibold text-red-600">{slip.absent_days}</span> · تأخير{' '}
-            <span className="num font-semibold text-gold-600">{slip.late_count}</span>
+            <span className="num font-semibold text-gold-600">{slip.late_minutes}</span> د
           </span>
         </div>
 
@@ -1646,9 +1697,8 @@ function Documents() {
 
 /* ----------------------------- performance ------------------------------- */
 function Performance({ employees }: { employees: Employee[] }) {
-  const qc = useQueryClient();
   const { can } = usePermissions();
-  const toast = useToast();
+  const addPerf = useAddPerformance();
   const { data: reviews = [], isLoading, isError, refetch } = usePerformance();
   const [addOpen, setAddOpen] = useState(false);
   const avg = reviews.length
@@ -1657,10 +1707,7 @@ function Performance({ employees }: { employees: Employee[] }) {
   const top = [...reviews].sort((a, b) => b.score - a.score)[0];
 
   function addReview(r: PerformanceReview) {
-    addPerformanceReview(r);
-    qc.setQueryData<PerformanceReview[]>(['hr', 'performance'], (old) => (old ? [r, ...old] : [r]));
-    toast.success('تم حفظ التقييم');
-    setAddOpen(false);
+    addPerf.mutate(r, { onSuccess: () => setAddOpen(false) });
   }
 
   const columns: Column<PerformanceReview>[] = [
@@ -1735,14 +1782,15 @@ function PerformanceModal({
   onAdd: (r: PerformanceReview) => void;
   onClose: () => void;
 }) {
-  const [empName, setEmpName] = useState(employees[0]?.full_name ?? '');
+  const [empId, setEmpId] = useState(employees[0]?.id ?? '');
   const [period, setPeriod] = useState('الربع الثاني 2026');
   const [score, setScore] = useState(80);
   const [reviewer, setReviewer] = useState('المدير المباشر');
   const [error, setError] = useState<string | null>(null);
 
   function submit() {
-    if (!empName || !period.trim() || !reviewer.trim()) {
+    const emp = employees.find((e) => e.id === empId);
+    if (!emp || !period.trim() || !reviewer.trim()) {
       setError('أكمل بيانات التقييم (الموظف والفترة والمُقيّم).');
       return;
     }
@@ -1752,7 +1800,8 @@ function PerformanceModal({
     }
     onAdd({
       id: `p-${Date.now()}`,
-      employee_name: empName,
+      employee_id: emp.id,
+      employee_name: emp.full_name,
       period,
       score,
       reviewer,
@@ -1765,9 +1814,9 @@ function PerformanceModal({
       <div className="space-y-3">
         <Select
           label="الموظف"
-          value={empName}
-          onChange={(e) => setEmpName(e.target.value)}
-          options={employees.map((e) => ({ value: e.full_name, label: e.full_name }))}
+          value={empId}
+          onChange={(e) => setEmpId(e.target.value)}
+          options={employees.map((e) => ({ value: e.id, label: e.full_name }))}
         />
         <Input label="الفترة" value={period} onChange={(e) => setPeriod(e.target.value)} />
         <Input
@@ -1915,11 +1964,10 @@ function WorkerAvatar({ worker, size = 'h-14 w-14' }: { worker: HouseWorker; siz
 }
 
 function HouseWorkers() {
-  const qc = useQueryClient();
   const { can } = usePermissions();
-  const toast = useToast();
   const editable = can('hr', 'edit');
-  const { data: workers = [] } = useHouseWorkers();
+  const { data: workers = [], isLoading, isError, refetch } = useHouseWorkers();
+  const saveWorker = useSaveHouseWorker();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const [nat, setNat] = useState('all');
@@ -1935,21 +1983,17 @@ function HouseWorkers() {
   );
 
   function save(input: HouseWorkerInput) {
-    if (editTarget) {
-      const updated: HouseWorker = saveHouseWorker({ ...editTarget, ...input });
-      qc.setQueryData<HouseWorker[]>(['hr', 'workers'], (old) =>
-        old?.map((w) => (w.id === updated.id ? updated : w)),
-      );
-      toast.success('تم تحديث بيانات العاملة');
-    } else {
-      const created = saveHouseWorker(buildHouseWorker(input));
-      qc.setQueryData<HouseWorker[]>(['hr', 'workers'], (old) =>
-        old ? [created, ...old] : [created],
-      );
-      toast.success('تمت إضافة العاملة');
-    }
-    setAddOpen(false);
-    setEditTarget(null);
+    const isNew = !editTarget;
+    const worker = editTarget ? { ...editTarget, ...input } : buildHouseWorker(input);
+    saveWorker.mutate(
+      { worker, isNew },
+      {
+        onSuccess: () => {
+          setAddOpen(false);
+          setEditTarget(null);
+        },
+      },
+    );
   }
 
   return (
@@ -1994,7 +2038,19 @@ function HouseWorkers() {
         )}
       </div>
 
-      {rows.length === 0 ? (
+      <p className="mb-3 flex items-center gap-1.5 text-xs text-purple">
+        <Link2 size={13} /> نفس ملف العاملة الذي يظهر للعملاء في الكتالوج وفي العقود وعروض الأسعار —
+        أي تعديل هنا ينعكس هناك مباشرة.
+      </p>
+      {isLoading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <SkeletonCard key={i} />
+          ))}
+        </div>
+      ) : isError ? (
+        <ErrorState title="تعذّر تحميل العاملات" onRetry={() => void refetch()} />
+      ) : rows.length === 0 ? (
         <Card className="py-12 text-center text-sm text-purple">لا توجد عاملات مطابقات.</Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,6 +1,10 @@
 import { GOSI } from '@masiat/shared';
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch } from '@/lib/branchScope';
+import { useAuth } from '@/store/auth';
+import { FALLBACK_WORKERS } from '@/lib/funnel';
+import * as live from '@/features/hr/api/hr.live';
 import { ADJ_IS_ADDITION } from '@/features/hr/types';
 import type {
   AdjustmentStatus,
@@ -277,8 +281,31 @@ const LEAVE: LeaveRequest[] = [
   },
 ];
 
+/** Demo: the viewer sees only their branch (cross-branch roles see all) — same rule as RLS. */
+function demoEmployees(): Employee[] {
+  return scopeToViewerBranch(EMPLOYEES, (e) => e.branch).map((e) => ({ ...e }));
+}
+
+/** Demo rows of child tables follow their employee's branch (like hr_can_see in 0068). */
+function scopeByEmployee<T extends { employee_id?: string; employee_name: string }>(
+  rows: T[],
+): T[] {
+  if (!useAuth.getState().profile) return rows;
+  const visible = demoEmployees();
+  const ids = new Set(visible.map((e) => e.id));
+  const names = new Set(visible.map((e) => e.full_name));
+  const known = new Set(EMPLOYEES.map((e) => e.full_name));
+  return rows.filter((r) =>
+    r.employee_id
+      ? ids.has(r.employee_id)
+      : names.has(r.employee_name) ||
+        (!known.has(r.employee_name) && scopeToViewerBranch([r], () => null).length > 0),
+  );
+}
+
 export async function listEmployees(): Promise<Employee[]> {
-  return EMPLOYEES.map((e) => ({ ...e }));
+  if (!isDemoMode()) return live.liveListEmployees();
+  return demoEmployees();
 }
 
 /** Upsert into the demo store so add/edit survive a cache refetch (staleTime/gc). */
@@ -287,6 +314,16 @@ export function saveEmployee(emp: Employee): Employee {
   if (i >= 0) EMPLOYEES[i] = emp;
   else EMPLOYEES.unshift(emp);
   return emp;
+}
+
+/** Add or update an employee (backend in live mode, demo store otherwise). */
+export async function persistEmployee(
+  emp: Employee,
+  isNew: boolean,
+  canManagePay: boolean,
+): Promise<Employee> {
+  if (!isDemoMode()) return live.liveSaveEmployee(emp, isNew, canManagePay);
+  return saveEmployee(emp);
 }
 
 /** Employees still on the payroll (active + on leave) — terminated are excluded. */
@@ -303,11 +340,18 @@ export function buildEmployee(input: EmployeeInput): Employee {
 }
 
 export async function listAttendance(): Promise<AttendanceRecord[]> {
-  return ATTENDANCE.map((a) => ({ ...a }));
+  if (!isDemoMode()) return live.liveListAttendance();
+  return scopeByEmployee(ATTENDANCE).map((a) => ({ ...a }));
 }
 
 export async function listLeaveRequests(): Promise<LeaveRequest[]> {
-  return LEAVE.map((l) => ({ ...l }));
+  if (!isDemoMode()) return live.liveListLeave();
+  return scopeByEmployee(LEAVE).map((l) => ({ ...l }));
+}
+
+export async function createLeaveRequest(l: LeaveRequest): Promise<LeaveRequest> {
+  if (!isDemoMode()) return live.liveAddLeave(l);
+  return addLeaveRequest(l);
 }
 
 /** Add a leave request to the demo store (persists across refetch). */
@@ -319,7 +363,7 @@ export function addLeaveRequest(l: LeaveRequest): LeaveRequest {
 export async function updateLeaveStatus(id: string, status: LeaveStatus): Promise<void> {
   const local = LEAVE.find((l) => l.id === id);
   if (local) local.status = status; // keep the demo store in sync with the optimistic update
-  if (isDemoId(id)) return;
+  if (isDemoMode() || isDemoId(id)) return;
   const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id);
   if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
 }
@@ -555,6 +599,16 @@ export function runPayroll(
     .map((e) => calculatePayslip(e, period, adjustments));
 }
 
+/** Payslips for a period: calculate_payslip() on the backend, the mirror engine in demo. */
+export async function computePayslips(
+  employees: Employee[],
+  period: string,
+  adjustments: PayrollAdjustment[],
+): Promise<Payslip[]> {
+  if (!isDemoMode()) return live.livePayslips(employees, period);
+  return runPayroll(employees, period, adjustments);
+}
+
 /** WPS-style payroll file (CSV) — bank, IBAN, basic, allowances, deductions, net. */
 export function buildWpsCsv(slips: Payslip[]): string {
   const header = ['الموظف', 'الجنسية', 'الأساسي', 'البدلات', 'الإضافي', 'الاستقطاعات', 'الصافي'];
@@ -610,7 +664,8 @@ const ADJUSTMENTS: PayrollAdjustment[] = [
 ];
 
 export async function listAdjustments(): Promise<PayrollAdjustment[]> {
-  return ADJUSTMENTS.map((a) => ({ ...a }));
+  if (!isDemoMode()) return live.liveListAdjustments();
+  return scopeByEmployee(ADJUSTMENTS).map((a) => ({ ...a }));
 }
 
 export type NewAdjustmentInput = Omit<PayrollAdjustment, 'id' | 'status'>;
@@ -619,16 +674,24 @@ export function addAdjustment(input: NewAdjustmentInput): PayrollAdjustment {
   ADJUSTMENTS.unshift(a);
   return a;
 }
+export async function createAdjustment(input: NewAdjustmentInput): Promise<PayrollAdjustment> {
+  if (!isDemoMode()) return live.liveAddAdjustment(input);
+  return addAdjustment(input);
+}
 export async function decideAdjustment(
   id: string,
   status: Exclude<AdjustmentStatus, 'pending'>,
 ): Promise<void> {
   const local = ADJUSTMENTS.find((a) => a.id === id);
   if (local) local.status = status; // keep the demo store in sync with the optimistic update
-  if (isDemoId(id)) return;
+  if (isDemoMode() || isDemoId(id)) return;
   const { error } = await supabase
     .from('payroll_adjustments')
-    .update({ status, decided_at: new Date().toISOString() })
+    .update({
+      status,
+      decided_at: new Date().toISOString(),
+      approved_by: useAuth.getState().profile?.id ?? null,
+    })
     .eq('id', id);
   if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
 }
@@ -809,17 +872,24 @@ const PERFORMANCE: PerformanceReview[] = [
 ];
 
 export async function listDocuments(): Promise<EmployeeDocument[]> {
-  return DOCUMENTS.map((d) => ({ ...d }));
+  if (!isDemoMode()) return live.liveListDocuments();
+  return scopeByEmployee(DOCUMENTS).map((d) => ({ ...d }));
 }
 export async function listIqamas(): Promise<IqamaRecord[]> {
-  return IQAMAS;
+  if (!isDemoMode()) return live.liveListIqamas();
+  return scopeByEmployee(IQAMAS).map((i) => ({ ...i }));
 }
 export async function listPerformance(): Promise<PerformanceReview[]> {
-  return PERFORMANCE.map((p) => ({ ...p }));
+  if (!isDemoMode()) return live.liveListPerformance();
+  return scopeByEmployee(PERFORMANCE).map((p) => ({ ...p }));
 }
 export function addPerformanceReview(r: PerformanceReview): PerformanceReview {
   PERFORMANCE.unshift(r);
   return r;
+}
+export async function createPerformanceReview(r: PerformanceReview): Promise<PerformanceReview> {
+  if (!isDemoMode()) return live.liveAddPerformance(r);
+  return addPerformanceReview(r);
 }
 
 /** Add an official document to an employee's file (demo store). */
@@ -828,6 +898,10 @@ export function addEmployeeDocument(input: NewDocInput): EmployeeDocument {
   const doc: EmployeeDocument = { ...input, id: `doc-${Date.now()}` };
   DOCUMENTS.unshift(doc);
   return doc;
+}
+export async function createEmployeeDocument(input: NewDocInput): Promise<EmployeeDocument> {
+  if (!isDemoMode()) return live.liveAddDocument(input);
+  return addEmployeeDocument(input);
 }
 
 /* --------------------------- emergency contacts -------------------------- */
@@ -848,117 +922,122 @@ const EMERGENCY: EmergencyContact[] = [
   },
 ];
 export async function listEmergencyContacts(): Promise<EmergencyContact[]> {
-  return EMERGENCY.map((c) => ({ ...c }));
+  if (!isDemoMode()) return live.liveListEmergency();
+  return scopeByEmployee(EMERGENCY).map((c) => ({ ...c }));
 }
 export function addEmergencyContact(input: Omit<EmergencyContact, 'id'>): EmergencyContact {
   const c: EmergencyContact = { ...input, id: `ec-${Date.now()}` };
   EMERGENCY.unshift(c);
   return c;
 }
+export async function createEmergencyContact(
+  input: Omit<EmergencyContact, 'id'>,
+): Promise<EmergencyContact> {
+  if (!isDemoMode()) return live.liveAddEmergency(input);
+  return addEmergencyContact(input);
+}
 
-/* ============================ House workers (عاملات) ====================== */
-const HOUSE_WORKERS: HouseWorker[] = [
-  {
-    id: 'hw1',
-    full_name: 'ماريا سانتوس',
-    photo_url: null,
-    nationality: 'الفلبين',
-    profession: 'عاملة منزلية',
-    age: 32,
-    experience_years: 6,
-    monthly_salary: 1500,
-    languages: ['العربية', 'الإنجليزية'],
+/* ============================ House workers (عاملات) ======================
+ * One worker record for the whole company: HR edits the SAME profile the
+ * customer catalog, contracts and quotes read (`worker_profiles` live,
+ * FALLBACK_WORKERS in demo). HR-only fields (passport/iqama/branch/skills)
+ * are columns on worker_profiles (0068); in demo they sit in WORKER_HR below.
+ * ========================================================================= */
+type WorkerHr = Pick<HouseWorker, 'skills' | 'passport_no' | 'iqama_no' | 'branch'>;
+const WORKER_HR: Record<string, WorkerHr> = {
+  w1: {
     skills: ['محبة للأطفال', 'التنظيف', 'الكي'],
     passport_no: 'P1234567',
     iqama_no: '2433445566',
-    status: 'available',
     branch: 'نجران',
-    bio: 'خبرة في تنظيف المنازل ورعاية الأطفال، تجيد التعامل مع الأجهزة المنزلية.',
   },
-  {
-    id: 'hw2',
-    full_name: 'سيتي نورهاليزا',
-    photo_url: null,
-    nationality: 'إندونيسيا',
-    profession: 'طباخة',
-    age: 38,
-    experience_years: 10,
-    monthly_salary: 1700,
-    languages: ['العربية', 'الإندونيسية'],
+  w3: {
     skills: ['تجيد الطبخ', 'التنظيف'],
     passport_no: 'A7654321',
     iqama_no: '2477889900',
-    status: 'on_service',
     branch: 'جازان',
-    bio: 'تتقن المأكولات العربية والآسيوية وإدارة المطبخ.',
   },
-  {
-    id: 'hw3',
-    full_name: 'غريس وانجيرو',
-    photo_url: null,
-    nationality: 'كينيا',
-    profession: 'مربية أطفال',
-    age: 27,
-    experience_years: 4,
-    monthly_salary: 1450,
-    languages: ['الإنجليزية', 'السواحيلية'],
+  w5: {
     skills: ['محبة للأطفال', 'رعاية ذوي الإعاقة'],
     passport_no: 'K1122334',
     iqama_no: '2411223344',
-    status: 'reserved',
     branch: 'شرورة',
-    bio: 'صبورة ومحبة للأطفال مع خبرة في المتابعة الدراسية.',
   },
-  {
-    id: 'hw4',
-    full_name: 'نيلوكا فرناندو',
-    photo_url: null,
-    nationality: 'سريلانكا',
-    profession: 'مربية أطفال',
-    age: 34,
-    experience_years: 9,
-    monthly_salary: 1650,
-    languages: ['الإنجليزية', 'السنهالية'],
-    skills: ['محبة للأطفال', 'العناية بكبار السن'],
-    passport_no: 'S9988776',
-    iqama_no: '2455667788',
-    status: 'available',
-    branch: 'نجران',
-    bio: 'خبرة واسعة في رعاية الأطفال والرضّع وتنظيم يومهم.',
-  },
-  {
-    id: 'hw5',
-    full_name: 'روكسانا بيغم',
-    photo_url: null,
-    nationality: 'بنغلاديش',
-    profession: 'عاملة منزلية',
-    age: 31,
-    experience_years: 5,
-    monthly_salary: 1300,
-    languages: ['العربية', 'البنغالية'],
+  w9: {
     skills: ['التنظيف', 'الكي', 'العناية بكبار السن'],
     passport_no: 'B5544332',
     iqama_no: '2466778899',
-    status: 'medical',
     branch: 'حبونا',
-    bio: 'خبرة في التنظيف والكي والعناية بكبار السن.',
   },
-];
+  w11: {
+    skills: ['محبة للأطفال', 'العناية بكبار السن'],
+    passport_no: 'S9988776',
+    iqama_no: '2455667780',
+    branch: 'نجران',
+  },
+};
+const WORKER_STATUS_SET = new Set(['available', 'reserved', 'on_service', 'medical']);
 
-export async function listHouseWorkers(): Promise<HouseWorker[]> {
-  return HOUSE_WORKERS.map((w) => ({ ...w }));
+function demoWorker(w: (typeof FALLBACK_WORKERS)[number]): HouseWorker {
+  const hr = WORKER_HR[w.id];
+  return {
+    id: w.id,
+    full_name: w.full_name,
+    photo_url: w.photo_url,
+    nationality: w.nationality,
+    profession: w.profession,
+    age: w.age ?? 0,
+    experience_years: w.experience_years,
+    monthly_salary: w.monthly_salary,
+    languages: [...w.languages],
+    skills: [...(hr?.skills ?? [])],
+    passport_no: hr?.passport_no ?? '',
+    iqama_no: hr?.iqama_no ?? '',
+    status: (WORKER_STATUS_SET.has(w.status) ? w.status : 'available') as HouseWorker['status'],
+    branch: hr?.branch ?? '',
+    bio: w.bio_ar ?? '',
+  };
 }
 
-/** Upsert a house worker into the demo store (persists across refetch). */
+export async function listHouseWorkers(): Promise<HouseWorker[]> {
+  if (!isDemoMode()) return live.liveListWorkers();
+  return FALLBACK_WORKERS.map(demoWorker);
+}
+
+/** Demo upsert — writes the shared catalog record + the HR-only fields. */
 export function saveHouseWorker(w: HouseWorker): HouseWorker {
-  const i = HOUSE_WORKERS.findIndex((x) => x.id === w.id);
-  if (i >= 0) HOUSE_WORKERS[i] = w;
-  else HOUSE_WORKERS.unshift(w);
+  const profile = {
+    id: w.id,
+    full_name: w.full_name,
+    nationality: w.nationality,
+    profession: w.profession,
+    age: w.age,
+    experience_years: w.experience_years,
+    languages: [...w.languages],
+    monthly_salary: w.monthly_salary,
+    status: w.status,
+    photo_url: w.photo_url,
+    bio_ar: w.bio || null,
+  };
+  const i = FALLBACK_WORKERS.findIndex((x) => x.id === w.id);
+  if (i >= 0) FALLBACK_WORKERS[i] = { ...FALLBACK_WORKERS[i], ...profile };
+  else FALLBACK_WORKERS.unshift(profile);
+  WORKER_HR[w.id] = {
+    skills: [...w.skills],
+    passport_no: w.passport_no,
+    iqama_no: w.iqama_no,
+    branch: w.branch,
+  };
   return w;
+}
+
+export async function persistHouseWorker(w: HouseWorker, isNew: boolean): Promise<HouseWorker> {
+  if (!isDemoMode()) return live.liveSaveWorker(w, isNew);
+  return saveHouseWorker(w);
 }
 
 export type HouseWorkerInput = Omit<HouseWorker, 'id'>;
 
 export function buildHouseWorker(input: HouseWorkerInput): HouseWorker {
-  return { ...input, id: `hw-${Date.now()}` };
+  return { ...input, id: `w-${Date.now()}` };
 }

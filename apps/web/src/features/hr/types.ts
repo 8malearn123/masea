@@ -38,10 +38,18 @@ export interface Employee {
   gosi_system?: 'old' | 'new';
   gosi_reg_date?: string;
   counts_in_saudization?: boolean;
+  // backend link (live mode) — employees + employee_details (0004/0021)
+  employee_no?: string;
+  branch_id?: string | null;
+  /** allowance split (employee_details.housing/other + employees.transport). */
+  housing_allowance?: number;
+  transport_allowance?: number;
+  other_allowance?: number;
 }
 
 export interface EmergencyContact {
   id: string;
+  employee_id?: string;
   employee_name: string;
   name: string;
   relation: string;
@@ -100,6 +108,7 @@ export type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave';
 
 export interface AttendanceRecord {
   id: string;
+  employee_id?: string;
   employee_name: string;
   department: string;
   check_in: string | null;
@@ -126,6 +135,7 @@ export type LeaveStatus = 'pending' | 'approved' | 'rejected';
 
 export interface LeaveRequest {
   id: string;
+  employee_id?: string;
   employee_name: string;
   type: LeaveType;
   from_date: string;
@@ -227,6 +237,27 @@ export const WORKER_LANGUAGES = [
 ] as const;
 
 /* ------------------------- documents / iqamas ---------------------------- */
+/** employee_documents.type codes (0021) ↔ Arabic labels shown in the UI. */
+export const DOC_TYPE_LABEL: Record<string, string> = {
+  national_id: 'الهوية الوطنية',
+  iqama: 'الإقامة',
+  passport: 'جواز سفر',
+  work_permit: 'رخصة العمل',
+  visa: 'التأشيرة',
+  contract: 'عقد عمل',
+  cv: 'السيرة الذاتية',
+  certificate: 'شهادة علمية/مهنية',
+  medical: 'التأمين الطبي',
+  driving_license: 'رخصة قيادة',
+  photo: 'صورة شخصية',
+  other: 'أخرى',
+};
+/** Arabic label → stored code (unknown labels are stored as 'other'). */
+export function docTypeCode(label: string): string {
+  return Object.entries(DOC_TYPE_LABEL).find(([, l]) => l === label)?.[0] ?? 'other';
+}
+export const DOC_TYPE_OPTIONS = Object.values(DOC_TYPE_LABEL).filter((l) => l !== 'صورة شخصية');
+
 export type DocStatus = 'valid' | 'expiring' | 'expired';
 
 export const DOC_STATUS_LABEL: Record<DocStatus, string> = {
@@ -242,6 +273,7 @@ export const DOC_STATUS_TONE: Record<DocStatus, BadgeTone> = {
 
 export interface EmployeeDocument {
   id: string;
+  employee_id?: string;
   employee_name: string;
   type: string;
   number: string;
@@ -251,6 +283,7 @@ export interface EmployeeDocument {
 
 export interface IqamaRecord {
   id: string;
+  employee_id?: string;
   employee_name: string;
   iqama_no: string;
   profession: string;
@@ -262,6 +295,7 @@ export interface IqamaRecord {
 /* ----------------------------- performance ------------------------------- */
 export interface PerformanceReview {
   id: string;
+  employee_id?: string;
   employee_name: string;
   period: string;
   score: number; // 0..100
