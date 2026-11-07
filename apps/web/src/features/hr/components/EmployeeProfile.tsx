@@ -27,6 +27,7 @@ import {
   DOC_TYPE_OPTIONS,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
+  TERMINATION_REASON_LABEL,
   type Employee,
 } from '@/features/hr/types';
 
@@ -156,8 +157,19 @@ export function EmployeeProfile({
           })}
         </div>
 
+        {employee.status === 'terminated' && employee.termination_date && (
+          <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+            انتهت الخدمة في{' '}
+            <span className="num font-semibold">{dateAr(employee.termination_date)}</span>
+            {employee.termination_reason &&
+              ` — ${TERMINATION_REASON_LABEL[employee.termination_reason]}`}
+            {employee.termination_note && ` · ${employee.termination_note}`}
+          </div>
+        )}
+
         {tab === 'overview' && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="الرقم الوظيفي" value={employee.employee_no ?? ''} />
             <Field
               label="الراتب الإجمالي"
               value={`${sar(employee.base_salary + employee.allowances)} ر.س`}
@@ -186,6 +198,14 @@ export function EmployeeProfile({
             <Field label="الجوال" value={employee.phone} />
             <Field label="البريد" value={employee.email} />
             <Field label="الحالة الاجتماعية" value={employee.marital_status ?? ''} />
+            <Field label="الاسم بالإنجليزية" value={employee.english_name ?? ''} />
+            <Field label="تاريخ الميلاد" value={employee.dob ? dateAr(employee.dob) : ''} />
+            <Field
+              label="الجنس"
+              value={
+                employee.gender === 'female' ? 'أنثى' : employee.gender === 'male' ? 'ذكر' : ''
+              }
+            />
           </div>
         )}
 
@@ -208,13 +228,19 @@ export function EmployeeProfile({
             />
             <Field label="المدير المباشر" value={employee.manager ?? ''} />
             <Field label="يُحتسب في التوطين" value={countsSaudization ? 'نعم' : 'لا'} />
+            <Field label="حساب الدخول" value={employee.user_id ? 'مرتبط بحساب' : 'بدون حساب'} />
           </div>
         )}
 
         {tab === 'finance' && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Field label="الراتب الأساسي" value={`${sar(employee.base_salary)} ر.س`} />
-            <Field label="البدلات" value={`${sar(employee.allowances)} ر.س`} />
+            <Field
+              label="بدل السكن"
+              value={`${sar(employee.housing_allowance ?? employee.allowances)} ر.س`}
+            />
+            <Field label="بدل النقل" value={`${sar(employee.transport_allowance ?? 0)} ر.س`} />
+            <Field label="بدلات أخرى" value={`${sar(employee.other_allowance ?? 0)} ر.س`} />
             <Field
               label="الإجمالي"
               value={`${sar(employee.base_salary + employee.allowances)} ر.س`}

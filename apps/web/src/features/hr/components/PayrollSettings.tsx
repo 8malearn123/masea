@@ -152,6 +152,8 @@ interface PayrollForm {
   overtimeMultiplier: string;
   shiftStart: string; // HH:MM
   lateGraceMinutes: string;
+  defaultHousingPct: string;
+  defaultTransportPct: string;
 }
 const toPayrollForm = (c: PayrollConfig): PayrollForm => ({
   standardWorkDays: String(c.standardWorkDays),
@@ -159,6 +161,8 @@ const toPayrollForm = (c: PayrollConfig): PayrollForm => ({
   overtimeMultiplier: String(c.overtimeMultiplier),
   shiftStart: hourToTime(c.shiftStartHour),
   lateGraceMinutes: String(c.lateGraceMinutes),
+  defaultHousingPct: String(c.defaultHousingPct),
+  defaultTransportPct: String(c.defaultTransportPct),
 });
 const fromPayrollForm = (f: PayrollForm): PayrollConfig => ({
   standardWorkDays: num(f.standardWorkDays),
@@ -166,6 +170,8 @@ const fromPayrollForm = (f: PayrollForm): PayrollConfig => ({
   overtimeMultiplier: num(f.overtimeMultiplier),
   shiftStartHour: timeToHour(f.shiftStart),
   lateGraceMinutes: num(f.lateGraceMinutes),
+  defaultHousingPct: num(f.defaultHousingPct),
+  defaultTransportPct: num(f.defaultTransportPct),
 });
 
 /** Worked example so HR sees what a value means in riyals before saving. */
@@ -252,6 +258,26 @@ function PayrollConfigCard({ initial, editable }: { initial: PayrollConfig; edit
           disabled={!editable}
           error={errors.lateGraceMinutes}
           hint="لا يُخصم تأخير داخل هذه المدة"
+        />
+        <Input
+          label="بدل السكن الافتراضي"
+          type="number"
+          suffix="٪"
+          value={form.defaultHousingPct}
+          onChange={set('defaultHousingPct')}
+          disabled={!editable}
+          error={errors.defaultHousingPct}
+          hint="يُقترح للموظف الجديد كنسبة من الأساسي"
+        />
+        <Input
+          label="بدل النقل الافتراضي"
+          type="number"
+          suffix="٪"
+          value={form.defaultTransportPct}
+          onChange={set('defaultTransportPct')}
+          disabled={!editable}
+          error={errors.defaultTransportPct}
+          hint="يُقترح للموظف الجديد كنسبة من الأساسي"
         />
       </div>
 

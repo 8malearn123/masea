@@ -45,6 +45,48 @@ export interface Employee {
   housing_allowance?: number;
   transport_allowance?: number;
   other_allowance?: number;
+  manager_id?: string;
+  gosi_subscription_no?: string;
+  /** linked login account (employees.user_id) — one account per employee. */
+  user_id?: string;
+  // end of service (0069) — base of the EOS settlement
+  termination_date?: string;
+  termination_reason?: TerminationReason;
+  termination_note?: string;
+}
+
+export type TerminationReason =
+  | 'resignation'
+  | 'employer_termination'
+  | 'contract_end'
+  | 'article_80'
+  | 'retirement'
+  | 'death'
+  | 'other';
+
+export const TERMINATION_REASON_LABEL: Record<TerminationReason, string> = {
+  resignation: 'استقالة',
+  employer_termination: 'إنهاء من صاحب العمل',
+  contract_end: 'انتهاء العقد',
+  article_80: 'فصل وفق المادة 80',
+  retirement: 'تقاعد',
+  death: 'وفاة',
+  other: 'أخرى',
+};
+
+export const CONTRACT_TYPE_LABEL: Record<NonNullable<Employee['contract_type']>, string> = {
+  full_time: 'دوام كامل',
+  part_time: 'دوام جزئي',
+  temp: 'مؤقت',
+};
+
+/** A login account HR can link an employee to (hr_account_options, 0069). */
+export interface AccountOption {
+  id: string;
+  full_name: string;
+  role: string;
+  branch: string | null;
+  linked_employee: string | null;
 }
 
 export interface EmergencyContact {

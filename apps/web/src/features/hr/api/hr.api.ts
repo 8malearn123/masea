@@ -4,9 +4,11 @@ import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBa
 import { scopeToViewerBranch } from '@/lib/branchScope';
 import { useAuth } from '@/store/auth';
 import { FALLBACK_WORKERS } from '@/lib/funnel';
+import { DEMO_ACCOUNTS } from '@/lib/demo';
 import * as live from '@/features/hr/api/hr.live';
 import { ADJ_IS_ADDITION } from '@/features/hr/types';
 import type {
+  AccountOption,
   AdjustmentStatus,
   AdjustmentType,
   AttendanceRecord,
@@ -22,11 +24,26 @@ import type {
   PayrollRow,
   Payslip,
   PerformanceReview,
+  TerminationReason,
 } from '@/features/hr/types';
 
 const EMPLOYEES: Employee[] = [
   {
     id: 'e1',
+    employee_no: 'EMP-1001',
+    english_name: 'Fahad Alshehri',
+    id_type: 'saudi',
+    national_id: '1055238719',
+    gender: 'male',
+    contract_type: 'full_time',
+    housing_allowance: 2000,
+    transport_allowance: 1000,
+    other_allowance: 0,
+    iban: 'SA0380000000608010167519',
+    bank_name: 'الراجحي',
+    gosi_system: 'old',
+    gosi_reg_date: '2023-03-01',
+    counts_in_saudization: true,
     full_name: 'فهد الشهري',
     job_title: 'مدير العمليات',
     department: 'العمليات',
@@ -45,6 +62,21 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e2',
+    employee_no: 'EMP-1002',
+    english_name: 'Saad Al Muraih',
+    id_type: 'saudi',
+    national_id: '1088345028',
+    gender: 'male',
+    contract_type: 'full_time',
+    manager_id: 'e1',
+    manager: 'فهد الشهري',
+    housing_allowance: 1700,
+    transport_allowance: 800,
+    other_allowance: 0,
+    iban: 'SA1810000013245678000101',
+    bank_name: 'الأهلي السعودي',
+    gosi_system: 'old',
+    counts_in_saudization: true,
     full_name: 'سعد آل مريح',
     job_title: 'مدير الفرع',
     department: 'الإدارة',
@@ -62,6 +94,20 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e3',
+    employee_no: 'EMP-1003',
+    id_type: 'saudi',
+    national_id: '1102938477',
+    gender: 'female',
+    contract_type: 'full_time',
+    manager_id: 'e2',
+    manager: 'سعد آل مريح',
+    housing_allowance: 1000,
+    transport_allowance: 500,
+    other_allowance: 0,
+    iban: 'SA8320000002004563210001',
+    bank_name: 'الرياض',
+    gosi_system: 'old',
+    counts_in_saudization: true,
     full_name: 'نورة العتيبي',
     job_title: 'موظفة مبيعات',
     department: 'المبيعات',
@@ -79,6 +125,20 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e4',
+    employee_no: 'EMP-1004',
+    id_type: 'saudi',
+    national_id: '1077652137',
+    gender: 'female',
+    contract_type: 'full_time',
+    manager_id: 'e2',
+    manager: 'سعد آل مريح',
+    housing_allowance: 600,
+    transport_allowance: 400,
+    other_allowance: 0,
+    iban: 'SA2305000068201234567000',
+    bank_name: 'الإنماء',
+    gosi_system: 'old',
+    counts_in_saudization: true,
     full_name: 'ريم الزهراني',
     job_title: 'موظفة مركز اتصال',
     department: 'مركز الاتصال',
@@ -96,6 +156,20 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e5',
+    employee_no: 'EMP-1005',
+    id_type: 'saudi',
+    national_id: '1044589214',
+    gender: 'male',
+    contract_type: 'full_time',
+    manager_id: 'e1',
+    manager: 'فهد الشهري',
+    housing_allowance: 1400,
+    transport_allowance: 600,
+    other_allowance: 0,
+    iban: 'SA7480000000608010245781',
+    bank_name: 'الراجحي',
+    gosi_system: 'old',
+    counts_in_saudization: true,
     full_name: 'بدر المالكي',
     job_title: 'محاسب',
     department: 'المالية',
@@ -113,6 +187,20 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e6',
+    employee_no: 'EMP-1006',
+    id_type: 'saudi',
+    national_id: '1099123455',
+    gender: 'male',
+    contract_type: 'full_time',
+    manager_id: 'e1',
+    manager: 'فهد الشهري',
+    housing_allowance: 1200,
+    transport_allowance: 600,
+    other_allowance: 0,
+    iban: 'SA6315000000300112233001',
+    bank_name: 'البلاد',
+    gosi_system: 'old',
+    counts_in_saudization: true,
     full_name: 'خالد الدوسري',
     job_title: 'أخصائي موارد بشرية',
     department: 'الموارد البشرية',
@@ -130,6 +218,21 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e7',
+    employee_no: 'EMP-1007',
+    english_name: 'Rajesh Kumar',
+    id_type: 'expat',
+    iqama_no: '2443129875',
+    passport_no: 'N4567890',
+    gender: 'male',
+    contract_type: 'full_time',
+    manager_id: 'e2',
+    manager: 'سعد آل مريح',
+    housing_allowance: 500,
+    transport_allowance: 300,
+    other_allowance: 0,
+    iban: 'SA1080000000608010998877',
+    bank_name: 'الراجحي',
+    counts_in_saudization: false,
     full_name: 'راجيش كومار',
     job_title: 'مشرف سكن',
     department: 'السكن',
@@ -148,6 +251,21 @@ const EMPLOYEES: Employee[] = [
   },
   {
     id: 'e8',
+    employee_no: 'EMP-1008',
+    english_name: 'Mona Alghamdi',
+    id_type: 'saudi',
+    national_id: '1033488766',
+    gender: 'female',
+    contract_type: 'full_time',
+    manager_id: 'e1',
+    manager: 'فهد الشهري',
+    housing_allowance: 800,
+    transport_allowance: 400,
+    other_allowance: 0,
+    iban: 'SA5010000016677889900102',
+    bank_name: 'الأهلي السعودي',
+    gosi_system: 'old',
+    counts_in_saudization: true,
     full_name: 'منى الغامدي',
     job_title: 'مشرفة سكن',
     department: 'السكن',
@@ -310,6 +428,14 @@ export async function listEmployees(): Promise<Employee[]> {
 
 /** Upsert into the demo store so add/edit survive a cache refetch (staleTime/gc). */
 export function saveEmployee(emp: Employee): Employee {
+  if (!emp.employee_no) {
+    // same as trg_set_employee_no (0069): EMP- + next number
+    const max = Math.max(
+      1000,
+      ...EMPLOYEES.map((e) => Number(/^EMP-(\d+)$/.exec(e.employee_no ?? '')?.[1] ?? 0)),
+    );
+    emp = { ...emp, employee_no: `EMP-${max + 1}` };
+  }
   const i = EMPLOYEES.findIndex((e) => e.id === emp.id);
   if (i >= 0) EMPLOYEES[i] = emp;
   else EMPLOYEES.unshift(emp);
@@ -324,6 +450,59 @@ export async function persistEmployee(
 ): Promise<Employee> {
   if (!isDemoMode()) return live.liveSaveEmployee(emp, isNew, canManagePay);
   return saveEmployee(emp);
+}
+
+/* ----------------------- end of service / correction --------------------- */
+export interface TerminationInput {
+  date: string;
+  reason: TerminationReason;
+  note: string;
+}
+
+/** Same rules as terminate_employee() (0069) — demo store. */
+export function terminateDemoEmployee(id: string, t: TerminationInput): Employee {
+  const e = EMPLOYEES.find((x) => x.id === id);
+  if (!e) throw new Error('الموظف غير موجود');
+  if (e.status === 'terminated') throw new Error('الموظف منتهي الخدمة بالفعل');
+  if (!t.date) throw new Error('تاريخ إنهاء الخدمة مطلوب');
+  if (e.join_date && t.date < e.join_date) throw new Error('تاريخ إنهاء الخدمة قبل تاريخ التعيين');
+  e.status = 'terminated';
+  e.termination_date = t.date;
+  e.termination_reason = t.reason;
+  if (t.note) e.termination_note = t.note;
+  return { ...e };
+}
+
+export function reactivateDemoEmployee(id: string): Employee {
+  const e = EMPLOYEES.find((x) => x.id === id);
+  if (!e) throw new Error('الموظف غير موجود');
+  if (e.status !== 'terminated') throw new Error('الموظف على رأس العمل');
+  e.status = 'active';
+  delete e.termination_date;
+  delete e.termination_reason;
+  delete e.termination_note;
+  return { ...e };
+}
+
+export async function terminateEmployee(id: string, t: TerminationInput): Promise<void> {
+  if (!isDemoMode()) return live.liveTerminateEmployee(id, t);
+  terminateDemoEmployee(id, t);
+}
+export async function reactivateEmployee(id: string): Promise<void> {
+  if (!isDemoMode()) return live.liveReactivateEmployee(id);
+  reactivateDemoEmployee(id);
+}
+
+/** Login accounts HR can link an employee to (demo: the demo accounts). */
+export async function listAccountOptions(): Promise<AccountOption[]> {
+  if (!isDemoMode()) return live.liveAccountOptions();
+  return DEMO_ACCOUNTS.map((a) => ({
+    id: `acc-${a.role}`,
+    full_name: a.name,
+    role: a.role,
+    branch: a.branch,
+    linked_employee: EMPLOYEES.find((e) => e.user_id === `acc-${a.role}`)?.id ?? null,
+  }));
 }
 
 /** Employees still on the payroll (active + on leave) — terminated are excluded. */
@@ -372,7 +551,8 @@ export async function updateLeaveStatus(id: string, status: LeaveStatus): Promis
  *  (same rates/base/ceiling as the payroll run and the accounting accrual). */
 export function monthlyCost(e: Employee): number {
   const saudi = e.nationality === 'السعودية';
-  const employerGosi = employerGosiFor(e.base_salary, e.allowances, saudi, e.gosi_system ?? 'new');
+  const housing = e.housing_allowance ?? e.allowances; // GOSI base = basic + housing
+  const employerGosi = employerGosiFor(e.base_salary, housing, saudi, e.gosi_system ?? 'new');
   return Math.round(e.base_salary + e.allowances + employerGosi);
 }
 
@@ -434,6 +614,9 @@ export interface PayrollConfig {
   overtimeMultiplier: number;
   shiftStartHour: number;
   lateGraceMinutes: number;
+  /** suggested allowances for a new hire, as % of basic (employee form). */
+  defaultHousingPct: number;
+  defaultTransportPct: number;
 }
 
 /** GOSI rates — mirror of `gosi_config` (0022). Rates are fractions (0.0975 = 9.75٪). */
@@ -453,6 +636,8 @@ export const PAYROLL_CONFIG_DEFAULTS: Readonly<PayrollConfig> = Object.freeze({
   overtimeMultiplier: 1.5, // نظام العمل السعودي
   shiftStartHour: 8,
   lateGraceMinutes: 15,
+  defaultHousingPct: 25,
+  defaultTransportPct: 10,
 });
 export const GOSI_CONFIG_DEFAULTS: Readonly<GosiConfig> = Object.freeze({
   ceiling: 45000,
@@ -519,10 +704,10 @@ export function calculatePayslip(
 ): Payslip {
   const cfg = PAYROLL_CONFIG;
   const basic = e.base_salary;
-  // demo mapping: combined "allowances" sits in housing (counts toward GOSI base).
-  const housing = e.allowances;
-  const transport = 0;
-  const other = 0;
+  // the employee file's split (0069); legacy records keep the total in housing
+  const housing = e.housing_allowance ?? e.allowances;
+  const transport = e.housing_allowance !== undefined ? (e.transport_allowance ?? 0) : 0;
+  const other = e.housing_allowance !== undefined ? (e.other_allowance ?? 0) : 0;
 
   const saudi = e.nationality === 'السعودية';
   const gosiSystem: 'old' | 'new' = e.gosi_system ?? 'new';

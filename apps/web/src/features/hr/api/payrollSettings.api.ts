@@ -64,6 +64,14 @@ export const payrollConfigSchema = z.object({
     .int({ message: 'عدد صحيح' })
     .min(0, { message: 'بين 0 و120 دقيقة' })
     .max(120, { message: 'بين 0 و120 دقيقة' }),
+  defaultHousingPct: z
+    .number({ message: 'أدخل رقمًا' })
+    .min(0, { message: 'بين 0 و100٪' })
+    .max(100, { message: 'بين 0 و100٪' }),
+  defaultTransportPct: z
+    .number({ message: 'أدخل رقمًا' })
+    .min(0, { message: 'بين 0 و100٪' })
+    .max(100, { message: 'بين 0 و100٪' }),
 });
 
 export const gosiConfigSchema = z.object({
@@ -97,6 +105,8 @@ const PAYROLL_COLS: Record<keyof PayrollConfig, string> = {
   overtimeMultiplier: 'overtime_multiplier',
   shiftStartHour: 'shift_start_hour',
   lateGraceMinutes: 'late_grace_minutes',
+  defaultHousingPct: 'default_housing_pct',
+  defaultTransportPct: 'default_transport_pct',
 };
 const GOSI_COLS: Record<keyof GosiConfig, string> = {
   ceiling: 'ceiling',

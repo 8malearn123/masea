@@ -19,10 +19,11 @@ import {
   Pencil,
   Play,
   Plus,
+  RotateCcw,
   Search,
   Send,
-  ShieldCheck,
   TrendingUp,
+  UserMinus,
   UserPlus,
   UserRound,
   Users,
@@ -46,9 +47,10 @@ import {
 } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
-import { MODULES, ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
+import { ROLE_META } from '@/lib/permissions';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { EmployeeProfile } from '@/features/hr/components/EmployeeProfile';
+import { EmployeeForm } from '@/features/hr/components/EmployeeForm';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   useAddAdjustment,
@@ -65,7 +67,9 @@ import {
   usePayrollSettings,
   usePayslips,
   usePerformance,
+  useReactivateEmployee,
   useSaveEmployee,
+  useTerminateEmployee,
   useSaveHouseWorker,
   useUpdateLeave,
 } from '@/features/hr/hooks/useHr';
@@ -99,7 +103,6 @@ import {
   LEAVE_STATUS_LABEL,
   LEAVE_STATUS_TONE,
   LEAVE_TYPE_LABEL,
-  NATIONALITY_OPTIONS,
   SKILL_OPTIONS,
   WORKER_LANGUAGES,
   WORKER_NATIONALITIES,
@@ -118,6 +121,8 @@ import {
   type LeaveType,
   type Payslip,
   type PerformanceReview,
+  TERMINATION_REASON_LABEL,
+  type TerminationReason,
   type WorkerStatus,
 } from '@/features/hr/types';
 
@@ -495,15 +500,25 @@ function AdminEmployees({
   const [branch, setBranch] = useState('all');
   const [dept, setDept] = useState('all');
   const [search, setSearch] = useState('');
+  // terminated staff stay on file (soft delete) but are hidden by default
+  const [statusFilter, setStatusFilter] = useState<'current' | EmployeeStatus | 'all'>('current');
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [viewing, setViewing] = useState<Employee | null>(null);
+  const [terminating, setTerminating] = useState<Employee | null>(null);
+  const reactivate = useReactivateEmployee();
 
+  const q = search.trim();
   const rows = employees.filter(
     (e) =>
       (branch === 'all' || e.branch === branch) &&
       (dept === 'all' || e.department === dept) &&
-      (!search.trim() || e.full_name.includes(search.trim())),
+      (statusFilter === 'all' ||
+        (statusFilter === 'current' ? e.status !== 'terminated' : e.status === statusFilter)) &&
+      (!q ||
+        e.full_name.includes(q) ||
+        (e.employee_no ?? '').includes(q) ||
+        (e.national_id ?? e.iqama_no ?? '').includes(q)),
   );
 
   function save(input: EmployeeInput) {
@@ -524,7 +539,14 @@ function AdminEmployees({
     {
       key: 'full_name',
       header: 'الموظف',
-      cell: (e) => <span className="font-semibold text-navy">{e.full_name}</span>,
+      cell: (e) => (
+        <div>
+          <span className="font-semibold text-navy">{e.full_name}</span>
+          {e.employee_no && (
+            <span className="num block text-[11px] text-purple">{e.employee_no}</span>
+          )}
+        </div>
+      ),
     },
     { key: 'job_title', header: 'الوظيفة', cell: (e) => e.job_title },
     { key: 'department', header: 'القسم', cell: (e) => e.department },
@@ -542,13 +564,23 @@ function AdminEmployees({
     {
       key: 'status',
       header: 'الحالة',
-      cell: (e) => <Badge tone={EMP_STATUS_TONE[e.status]}>{EMP_STATUS_LABEL[e.status]}</Badge>,
+      cell: (e) => (
+        <div>
+          <Badge tone={EMP_STATUS_TONE[e.status]}>{EMP_STATUS_LABEL[e.status]}</Badge>
+          {e.termination_date && (
+            <span className="block text-[11px] text-purple">
+              {e.termination_reason ? TERMINATION_REASON_LABEL[e.termination_reason] : ''} ·{' '}
+              <span className="num">{dateAr(e.termination_date)}</span>
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'actions',
       header: '',
       cell: (e: Employee) => (
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={() => setViewing(e)}
@@ -565,6 +597,32 @@ function AdminEmployees({
               <Pencil size={13} /> تعديل
             </button>
           )}
+          {canManagePay && e.status !== 'terminated' && (
+            <button
+              type="button"
+              onClick={() => setTerminating(e)}
+              className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+            >
+              <UserMinus size={13} /> إنهاء الخدمة
+            </button>
+          )}
+          {canManagePay && e.status === 'terminated' && (
+            <button
+              type="button"
+              disabled={reactivate.isPending}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `إعادة تفعيل ${e.full_name}؟ يُستخدم لتصحيح إنهاء خدمة سُجّل بالخطأ، ويُحفظ في سجل التدقيق.`,
+                  )
+                )
+                  reactivate.mutate(e.id);
+              }}
+              className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
+            >
+              <RotateCcw size={13} /> إعادة تفعيل
+            </button>
+          )}
         </div>
       ),
     },
@@ -573,13 +631,13 @@ function AdminEmployees({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        <div className="grid flex-1 gap-3 sm:grid-cols-3">
+        <div className="grid flex-1 gap-3 sm:grid-cols-4">
           <div className="relative">
             <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-purple">
               <Search size={16} />
             </span>
             <Input
-              placeholder="بحث بالاسم"
+              placeholder="بحث بالاسم أو الرقم الوظيفي أو الهوية"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pr-9"
@@ -601,6 +659,18 @@ function AdminEmployees({
               ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
             ]}
           />
+          <Select
+            aria-label="حالة الموظف"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+            options={[
+              { value: 'current', label: 'الموظفون الحاليون' },
+              { value: 'active', label: EMP_STATUS_LABEL.active },
+              { value: 'on_leave', label: EMP_STATUS_LABEL.on_leave },
+              { value: 'terminated', label: EMP_STATUS_LABEL.terminated },
+              { value: 'all', label: 'الكل' },
+            ]}
+          />
         </div>
         {editable && (
           <Button onClick={() => setAddOpen(true)}>
@@ -619,9 +689,10 @@ function AdminEmployees({
       />
 
       {(addOpen || editTarget) && (
-        <EmployeeModal
+        <EmployeeForm
           key={editTarget?.id ?? 'new'}
           employee={editTarget}
+          employees={employees}
           canManagePay={canManagePay}
           saving={saveEmp.isPending}
           onSave={save}
@@ -634,177 +705,57 @@ function AdminEmployees({
       {viewing && (
         <EmployeeProfile employee={viewing} editable={editable} onClose={() => setViewing(null)} />
       )}
+      {terminating && (
+        <TerminateModal employee={terminating} onClose={() => setTerminating(null)} />
+      )}
     </div>
   );
 }
 
-function EmployeeModal({
-  employee,
-  canManagePay,
-  saving,
-  onSave,
-  onClose,
-}: {
-  employee: Employee | null;
-  canManagePay: boolean;
-  saving: boolean;
-  onSave: (input: EmployeeInput) => void;
-  onClose: () => void;
-}) {
-  const e = employee;
-  const [full_name, setFullName] = useState(e?.full_name ?? '');
-  const [job_title, setJobTitle] = useState(e?.job_title ?? '');
-  const [department, setDepartment] = useState(e?.department ?? 'الإدارة');
-  const [branch, setBranch] = useState(e?.branch ?? 'نجران');
-  const [nationality, setNationality] = useState(e?.nationality ?? 'السعودية');
-  const [base_salary, setBase] = useState(e?.base_salary ?? (canManagePay ? 5000 : 0));
-  const [allowances, setAllow] = useState(e?.allowances ?? 0);
-  const [status, setStatus] = useState<EmployeeStatus>(e?.status ?? 'active');
-  const [role, setRole] = useState<RoleCode>(e?.role ?? 'sales');
-  const [join_date, setJoin] = useState(e?.join_date ?? '');
-  const [phone, setPhone] = useState(e?.phone ?? '');
-  const [email, setEmail] = useState(e?.email ?? '');
+/** End of service — date + reason (base of the EOS settlement). Reversible by reactivation. */
+function TerminateModal({ employee, onClose }: { employee: Employee; onClose: () => void }) {
+  const terminate = useTerminateEmployee();
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [reason, setReason] = useState<TerminationReason>('resignation');
+  const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const grantedModules = MODULES.filter((m) => roleCan(role, m.module, 'view'));
-
   function submit() {
-    if (!full_name.trim()) {
-      setError('اسم الموظف مطلوب');
-      return;
-    }
-    if (!join_date) {
-      setError('تاريخ التعيين مطلوب (تُحتسب منه نهاية الخدمة)');
-      return;
-    }
-    if (canManagePay && (!(base_salary > 0) || !(allowances >= 0))) {
-      setError('أدخل راتبًا أساسيًا أكبر من صفر وبدلات غير سالبة');
-      return;
-    }
+    if (!date) return setError('تاريخ إنهاء الخدمة مطلوب');
+    if (employee.join_date && date < employee.join_date)
+      return setError('تاريخ إنهاء الخدمة قبل تاريخ التعيين');
     setError(null);
-    onSave({
-      full_name: full_name.trim(),
-      job_title,
-      department,
-      branch,
-      nationality,
-      base_salary,
-      allowances,
-      status,
-      role,
-      join_date,
-      phone,
-      email,
-    });
+    terminate.mutate({ id: employee.id, input: { date, reason, note } }, { onSuccess: onClose });
   }
 
   return (
-    <Modal open onClose={onClose} title={employee ? 'تعديل بيانات الموظف' : 'إضافة موظف'}>
-      <div className="max-h-[72vh] space-y-3 overflow-y-auto pl-1">
+    <Modal open onClose={onClose} title={`إنهاء خدمة — ${employee.full_name}`}>
+      <div className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <Input
-            label="الاسم الكامل"
-            value={full_name}
-            onChange={(ev) => setFullName(ev.target.value)}
-          />
-          <Input
-            label="المسمى الوظيفي"
-            value={job_title}
-            onChange={(ev) => setJobTitle(ev.target.value)}
-          />
-          <Select
-            label="القسم"
-            value={department}
-            onChange={(ev) => setDepartment(ev.target.value)}
-            options={DEPARTMENTS.map((d) => ({ value: d, label: d }))}
-          />
-          <Select
-            label="الفرع"
-            value={branch}
-            onChange={(ev) => setBranch(ev.target.value)}
-            options={BRANCHES_AR.map((b) => ({ value: b, label: b }))}
-          />
-          <Select
-            label="الجنسية"
-            value={nationality}
-            onChange={(ev) => setNationality(ev.target.value)}
-            options={NATIONALITY_OPTIONS.map((n) => ({ value: n, label: n }))}
-          />
-          <Input
-            label="الراتب الأساسي"
-            type="number"
-            min={0}
-            value={base_salary}
-            onChange={(ev) => setBase(Number(ev.target.value))}
-            disabled={!canManagePay}
-            hint={canManagePay ? undefined : 'الراتب من صلاحية الموارد البشرية'}
-          />
-          <Input
-            label="البدلات"
-            type="number"
-            min={0}
-            value={allowances}
-            onChange={(ev) => setAllow(Number(ev.target.value))}
-            disabled={!canManagePay}
-          />
-          <Input
-            label="تاريخ التعيين"
+            label="تاريخ آخر يوم عمل"
             type="date"
-            value={join_date}
-            onChange={(ev) => setJoin(ev.target.value)}
-          />
-          <Input label="الجوال" value={phone} onChange={(ev) => setPhone(ev.target.value)} />
-          <Input
-            label="البريد الإلكتروني"
-            type="email"
-            value={email}
-            onChange={(ev) => setEmail(ev.target.value)}
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
           />
           <Select
-            label="الحالة"
-            value={status}
-            onChange={(ev) => setStatus(ev.target.value as EmployeeStatus)}
-            options={(Object.keys(EMP_STATUS_LABEL) as EmployeeStatus[]).map((s) => ({
-              value: s,
-              label: EMP_STATUS_LABEL[s],
-            }))}
-          />
-          <Select
-            label="الدور (الصلاحيات)"
-            value={role}
-            onChange={(ev) => setRole(ev.target.value as RoleCode)}
-            options={(Object.keys(ROLE_META) as RoleCode[]).map((r) => ({
+            label="سبب إنهاء الخدمة"
+            value={reason}
+            onChange={(e) => setReason(e.target.value as TerminationReason)}
+            options={(Object.keys(TERMINATION_REASON_LABEL) as TerminationReason[]).map((r) => ({
               value: r,
-              label: ROLE_META[r].label,
+              label: TERMINATION_REASON_LABEL[r],
             }))}
           />
         </div>
-
-        <div className="rounded-xl bg-navy-50 p-3">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-navy">
-            <ShieldCheck size={14} /> الصلاحيات الممنوحة لهذا الدور
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {grantedModules.length === 0 ? (
-              <span className="text-xs text-purple">
-                لا صلاحيات إدارية على الويب (دور ميداني عبر التطبيق).
-              </span>
-            ) : (
-              grantedModules.map((m) => (
-                <span
-                  key={m.module}
-                  className="rounded-md bg-white px-2 py-1 text-[11px] text-navy"
-                >
-                  {m.label}
-                </span>
-              ))
-            )}
-          </div>
-        </div>
-
+        <Input label="ملاحظة (اختياري)" value={note} onChange={(e) => setNote(e.target.value)} />
+        <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+          يخرج الموظف من مسيرات الرواتب القادمة ويبقى ملفه محفوظًا. يُعتمد السبب في حساب مكافأة
+          نهاية الخدمة. للتصحيح استخدم «إعادة تفعيل».
+        </p>
         {error && <p className="text-xs text-red-600">{error}</p>}
-        <Button onClick={submit} className="w-full" loading={saving}>
-          {employee ? 'حفظ التعديلات' : 'إضافة الموظف'}
+        <Button variant="danger" className="w-full" loading={terminate.isPending} onClick={submit}>
+          <UserMinus size={16} /> تأكيد إنهاء الخدمة
         </Button>
       </div>
     </Modal>

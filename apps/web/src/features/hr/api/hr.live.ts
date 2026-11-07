@@ -14,7 +14,10 @@ import { useAuth } from '@/store/auth';
 import { ROLE_META, type RoleCode } from '@/lib/permissions';
 import {
   DOC_TYPE_LABEL,
+  TERMINATION_REASON_LABEL,
   docTypeCode,
+  type AccountOption,
+  type TerminationReason,
   type AdjustmentStatus,
   type AttendanceRecord,
   type AttendanceStatus,
@@ -78,10 +81,12 @@ function daysInclusive(from: string, to: string): number {
 /* ------------------------------- employees -------------------------------- */
 const EMP_SELECT =
   'id, full_name, role, job_title, branch_id, basic_salary, transport_allowance, phone, ' +
-  'national_id, nationality, hire_date, is_active, employee_no, user_id, branches(city), ' +
+  'national_id, nationality, hire_date, is_active, employee_no, user_id, termination_date, ' +
+  'termination_reason, termination_note, branches(city), ' +
   'employee_details(english_name, dob, gender, marital_status, email, id_type, iqama_no, ' +
   'passport_no, border_no, department, contract_type, manager_id, employment_status, iban, ' +
-  'bank_name, housing_allowance, other_allowance, gosi_system, gosi_reg_date, counts_in_saudization)';
+  'bank_name, housing_allowance, other_allowance, gosi_system, gosi_reg_date, ' +
+  'gosi_subscription_no, counts_in_saudization)';
 
 function asRole(v: unknown): RoleCode {
   const r = str(v) as RoleCode;
@@ -132,6 +137,11 @@ export function mapEmployee(r: Row, onLeave: Set<string>, names: Map<string, str
     ['iban', d.iban],
     ['bank_name', d.bank_name],
     ['gosi_reg_date', d.gosi_reg_date],
+    ['gosi_subscription_no', d.gosi_subscription_no],
+    ['user_id', r.user_id],
+    ['manager_id', d.manager_id],
+    ['termination_date', r.termination_date],
+    ['termination_note', r.termination_note],
   ];
   const opt = e as unknown as Record<string, unknown>;
   text.forEach(([k, v]) => {
@@ -148,6 +158,9 @@ export function mapEmployee(r: Row, onLeave: Set<string>, names: Map<string, str
   if (d.gosi_system === 'old' || d.gosi_system === 'new') e.gosi_system = d.gosi_system;
   if (typeof d.counts_in_saudization === 'boolean')
     e.counts_in_saudization = d.counts_in_saudization;
+  const reason = str(r.termination_reason);
+  if (reason && reason in TERMINATION_REASON_LABEL)
+    e.termination_reason = reason as TerminationReason;
   const manager = d.manager_id ? names.get(str(d.manager_id)) : undefined;
   if (manager) e.manager = manager;
   return e;
@@ -171,8 +184,10 @@ export async function liveListEmployees(): Promise<Employee[]> {
 }
 
 /**
- * Create/update an employee. Pay fields are written only by hr.manage (the
- * guard_employee_pay trigger enforces it); profile details likewise (0021).
+ * Create/update the employee file. Two layers, same as the DB guards (0068/0069):
+ *  - team data (identity, job, contact) — hr.edit within scope (branch manager too);
+ *  - money (salary, allowances, IBAN/bank, GOSI) — hr.manage only.
+ * Status is never written here: terminate_employee()/reactivate_employee() own it.
  */
 export async function liveSaveEmployee(
   emp: Employee,
@@ -180,8 +195,7 @@ export async function liveSaveEmployee(
   canManagePay: boolean,
 ): Promise<Employee> {
   const branch_id = await branchIdOf(emp.branch);
-  const transport = emp.transport_allowance ?? 0;
-  const other = emp.other_allowance ?? 0;
+  const saudi = emp.nationality === 'السعودية';
   const base: Row = {
     full_name: emp.full_name,
     role: emp.role,
@@ -189,40 +203,89 @@ export async function liveSaveEmployee(
     branch_id,
     phone: emp.phone || null,
     nationality: emp.nationality,
+    national_id: saudi ? emp.national_id || null : null,
     hire_date: emp.join_date || null,
-    is_active: emp.status !== 'terminated',
+    user_id: emp.user_id || null,
   };
   if (canManagePay) {
     base.basic_salary = emp.base_salary;
-    base.transport_allowance = transport;
+    base.transport_allowance = emp.transport_allowance ?? 0;
   }
   let id = emp.id;
   if (isNew) {
-    const { data, error } = await supabase.from('employees').insert(base).select('id').single();
+    const { data, error } = await supabase
+      .from('employees')
+      .insert(base)
+      .select('id, employee_no')
+      .single();
     fail(error, 'إضافة الموظف');
     id = str((data as Row).id);
+    emp = { ...emp, employee_no: str((data as Row).employee_no) };
   } else {
     const { error } = await supabase.from('employees').update(base).eq('id', id);
     fail(error, 'تحديث الموظف');
   }
+  const details: Row = {
+    employee_id: id,
+    english_name: emp.english_name || null,
+    dob: emp.dob || null,
+    gender: emp.gender ?? null,
+    marital_status: emp.marital_status || null,
+    email: emp.email || null,
+    id_type: saudi ? 'saudi' : 'expat',
+    iqama_no: saudi ? null : emp.iqama_no || null,
+    passport_no: emp.passport_no || null,
+    department: emp.department,
+    contract_type: emp.contract_type ?? 'full_time',
+    manager_id: emp.manager_id || null,
+    counts_in_saudization: saudi,
+  };
   if (canManagePay) {
-    const saudi = emp.nationality === 'السعودية';
-    const { error } = await supabase.from('employee_details').upsert(
-      {
-        employee_id: id,
-        department: emp.department,
-        email: emp.email || null,
-        id_type: saudi ? 'saudi' : 'expat',
-        counts_in_saudization: saudi,
-        employment_status: emp.status === 'terminated' ? 'terminated' : 'active',
-        // the form edits the allowance total; transport/other keep their split
-        housing_allowance: Math.max(0, emp.allowances - transport - other),
-      },
-      { onConflict: 'employee_id' },
-    );
-    fail(error, 'حفظ ملف الموظف');
+    Object.assign(details, {
+      housing_allowance: emp.housing_allowance ?? 0,
+      other_allowance: emp.other_allowance ?? 0,
+      iban: emp.iban || null,
+      bank_name: emp.bank_name || null,
+      gosi_system: emp.gosi_system ?? 'new',
+      gosi_reg_date: emp.gosi_reg_date || null,
+    });
   }
+  const { error } = await supabase
+    .from('employee_details')
+    .upsert(details, { onConflict: 'employee_id' });
+  fail(error, 'حفظ ملف الموظف');
   return { ...emp, id, branch_id };
+}
+
+export async function liveTerminateEmployee(
+  id: string,
+  t: { date: string; reason: TerminationReason; note: string },
+): Promise<void> {
+  const { error } = await supabase.rpc('terminate_employee', {
+    p_employee_id: id,
+    p_date: t.date,
+    p_reason: t.reason,
+    p_note: t.note || null,
+  });
+  fail(error, 'إنهاء الخدمة');
+}
+
+export async function liveReactivateEmployee(id: string): Promise<void> {
+  const { error } = await supabase.rpc('reactivate_employee', { p_employee_id: id });
+  fail(error, 'إعادة التفعيل');
+}
+
+/** Login accounts (hr_account_options, 0069 — user_profiles itself is GM-only). */
+export async function liveAccountOptions(): Promise<AccountOption[]> {
+  const { data, error } = await supabase.rpc('hr_account_options');
+  fail(error, 'تحميل الحسابات');
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: str(r.id),
+    full_name: str(r.full_name),
+    role: str(r.role),
+    branch: (r.branch as string | null) ?? null,
+    linked_employee: (r.linked_employee as string | null) ?? null,
+  }));
 }
 
 /* ------------------------------- attendance ------------------------------- */
@@ -438,10 +501,8 @@ export async function liveListAdjustments(): Promise<PayrollAdjustment[]> {
   const submitters = [...new Set(rows.map((r) => str(r.submitted_by)).filter(Boolean))];
   const names = new Map<string, string>();
   if (submitters.length) {
-    const { data: users } = await supabase
-      .from('user_profiles')
-      .select('id, full_name')
-      .in('id', submitters);
+    // user_profiles is GM-only — names come through user_display_names() (0069)
+    const { data: users } = await supabase.rpc('user_display_names', { p_ids: submitters });
     ((users ?? []) as Row[]).forEach((u) => names.set(str(u.id), str(u.full_name)));
   }
   return rows.map((r) => {

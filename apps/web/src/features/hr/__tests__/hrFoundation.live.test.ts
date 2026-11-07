@@ -110,10 +110,15 @@ describe('HR on a real backend', () => {
     await expect(listEmployees()).rejects.toThrow('تعذّر تحميل الموظفين');
   });
 
-  it('never sends pay fields without hr.manage (branch manager edits the team, not the money)', async () => {
+  it('branch manager (no hr.manage) saves team data but never money fields', async () => {
     const [e] = await listEmployees();
     await persistEmployee(
-      { ...e!, job_title: 'مشرفة مركز الاتصال', base_salary: 99999 },
+      {
+        ...e!,
+        job_title: 'مشرفة مركز الاتصال',
+        base_salary: 99999,
+        iban: 'SA0380000000608010167519',
+      },
       false,
       false,
     );
@@ -121,20 +126,44 @@ describe('HR on a real backend', () => {
       .payload as Record<string, unknown>;
     expect(upd.job_title).toBe('مشرفة مركز الاتصال');
     expect('basic_salary' in upd).toBe(false);
-    expect(db.calls.some((c) => c.table === 'employee_details')).toBe(false);
-  });
-
-  it('HR (hr.manage) writes salary + profile details, keeping the allowance split', async () => {
-    const [e] = await listEmployees();
-    await persistEmployee({ ...e!, base_salary: 7000, allowances: 1800 }, false, true);
-    const upd = db.calls.find((c) => c.table === 'employees' && c.op === 'update')!
-      .payload as Record<string, unknown>;
-    expect(upd.basic_salary).toBe(7000);
     const det = db.calls.find((c) => c.table === 'employee_details')!.payload as Record<
       string,
       unknown
     >;
-    expect(det.housing_allowance).toBe(1300); // 1800 total − 500 transport
+    expect(det.department).toBe('مركز الاتصال'); // non-financial details are saved (0069)
+    for (const money of [
+      'iban',
+      'bank_name',
+      'housing_allowance',
+      'other_allowance',
+      'gosi_system',
+      'employment_status',
+    ])
+      expect(money in det).toBe(false);
+  });
+
+  it('HR (hr.manage) writes salary, the allowance split and bank details', async () => {
+    const [e] = await listEmployees();
+    await persistEmployee(
+      {
+        ...e!,
+        base_salary: 7000,
+        housing_allowance: 1750,
+        transport_allowance: 700,
+        other_allowance: 0,
+      },
+      false,
+      true,
+    );
+    const upd = db.calls.find((c) => c.table === 'employees' && c.op === 'update')!
+      .payload as Record<string, unknown>;
+    expect(upd).toMatchObject({ basic_salary: 7000, transport_allowance: 700 });
+    const det = db.calls.find((c) => c.table === 'employee_details')!.payload as Record<
+      string,
+      unknown
+    >;
+    expect(det).toMatchObject({ housing_allowance: 1750, other_allowance: 0 });
+    expect('employment_status' in det).toBe(false); // status belongs to terminate/reactivate
   });
 
   it('computes payslips with the server engine calculate_payslip()', async () => {

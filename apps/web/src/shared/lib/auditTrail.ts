@@ -44,6 +44,12 @@ export const AUDIT_ENTITY_LABEL: Record<string, string> = {
   sale_notes: 'ملاحظات المبيعات',
   worker_bookings: 'حجوزات التأجير بالساعة',
   payroll_config: 'إعدادات الرواتب',
+  employees: 'الموظفون',
+  employee_details: 'ملفات الموظفين',
+  leave_requests: 'الإجازات',
+  performance_reviews: 'تقييمات الأداء',
+  worker_profiles: 'ملفات العاملات',
+  payroll_adjustments: 'تعديلات الرواتب',
   gosi_config: 'إعدادات التأمينات (GOSI)',
 };
 
@@ -98,6 +104,15 @@ export const AUDIT_FIELD_LABEL: Record<string, string> = {
   saudi_new_employee: 'حصة الموظف السعودي (جديد)',
   saudi_new_company: 'حصة المنشأة للسعودي (جديد)',
   nonsaudi_company: 'حصة المنشأة للوافد',
+  default_housing_pct: 'بدل السكن الافتراضي',
+  default_transport_pct: 'بدل النقل الافتراضي',
+  termination_date: 'تاريخ إنهاء الخدمة',
+  termination_reason: 'سبب إنهاء الخدمة',
+  job_title: 'المسمى الوظيفي',
+  basic_salary: 'الراتب الأساسي',
+  housing_allowance: 'بدل السكن',
+  transport_allowance: 'بدل النقل',
+  iban: 'الآيبان',
 };
 
 export const auditEntityLabel = (e: string) => AUDIT_ENTITY_LABEL[e] ?? e;

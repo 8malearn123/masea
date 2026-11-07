@@ -11,8 +11,12 @@ import {
   createLeaveRequest,
   createPerformanceReview,
   decideAdjustment,
+  listAccountOptions,
   persistEmployee,
   persistHouseWorker,
+  reactivateEmployee,
+  terminateEmployee,
+  type TerminationInput,
   runPayroll,
   listAdjustments,
   listAttendance,
@@ -362,4 +366,43 @@ export function usePayslips(
     error: q.error,
     refetch: q.refetch,
   };
+}
+
+/* ------------------------- end of service / account ---------------------- */
+export function useTerminateEmployee() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { id: string; input: TerminationInput }>({
+    mutationFn: ({ id, input }) => terminateEmployee(id, input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: EMP_KEY });
+      void qc.invalidateQueries({ queryKey: PAYSLIPS_KEY });
+      toast.success('تم تسجيل إنهاء الخدمة');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر إنهاء الخدمة'),
+  });
+}
+
+export function useReactivateEmployee() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, string>({
+    mutationFn: reactivateEmployee,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: EMP_KEY });
+      void qc.invalidateQueries({ queryKey: PAYSLIPS_KEY });
+      toast.success('أُعيد تفعيل الموظف');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر إعادة التفعيل'),
+  });
+}
+
+/** Login accounts for linking (hr.manage only — the query is disabled otherwise). */
+export function useAccountOptions(enabled: boolean) {
+  return useQuery({
+    queryKey: ['hr', 'accounts'],
+    queryFn: listAccountOptions,
+    enabled,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
 }
