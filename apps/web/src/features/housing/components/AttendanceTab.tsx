@@ -1,8 +1,14 @@
 import { useMemo, useState } from 'react';
-import { CalendarCheck, UserRound } from 'lucide-react';
-import { Card, Input, Select, Table, type Column } from '@/shared/ui';
+import { CalendarCheck, ScanLine, UserRound } from 'lucide-react';
+import { Button, Card, Input, Modal, Select, Table, type Column } from '@/shared/ui';
+import { BarcodeScanner } from '@/features/gps/components/BarcodeScanner';
+import { useAttendanceConfig } from '@/features/hr/hooks/useHr';
 import { BRANCHES_AR } from '@/lib/funnel';
-import { useMarkAttendance, useResidents } from '@/features/housing/hooks/useHousing';
+import {
+  useLogHousingScan,
+  useMarkAttendance,
+  useResidents,
+} from '@/features/housing/hooks/useHousing';
 import {
   RESIDENT_STATUS_LABEL,
   type Resident,
@@ -16,6 +22,9 @@ const STATUS_OPTIONS = (Object.entries(RESIDENT_STATUS_LABEL) as [ResidentStatus
 export function AttendanceTab() {
   const { data: residents = [], isLoading, isError, refetch } = useResidents();
   const mark = useMarkAttendance();
+  const scan = useLogHousingScan();
+  const { data: cfg } = useAttendanceConfig();
+  const [scanOpen, setScanOpen] = useState(false);
   const [branch, setBranch] = useState('all');
   const [search, setSearch] = useState('');
 
@@ -103,9 +112,19 @@ export function AttendanceTab() {
       </Card>
 
       <div>
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-          <CalendarCheck size={16} /> تحضير العاملات اليوم
-        </h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-navy">
+            <CalendarCheck size={16} /> تحضير العاملات اليوم
+          </h2>
+          <Button onClick={() => setScanOpen(true)}>
+            <ScanLine size={16} /> تحضير بالباركود
+          </Button>
+        </div>
+        {cfg?.worker_barcode_required && (
+          <p className="mb-3 rounded-xl bg-navy-50 px-3 py-2 text-xs text-navy">
+            «حاضرة» تُسجَّل بمسح باركود العاملة فقط. الغياب والمرضية وفي الخدمة تُختار من القائمة.
+          </p>
+        )}
         <Table
           columns={columns}
           rows={rows}
@@ -116,6 +135,18 @@ export function AttendanceTab() {
           emptyTitle="لا توجد عاملات"
         />
       </div>
+      {scanOpen && (
+        <Modal open onClose={() => setScanOpen(false)} title="تحضير بالباركود">
+          <BarcodeScanner
+            onResolved={(w) => {
+              scan.mutate(
+                { code: w.barcode, direction: 'in', note: 'تحضير' },
+                { onSuccess: () => setScanOpen(false) },
+              );
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

@@ -20,3 +20,4 @@ export { Drawer } from '@/shared/ui/Drawer';
 export { InfoTip } from '@/shared/ui/InfoTip';
 export { Pagination, paginate } from '@/shared/ui/Pagination';
 export { StatTile } from '@/shared/ui/StatTile';
+export { CodeScanner } from '@/shared/ui/CodeScanner';

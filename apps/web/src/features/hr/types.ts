@@ -148,15 +148,71 @@ export const DEPARTMENTS = [
 /* ------------------------------ attendance ------------------------------- */
 export type AttendanceStatus = 'present' | 'absent' | 'late' | 'leave';
 
+export type AttendanceMethod = 'qr' | 'gps' | 'manual';
+
 export interface AttendanceRecord {
   id: string;
   employee_id?: string;
   employee_name: string;
   department: string;
+  /** 'YYYY-MM-DD' (absent on legacy demo rows = today) */
+  date?: string;
+  branch?: string;
   check_in: string | null;
   check_out: string | null;
   status: AttendanceStatus;
+  check_in_method?: AttendanceMethod;
+  check_out_method?: AttendanceMethod;
+  distance_m?: number;
+  late_minutes?: number;
+  note?: string;
 }
+
+export const ATT_METHOD_LABEL: Record<AttendanceMethod, string> = {
+  qr: 'باركود الفرع',
+  gps: 'الموقع',
+  manual: 'يدوي',
+};
+
+/** attendance_config (0072) — every method and who may use it, managed from settings. */
+export interface AttendanceConfig {
+  qr_enabled: boolean;
+  qr_roles: string[];
+  gps_enabled: boolean;
+  gps_roles: string[];
+  gps_radius_m: number;
+  manual_enabled: boolean;
+  manual_roles: string[];
+  worker_barcode_required: boolean;
+  /** 0 = Sunday … 6 = Saturday */
+  workdays: number[];
+}
+
+export interface PublicHoliday {
+  id: string;
+  name_ar: string;
+  from_date: string;
+  to_date: string;
+  is_active: boolean;
+}
+
+export interface BranchAttendance {
+  id: string;
+  city: string;
+  latitude: number | null;
+  longitude: number | null;
+  attendance_token: string;
+}
+
+export const WEEKDAY_LABEL = [
+  'الأحد',
+  'الاثنين',
+  'الثلاثاء',
+  'الأربعاء',
+  'الخميس',
+  'الجمعة',
+  'السبت',
+] as const;
 
 export const ATT_STATUS_LABEL: Record<AttendanceStatus, string> = {
   present: 'حاضر',

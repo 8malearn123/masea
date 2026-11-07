@@ -12,11 +12,15 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { ROLE_META, type RoleCode } from '@/lib/permissions';
+import { tokenFromQr } from '@/features/hr/lib/attendanceEngine';
 import {
   DOC_TYPE_LABEL,
   TERMINATION_REASON_LABEL,
   docTypeCode,
   type AccountOption,
+  type AttendanceConfig,
+  type BranchAttendance,
+  type PublicHoliday,
   type TerminationReason,
   type AdjustmentStatus,
   type AttendanceRecord,
@@ -291,23 +295,196 @@ export async function liveAccountOptions(): Promise<AccountOption[]> {
 }
 
 /* ------------------------------- attendance ------------------------------- */
-export async function liveListAttendance(): Promise<AttendanceRecord[]> {
-  const { data, error } = await supabase
-    .from('attendance')
-    .select(
-      'id, employee_id, check_in, check_out, status, employees(full_name, employee_details(department))',
-    )
-    .eq('date', today());
-  fail(error, 'تحميل الحضور');
-  return ((data ?? []) as unknown as Row[]).map((r) => ({
+const ATT_COLS =
+  'id, employee_id, date, check_in, check_out, status, check_in_method, check_out_method, ' +
+  'distance_m, late_minutes, note, employees(full_name, branches(city), employee_details(department))';
+
+function mapAttendance(r: Row): AttendanceRecord {
+  const emp = one(r.employees);
+  const rec: AttendanceRecord = {
     id: str(r.id),
     employee_id: str(r.employee_id),
-    employee_name: empName(r),
-    department: str(one(one(r.employees)?.employee_details)?.department),
+    employee_name: str(emp?.full_name),
+    department: str(one(emp?.employee_details)?.department),
+    date: str(r.date),
+    branch: str(one(emp?.branches)?.city),
     check_in: hhmm(r.check_in),
     check_out: hhmm(r.check_out),
     status: str(r.status) as AttendanceStatus,
+  };
+  const m = (v: unknown) => (v === 'qr' || v === 'gps' || v === 'manual' ? v : undefined);
+  const ci = m(r.check_in_method);
+  const co = m(r.check_out_method);
+  if (ci) rec.check_in_method = ci;
+  if (co) rec.check_out_method = co;
+  if (r.distance_m != null) rec.distance_m = num(r.distance_m);
+  if (r.late_minutes != null) rec.late_minutes = num(r.late_minutes);
+  if (r.note) rec.note = str(r.note);
+  return rec;
+}
+
+export async function liveListAttendance(date: string = today()): Promise<AttendanceRecord[]> {
+  const { data, error } = await supabase.from('attendance').select(ATT_COLS).eq('date', date);
+  fail(error, 'تحميل الحضور');
+  return ((data ?? []) as unknown as Row[]).map(mapAttendance);
+}
+
+export async function liveMonthAttendance(
+  employeeId: string,
+  period: string,
+): Promise<AttendanceRecord[]> {
+  const start = `${period}-01`;
+  const end = new Date(`${start}T00:00:00Z`);
+  end.setUTCMonth(end.getUTCMonth() + 1);
+  end.setUTCDate(0);
+  const { data, error } = await supabase
+    .from('attendance')
+    .select(ATT_COLS)
+    .eq('employee_id', employeeId)
+    .gte('date', start)
+    .lte('date', end.toISOString().slice(0, 10));
+  fail(error, 'تحميل سجل الشهر');
+  return ((data ?? []) as unknown as Row[]).map(mapAttendance);
+}
+
+export async function liveAttendanceCheck(
+  method: 'qr' | 'gps',
+  input: { lat?: number; lng?: number; token?: string },
+): Promise<{ action: 'in' | 'out'; late_minutes?: number; distance_m?: number; at: string }> {
+  const { data, error } = await supabase.rpc('attendance_check', {
+    p_method: method,
+    p_lat: input.lat ?? null,
+    p_lng: input.lng ?? null,
+    p_token: input.token ? tokenFromQr(input.token) : null,
+  });
+  if (error) throw new Error(error.message); // server message is already the user-facing Arabic reason
+  const r = (data ?? {}) as Row;
+  const out: { action: 'in' | 'out'; late_minutes?: number; distance_m?: number; at: string } = {
+    action: r.action === 'out' ? 'out' : 'in',
+    at: hhmm(r.at) ?? '',
+  };
+  if (r.late_minutes != null) out.late_minutes = num(r.late_minutes);
+  if (r.distance_m != null) out.distance_m = num(r.distance_m);
+  return out;
+}
+
+export async function liveManualAttendance(m: {
+  employee_id: string;
+  date: string;
+  status: AttendanceStatus;
+  check_in: string | null;
+  check_out: string | null;
+  note: string;
+}): Promise<void> {
+  const { error } = await supabase.rpc('manual_attendance', {
+    p_employee_id: m.employee_id,
+    p_date: m.date,
+    p_status: m.status,
+    p_check_in: m.check_in,
+    p_check_out: m.check_out,
+    p_note: m.note,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function liveCloseDay(
+  date: string,
+): Promise<{ absent: number; leave: number; workday: boolean }> {
+  const { data, error } = await supabase.rpc('close_attendance_day', { p_date: date });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as Row;
+  return { absent: num(r.absent), leave: num(r.leave), workday: r.workday !== false };
+}
+
+export async function liveAttendanceConfig(): Promise<AttendanceConfig> {
+  const { data, error } = await supabase.from('attendance_config').select('*').eq('id', 1).single();
+  fail(error, 'تحميل إعدادات الحضور');
+  const r = data as Row;
+  const arr = (v: unknown) => ((v as string[] | null) ?? []).map(String);
+  return {
+    qr_enabled: r.qr_enabled !== false,
+    qr_roles: arr(r.qr_roles),
+    gps_enabled: r.gps_enabled !== false,
+    gps_roles: arr(r.gps_roles),
+    gps_radius_m: num(r.gps_radius_m),
+    manual_enabled: r.manual_enabled !== false,
+    manual_roles: arr(r.manual_roles),
+    worker_barcode_required: r.worker_barcode_required !== false,
+    workdays: ((r.workdays as number[] | null) ?? []).map(Number),
+  };
+}
+
+export async function liveSaveAttendanceConfig(cfg: AttendanceConfig): Promise<void> {
+  const { error } = await supabase
+    .from('attendance_config')
+    .update({ ...cfg, updated_at: new Date().toISOString() })
+    .eq('id', 1);
+  fail(error, 'حفظ إعدادات الحضور');
+}
+
+export async function liveListHolidays(): Promise<PublicHoliday[]> {
+  const { data, error } = await supabase.from('public_holidays').select('*').order('from_date');
+  fail(error, 'تحميل العطل الرسمية');
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: str(r.id),
+    name_ar: str(r.name_ar),
+    from_date: str(r.from_date),
+    to_date: str(r.to_date),
+    is_active: r.is_active !== false,
   }));
+}
+
+export async function liveSaveHoliday(h: PublicHoliday, isNew: boolean): Promise<void> {
+  const row = {
+    name_ar: h.name_ar.trim(),
+    from_date: h.from_date,
+    to_date: h.to_date,
+    is_active: h.is_active,
+  };
+  const { error } = isNew
+    ? await supabase.from('public_holidays').insert(row)
+    : await supabase.from('public_holidays').update(row).eq('id', h.id);
+  fail(error, 'حفظ العطلة');
+}
+
+export async function liveBranchAttendance(): Promise<BranchAttendance[]> {
+  const { data, error } = await supabase.rpc('branch_attendance_settings');
+  fail(error, 'تحميل مواقع الفروع');
+  return ((data ?? []) as Row[]).map((r) => ({
+    id: str(r.id),
+    city: str(r.city),
+    latitude: r.latitude == null ? null : num(r.latitude),
+    longitude: r.longitude == null ? null : num(r.longitude),
+    attendance_token: str(r.attendance_token),
+  }));
+}
+
+export async function liveSetBranchAttendance(
+  id: string,
+  lat: number | null,
+  lng: number | null,
+  rotate: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_branch_attendance', {
+    p_branch_id: id,
+    p_lat: lat,
+    p_lng: lng,
+    p_rotate: rotate,
+  });
+  fail(error, 'حفظ موقع الفرع');
+}
+
+/** The signed-in user's own employee file (RLS: employees.user_id = auth.uid()). */
+export async function liveMyEmployee(): Promise<Employee | null> {
+  const uid = useAuth.getState().profile?.id;
+  if (!uid) return null;
+  const { data, error } = await supabase
+    .from('employees')
+    .select(EMP_SELECT)
+    .eq('user_id', uid)
+    .maybeSingle();
+  fail(error, 'تحميل ملفك');
+  return data ? mapEmployee(data as unknown as Row, new Set(), new Map()) : null;
 }
 
 /* --------------------------------- leave ---------------------------------- */

@@ -43,6 +43,7 @@ import { EmployeeProfile } from '@/features/hr/components/EmployeeProfile';
 import { EmployeeForm } from '@/features/hr/components/EmployeeForm';
 import { LeaveBoard } from '@/features/hr/components/LeaveBoard';
 import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
+import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   useAttendance,
@@ -72,8 +73,6 @@ import {
   type HouseWorkerInput,
 } from '@/features/hr/api/hr.api';
 import {
-  ATT_STATUS_LABEL,
-  ATT_STATUS_TONE,
   DEPARTMENTS,
   DOC_STATUS_LABEL,
   DOC_STATUS_TONE,
@@ -85,7 +84,6 @@ import {
   WORKER_PROFESSIONS,
   WORKER_STATUS_LABEL,
   WORKER_STATUS_TONE,
-  type AttendanceRecord,
   type DocStatus,
   type Employee,
   type EmployeeDocument,
@@ -148,7 +146,7 @@ export default function HrBoard() {
           onRetry={() => void refetchEmployees()}
         />
       )}
-      {tab === 'attendance' && <Attendance />}
+      {tab === 'attendance' && <AttendanceBoard employees={employees} />}
       {tab === 'leave' && <LeaveBoard employees={employees} />}
       {tab === 'payroll' && <PayrollBoard employees={employees} />}
       {tab === 'eos' && <Eos employees={employees} />}
@@ -733,110 +731,6 @@ function TerminateModal({ employee, onClose }: { employee: Employee; onClose: ()
         </Button>
       </div>
     </Modal>
-  );
-}
-
-/* ------------------------------ attendance ------------------------------- */
-function Attendance() {
-  const { data: all = [], isLoading, isError, refetch } = useAttendance();
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('all');
-  const [dept, setDept] = useState('all');
-
-  const rows = all.filter(
-    (a) =>
-      (status === 'all' || a.status === status) &&
-      (dept === 'all' || a.department === dept) &&
-      (!search.trim() || a.employee_name.includes(search.trim())),
-  );
-
-  const present = all.filter((a) => a.status === 'present').length;
-  const late = all.filter((a) => a.status === 'late').length;
-  const absent = all.filter((a) => a.status === 'absent').length;
-
-  const statusOptions = [
-    { value: 'all', label: 'كل الحالات' },
-    ...(Object.keys(ATT_STATUS_LABEL) as Array<keyof typeof ATT_STATUS_LABEL>).map((s) => ({
-      value: s,
-      label: ATT_STATUS_LABEL[s],
-    })),
-  ];
-
-  const columns: Column<AttendanceRecord>[] = [
-    {
-      key: 'employee_name',
-      header: 'الموظف',
-      cell: (a) => <span className="font-semibold text-navy">{a.employee_name}</span>,
-    },
-    { key: 'department', header: 'القسم', cell: (a) => a.department },
-    {
-      key: 'check_in',
-      header: 'الحضور',
-      cell: (a) => <span className="num">{a.check_in ?? '—'}</span>,
-    },
-    {
-      key: 'check_out',
-      header: 'الانصراف',
-      cell: (a) => <span className="num">{a.check_out ?? '—'}</span>,
-    },
-    {
-      key: 'status',
-      header: 'الحالة',
-      cell: (a) => <Badge tone={ATT_STATUS_TONE[a.status]}>{ATT_STATUS_LABEL[a.status]}</Badge>,
-    },
-  ];
-
-  return (
-    <div>
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        <Stat label="حاضر" value={String(present)} tone="text-green-600" />
-        <Stat label="متأخر" value={String(late)} tone="text-gold-600" />
-        <Stat label="غائب" value={String(absent)} tone="text-red-600" />
-      </div>
-
-      <Card className="mb-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="relative">
-            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-purple">
-              <Search size={16} />
-            </span>
-            <Input
-              placeholder="بحث باسم الموظف"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pr-9"
-            />
-          </div>
-          <Select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            options={statusOptions}
-          />
-          <Select
-            value={dept}
-            onChange={(e) => setDept(e.target.value)}
-            options={[
-              { value: 'all', label: 'كل الأقسام' },
-              ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
-            ]}
-          />
-        </div>
-        <p className="mt-3 text-xs text-purple">
-          عدد النتائج: <span className="num font-semibold text-navy">{rows.length}</span> من{' '}
-          {all.length}
-        </p>
-      </Card>
-
-      <Table
-        columns={columns}
-        rows={rows}
-        rowKey={(a) => a.id}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={() => void refetch()}
-        emptyTitle="لا يوجد سجل مطابق"
-      />
-    </div>
   );
 }
 

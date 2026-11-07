@@ -16,9 +16,23 @@ import {
   validateLeave,
 } from '@/features/hr/lib/leaveEngine';
 import { leaveTypeSchema } from '@/features/hr/lib/leaveTypeSchema';
+import {
+  assertMethodAllowed,
+  DEFAULT_ATTENDANCE_CONFIG,
+  distanceM,
+  isWorkday,
+  lateMinutes,
+  nowRiyadh,
+  tokenFromQr,
+} from '@/features/hr/lib/attendanceEngine';
+import { z } from 'zod';
 import { ADJ_IS_ADDITION } from '@/features/hr/types';
 import type {
   AccountOption,
+  AttendanceConfig,
+  AttendanceMethod,
+  BranchAttendance,
+  PublicHoliday,
   AdjustmentStatus,
   AdjustmentType,
   AttendanceRecord,
@@ -302,72 +316,49 @@ export function dailyWage(base: number): number {
   return Math.round(base / 30);
 }
 
+/** Today's attendance (demo). Methods/late minutes as the server would record them. */
+const ATT_TODAY = nowRiyadh().date;
 const ATTENDANCE: AttendanceRecord[] = [
-  {
-    id: 'a1',
-    employee_name: 'فهد الشهري',
-    department: 'العمليات',
-    check_in: '07:55',
-    check_out: '16:05',
-    status: 'present',
-  },
-  {
-    id: 'a2',
-    employee_name: 'سعد آل مريح',
-    department: 'الإدارة',
-    check_in: '08:12',
-    check_out: '16:00',
-    status: 'late',
-  },
-  {
-    id: 'a3',
-    employee_name: 'نورة العتيبي',
-    department: 'المبيعات',
-    check_in: '07:58',
-    check_out: '16:02',
-    status: 'present',
-  },
-  {
-    id: 'a4',
-    employee_name: 'ريم الزهراني',
-    department: 'مركز الاتصال',
-    check_in: null,
-    check_out: null,
-    status: 'leave',
-  },
-  {
-    id: 'a5',
-    employee_name: 'بدر المالكي',
-    department: 'المالية',
-    check_in: null,
-    check_out: null,
-    status: 'absent',
-  },
-  {
-    id: 'a6',
-    employee_name: 'خالد الدوسري',
-    department: 'الموارد البشرية',
-    check_in: '07:50',
-    check_out: '16:10',
-    status: 'present',
-  },
-  {
-    id: 'a7',
-    employee_name: 'راجيش كومار',
-    department: 'السكن',
-    check_in: '07:45',
-    check_out: '17:00',
-    status: 'present',
-  },
-  {
-    id: 'a8',
-    employee_name: 'منى الغامدي',
-    department: 'السكن',
-    check_in: '08:20',
-    check_out: '16:00',
-    status: 'late',
-  },
+  att('a1', 'e1', 'فهد الشهري', 'العمليات', '07:55', '16:05', 'present', 'gps', { distance_m: 38 }),
+  att('a2', 'e2', 'سعد آل مريح', 'الإدارة', '08:22', '16:00', 'late', 'qr', { late_minutes: 7 }),
+  att('a3', 'e3', 'نورة العتيبي', 'المبيعات', '07:58', '16:02', 'present', 'qr'),
+  att('a4', 'e4', 'ريم الزهراني', 'مركز الاتصال', '08:05', null, 'present', 'gps', {
+    distance_m: 61,
+  }),
+  att('a5', 'e5', 'بدر المالكي', 'المالية', null, null, 'absent', 'manual', {
+    note: 'غياب بدون عذر — أبلغ المدير المباشر',
+  }),
+  att('a6', 'e6', 'خالد الدوسري', 'الموارد البشرية', '07:50', '16:10', 'present', 'qr'),
+  att('a7', 'e7', 'راجيش كومار', 'السكن', '07:45', '17:00', 'present', 'gps', { distance_m: 112 }),
+  att('a8', 'e8', 'منى الغامدي', 'السكن', '08:20', '16:00', 'late', 'qr', { late_minutes: 5 }),
 ];
+
+function att(
+  id: string,
+  employee_id: string,
+  employee_name: string,
+  department: string,
+  check_in: string | null,
+  check_out: string | null,
+  status: AttendanceRecord['status'],
+  method: AttendanceMethod,
+  extra: Partial<AttendanceRecord> = {},
+): AttendanceRecord {
+  const r: AttendanceRecord = {
+    id,
+    employee_id,
+    employee_name,
+    department,
+    date: ATT_TODAY,
+    check_in,
+    check_out,
+    status,
+    ...extra,
+  };
+  if (check_in || method === 'manual') r.check_in_method = method;
+  if (check_out) r.check_out_method = method;
+  return r;
+}
 
 const LEAVE: LeaveRequest[] = [
   {
@@ -545,9 +536,342 @@ export function buildEmployee(input: EmployeeInput): Employee {
   return { ...input, id: `e-${Date.now()}`, absence_days: 0, late_count: 0 };
 }
 
-export async function listAttendance(): Promise<AttendanceRecord[]> {
-  if (!isDemoMode()) return live.liveListAttendance();
-  return scopeByEmployee(ATTENDANCE).map((a) => ({ ...a }));
+export async function listAttendance(date: string = nowRiyadh().date): Promise<AttendanceRecord[]> {
+  if (!isDemoMode()) return live.liveListAttendance(date);
+  return scopeByEmployee(ATTENDANCE.filter((a) => (a.date ?? ATT_TODAY) === date)).map((a) => ({
+    ...a,
+  }));
+}
+
+/* ============================ Attendance (0072) ==========================
+ * Demo mirror of attendance_check / manual_attendance / close_attendance_day,
+ * the config, holidays and branch locations + QR tokens.
+ * ========================================================================= */
+let ATT_CONFIG: AttendanceConfig = { ...DEFAULT_ATTENDANCE_CONFIG };
+const HOLIDAYS: PublicHoliday[] = [
+  {
+    id: 'h1',
+    name_ar: 'يوم التأسيس',
+    from_date: '2026-02-22',
+    to_date: '2026-02-22',
+    is_active: true,
+  },
+  {
+    id: 'h2',
+    name_ar: 'عيد الفطر (تقديري — يُعدَّل حسب الإعلان الرسمي)',
+    from_date: '2026-03-19',
+    to_date: '2026-03-22',
+    is_active: true,
+  },
+  {
+    id: 'h3',
+    name_ar: 'عيد الأضحى (تقديري — يُعدَّل حسب الإعلان الرسمي)',
+    from_date: '2026-05-26',
+    to_date: '2026-05-29',
+    is_active: true,
+  },
+  {
+    id: 'h4',
+    name_ar: 'اليوم الوطني',
+    from_date: '2026-09-23',
+    to_date: '2026-09-23',
+    is_active: true,
+  },
+  {
+    id: 'h5',
+    name_ar: 'يوم التأسيس',
+    from_date: '2027-02-22',
+    to_date: '2027-02-22',
+    is_active: true,
+  },
+  {
+    id: 'h6',
+    name_ar: 'اليوم الوطني',
+    from_date: '2027-09-23',
+    to_date: '2027-09-23',
+    is_active: true,
+  },
+];
+const BRANCH_ATT: BranchAttendance[] = [
+  {
+    id: 'br-najran',
+    city: 'نجران',
+    latitude: 17.565604,
+    longitude: 44.228944,
+    attendance_token: 'najran7f3a91c2',
+  },
+  {
+    id: 'br-jazan',
+    city: 'جازان',
+    latitude: 16.889359,
+    longitude: 42.570567,
+    attendance_token: 'jazan2b8e40d1',
+  },
+  {
+    id: 'br-sharurah',
+    city: 'شرورة',
+    latitude: 17.466944,
+    longitude: 47.106667,
+    attendance_token: 'sharurah9c1d57',
+  },
+  {
+    id: 'br-habuna',
+    city: 'حبونا',
+    latitude: 17.851944,
+    longitude: 44.026944,
+    attendance_token: 'habuna4e6f20a8',
+  },
+];
+
+/** Read-only snapshot for other modules (housing presence rule). */
+export function attendanceConfigSnapshot(): AttendanceConfig {
+  return { ...ATT_CONFIG };
+}
+
+export const attendanceConfigSchema = z.object({
+  qr_enabled: z.boolean(),
+  qr_roles: z.array(z.string()),
+  gps_enabled: z.boolean(),
+  gps_roles: z.array(z.string()),
+  gps_radius_m: z
+    .number({ message: 'أدخل رقمًا' })
+    .int()
+    .min(20, { message: 'بين 20 و5000 متر' })
+    .max(5000, { message: 'بين 20 و5000 متر' }),
+  manual_enabled: z.boolean(),
+  manual_roles: z.array(z.string()),
+  worker_barcode_required: z.boolean(),
+  workdays: z
+    .array(z.number().int().min(0).max(6))
+    .min(1, { message: 'اختر يوم عمل واحدًا على الأقل' }),
+});
+
+export async function getAttendanceConfig(): Promise<AttendanceConfig> {
+  if (!isDemoMode()) return live.liveAttendanceConfig();
+  return { ...ATT_CONFIG, workdays: [...ATT_CONFIG.workdays] };
+}
+export async function saveAttendanceConfig(cfg: AttendanceConfig): Promise<void> {
+  const parsed = attendanceConfigSchema.parse(cfg);
+  if (!isDemoMode()) return live.liveSaveAttendanceConfig(parsed);
+  const before = ATT_CONFIG;
+  ATT_CONFIG = parsed;
+  const changed = (Object.keys(parsed) as (keyof AttendanceConfig)[]).filter(
+    (k) => JSON.stringify(before[k]) !== JSON.stringify(parsed[k]),
+  );
+  if (changed.length)
+    recordAudit({
+      action: 'update',
+      entity: 'attendance_config',
+      record_ref: 'طرق تسجيل الحضور',
+      old_data: Object.fromEntries(changed.map((k) => [k, before[k]])),
+      new_data: Object.fromEntries(changed.map((k) => [k, parsed[k]])),
+      branch: null,
+    });
+}
+
+export async function listHolidays(): Promise<PublicHoliday[]> {
+  if (!isDemoMode()) return live.liveListHolidays();
+  return HOLIDAYS.map((h) => ({ ...h })).sort((a, b) => a.from_date.localeCompare(b.from_date));
+}
+export async function saveHoliday(h: PublicHoliday, isNew: boolean): Promise<void> {
+  if (!h.name_ar.trim()) throw new Error('اسم العطلة مطلوب');
+  if (!h.from_date || !h.to_date || h.to_date < h.from_date)
+    throw new Error('تاريخ النهاية قبل البداية');
+  if (!isDemoMode()) return live.liveSaveHoliday(h, isNew);
+  const i = HOLIDAYS.findIndex((x) => x.id === h.id);
+  if (i >= 0) HOLIDAYS[i] = { ...h };
+  else HOLIDAYS.push({ ...h, id: `h-${Date.now()}` });
+}
+
+export async function listBranchAttendance(): Promise<BranchAttendance[]> {
+  if (!isDemoMode()) return live.liveBranchAttendance();
+  return BRANCH_ATT.map((b) => ({ ...b }));
+}
+export async function setBranchAttendance(
+  id: string,
+  lat: number | null,
+  lng: number | null,
+  rotate: boolean,
+): Promise<void> {
+  if (lat != null && (lat < -90 || lat > 90 || lng == null || lng < -180 || lng > 180))
+    throw new Error('إحداثيات غير صحيحة');
+  if (!isDemoMode()) return live.liveSetBranchAttendance(id, lat, lng, rotate);
+  const b = BRANCH_ATT.find((x) => x.id === id);
+  if (!b) throw new Error('الفرع غير موجود');
+  b.latitude = lat;
+  b.longitude = lng;
+  if (rotate) b.attendance_token = `${b.id.slice(3)}${Math.random().toString(16).slice(2, 10)}`;
+}
+
+/** The signed-in user's employee file (demo: by name, live: employees.user_id). */
+export async function getMyEmployee(): Promise<Employee | null> {
+  if (!isDemoMode()) return live.liveMyEmployee();
+  const name = useAuth.getState().profile?.full_name;
+  const e = EMPLOYEES.find((x) => x.full_name === name && x.status !== 'terminated');
+  return e ? { ...e } : null;
+}
+
+export interface CheckResult {
+  action: 'in' | 'out';
+  late_minutes?: number;
+  distance_m?: number;
+  at: string;
+}
+
+/** Self check-in / check-out (QR token or GPS) — mirror of attendance_check(). */
+export async function attendanceCheck(
+  method: 'qr' | 'gps',
+  input: { lat?: number; lng?: number; token?: string },
+): Promise<CheckResult> {
+  if (!isDemoMode()) return live.liveAttendanceCheck(method, input);
+  const me = await getMyEmployee();
+  if (!me) throw new Error('حسابك غير مرتبط بملف موظف نشط — راجع الموارد البشرية');
+  const role = useAuth.getState().profile?.role ?? '';
+  assertMethodAllowed(method, role, ATT_CONFIG);
+  const home = BRANCH_ATT.find((b) => b.city === me.branch);
+  let dist: number | undefined;
+  if (method === 'qr') {
+    const b = BRANCH_ATT.find((x) => x.attendance_token === tokenFromQr(input.token ?? ''));
+    if (!b) throw new Error('رمز الفرع غير صحيح أو منتهي — امسح الرمز المعلّق في الفرع');
+    if (me.branch && b.city !== me.branch) throw new Error(`هذا رمز فرع ${b.city}، وفرعك مختلف`);
+  } else {
+    if (input.lat == null || input.lng == null)
+      throw new Error('تعذّر تحديد موقعك — فعّل خدمة الموقع');
+    if (!home || home.latitude == null || home.longitude == null)
+      throw new Error('موقع فرعك غير محدد — راجع الموارد البشرية');
+    dist = distanceM(input.lat, input.lng, home.latitude, home.longitude);
+    if (dist > ATT_CONFIG.gps_radius_m)
+      throw new Error(`أنت على بُعد ${dist} متر من الفرع — المسموح ${ATT_CONFIG.gps_radius_m} متر`);
+  }
+  const { date, time } = nowRiyadh();
+  const row = ATTENDANCE.find((a) => a.employee_id === me.id && (a.date ?? ATT_TODAY) === date);
+  if (!row) {
+    const late = lateMinutes(time, PAYROLL_CONFIG.shiftStartHour, PAYROLL_CONFIG.lateGraceMinutes);
+    const rec: AttendanceRecord = {
+      id: `att-${Date.now()}`,
+      employee_id: me.id,
+      employee_name: me.full_name,
+      department: me.department,
+      date,
+      check_in: time,
+      check_out: null,
+      status: late > 0 ? 'late' : 'present',
+      check_in_method: method,
+      late_minutes: late,
+    };
+    if (dist !== undefined) rec.distance_m = dist;
+    ATTENDANCE.unshift(rec);
+    return {
+      action: 'in',
+      late_minutes: late,
+      at: time,
+      ...(dist !== undefined ? { distance_m: dist } : {}),
+    };
+  }
+  if (row.check_out) throw new Error('سجّلت حضورك وانصرافك اليوم');
+  if (!row.check_in) throw new Error('سجلّ اليوم مُعدّ يدوياً — راجع الموارد البشرية');
+  row.check_out = time;
+  row.check_out_method = method;
+  return { action: 'out', at: time, ...(dist !== undefined ? { distance_m: dist } : {}) };
+}
+
+export interface ManualAttendanceInput {
+  employee_id: string;
+  date: string;
+  status: AttendanceRecord['status'];
+  check_in: string | null;
+  check_out: string | null;
+  note: string;
+}
+
+/** Manual correction (roles from config, note required) — mirror of manual_attendance(). */
+export async function manualAttendance(m: ManualAttendanceInput): Promise<void> {
+  if (!isDemoMode()) return live.liveManualAttendance(m);
+  const role = useAuth.getState().profile?.role ?? '';
+  if (!ATT_CONFIG.manual_enabled || !ATT_CONFIG.manual_roles.includes(role))
+    throw new Error('التحضير اليدوي غير مسموح لك');
+  if (!m.note.trim()) throw new Error('سبب التعديل اليدوي مطلوب');
+  if (m.date > nowRiyadh().date) throw new Error('لا يُسجَّل حضور لتاريخ قادم');
+  if (m.check_in && m.check_out && m.check_out <= m.check_in)
+    throw new Error('وقت الانصراف قبل وقت الحضور');
+  const e = EMPLOYEES.find((x) => x.id === m.employee_id);
+  if (!e) throw new Error('الموظف غير موجود');
+  const late = m.check_in
+    ? lateMinutes(m.check_in, PAYROLL_CONFIG.shiftStartHour, PAYROLL_CONFIG.lateGraceMinutes)
+    : undefined;
+  const status: AttendanceRecord['status'] =
+    (m.status === 'present' || m.status === 'late') && late && late > 0
+      ? 'late'
+      : m.status === 'late'
+        ? 'present'
+        : m.status;
+  const rec: AttendanceRecord = {
+    id: `att-${Date.now()}`,
+    employee_id: e.id,
+    employee_name: e.full_name,
+    department: e.department,
+    date: m.date,
+    check_in: m.check_in,
+    check_out: m.check_out,
+    status,
+    check_in_method: 'manual',
+    note: m.note.trim(),
+  };
+  if (m.check_out) rec.check_out_method = 'manual';
+  if (late !== undefined) rec.late_minutes = late;
+  const i = ATTENDANCE.findIndex((a) => a.employee_id === e.id && (a.date ?? ATT_TODAY) === m.date);
+  if (i >= 0) ATTENDANCE[i] = { ...rec, id: ATTENDANCE[i]!.id };
+  else ATTENDANCE.unshift(rec);
+}
+
+/** Close a past workday: no record → absent, or leave if on approved leave. */
+export async function closeAttendanceDay(
+  date: string,
+): Promise<{ absent: number; leave: number; workday: boolean }> {
+  if (!isDemoMode()) return live.liveCloseDay(date);
+  if (date >= nowRiyadh().date) throw new Error('يُغلق اليوم بعد انتهائه');
+  if (!isWorkday(date, ATT_CONFIG, HOLIDAYS)) return { absent: 0, leave: 0, workday: false };
+  let absent = 0;
+  let leave = 0;
+  EMPLOYEES.filter(
+    (e) =>
+      (!e.join_date || e.join_date <= date) &&
+      (e.status !== 'terminated' || (e.termination_date ?? '') >= date) &&
+      !ATTENDANCE.some((a) => a.employee_id === e.id && (a.date ?? ATT_TODAY) === date),
+  ).forEach((e) => {
+    const onLeave = LEAVE.some(
+      (l) =>
+        l.employee_id === e.id &&
+        l.status === 'approved' &&
+        l.from_date <= date &&
+        l.to_date >= date,
+    );
+    ATTENDANCE.push({
+      id: `att-${e.id}-${date}`,
+      employee_id: e.id,
+      employee_name: e.full_name,
+      department: e.department,
+      date,
+      check_in: null,
+      check_out: null,
+      status: onLeave ? 'leave' : 'absent',
+      note: 'إغلاق اليوم: لا تسجيل حضور',
+    });
+    if (onLeave) leave++;
+    else absent++;
+  });
+  return { absent, leave, workday: true };
+}
+
+/** One employee's month (records only; the calendar adds leave/holidays/weekends). */
+export async function listMonthAttendance(
+  employeeId: string,
+  period: string,
+): Promise<AttendanceRecord[]> {
+  if (!isDemoMode()) return live.liveMonthAttendance(employeeId, period);
+  return ATTENDANCE.filter(
+    (a) => a.employee_id === employeeId && (a.date ?? ATT_TODAY).startsWith(period),
+  ).map((a) => ({ ...a }));
 }
 
 export async function listLeaveRequests(): Promise<LeaveRequest[]> {

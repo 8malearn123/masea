@@ -4,6 +4,18 @@ import { isDemoMode } from '@/shared/lib/demoBackend';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
+  attendanceCheck,
+  closeAttendanceDay,
+  getAttendanceConfig,
+  getMyEmployee,
+  listBranchAttendance,
+  listHolidays,
+  listMonthAttendance,
+  manualAttendance,
+  saveAttendanceConfig,
+  saveHoliday,
+  setBranchAttendance,
+  type ManualAttendanceInput,
   approvePayrollRun,
   calculatePayrollRun,
   getPayrollRun,
@@ -46,6 +58,8 @@ import {
 } from '@/features/hr/api/payrollSettings.api';
 import type { GosiConfig, PayrollConfig } from '@/features/hr/api/hr.api';
 import type {
+  AttendanceConfig,
+  PublicHoliday,
   AdjustmentStatus,
   EmergencyContact,
   Employee,
@@ -76,11 +90,11 @@ export function useEmployees() {
   });
 }
 
-export function useAttendance() {
+export function useAttendance(date?: string) {
   return useQuery({
-    queryKey: ['hr', 'attendance'],
-    queryFn: listAttendance,
-    staleTime: QUERY_DEFAULTS.staleTime,
+    queryKey: ['hr', 'attendance', date ?? 'today'],
+    queryFn: () => listAttendance(date),
+    staleTime: 30_000,
   });
 }
 
@@ -519,5 +533,121 @@ export function useApproveRun() {
     ({ period, runId }) => approvePayrollRun(period, runId),
     'تم اعتماد المسير — أصبح مجمّدًا',
     'تعذّر اعتماد المسير',
+  );
+}
+
+/* ------------------------------- attendance ------------------------------ */
+const ATT_KEY = ['hr', 'attendance'] as const;
+const ATT_CFG_KEY = ['hr', 'attendance-config'] as const;
+const HOLIDAYS_KEY = ['hr', 'holidays'] as const;
+const BRANCH_ATT_KEY = ['hr', 'branch-attendance'] as const;
+
+export function useAttendanceConfig() {
+  return useQuery({
+    queryKey: ATT_CFG_KEY,
+    queryFn: getAttendanceConfig,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+export function useHolidays() {
+  return useQuery({
+    queryKey: HOLIDAYS_KEY,
+    queryFn: listHolidays,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+/** Branch locations + QR tokens — hr.manage only (the query is disabled otherwise). */
+export function useBranchAttendance(enabled: boolean) {
+  return useQuery({
+    queryKey: BRANCH_ATT_KEY,
+    queryFn: listBranchAttendance,
+    enabled,
+    staleTime: 60_000,
+  });
+}
+export function useMyEmployee() {
+  return useQuery({
+    queryKey: ['hr', 'me'],
+    queryFn: getMyEmployee,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+export function useMonthAttendance(employeeId: string | undefined, period: string) {
+  return useQuery({
+    queryKey: [...ATT_KEY, 'month', employeeId ?? '', period],
+    queryFn: () => listMonthAttendance(employeeId ?? '', period),
+    enabled: !!employeeId,
+    staleTime: 30_000,
+  });
+}
+
+function useAttMutation<V, R = void>(
+  fn: (v: V) => Promise<R>,
+  ok: (r: R) => string,
+  keys: readonly (readonly string[])[],
+) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<R, Error, V>({
+    mutationFn: fn,
+    onSuccess: (r) => {
+      keys.forEach((k) => void qc.invalidateQueries({ queryKey: k }));
+      void qc.invalidateQueries({ queryKey: ['audit-log'] });
+      toast.success(ok(r));
+    },
+    onError: (e) => toast.error(e.message || 'تعذّرت العملية'),
+  });
+}
+
+export function useAttendanceCheck() {
+  return useAttMutation(
+    (v: { method: 'qr' | 'gps'; lat?: number; lng?: number; token?: string }) =>
+      attendanceCheck(v.method, v),
+    (r) =>
+      r.action === 'in'
+        ? r.late_minutes
+          ? `تم تسجيل حضورك ${r.at} — متأخر ${r.late_minutes} دقيقة`
+          : `تم تسجيل حضورك ${r.at}`
+        : `تم تسجيل انصرافك ${r.at}`,
+    [ATT_KEY, PAYSLIPS_KEY],
+  );
+}
+export function useManualAttendance() {
+  return useAttMutation(
+    (m: ManualAttendanceInput) => manualAttendance(m),
+    () => 'تم حفظ التعديل اليدوي',
+    [ATT_KEY],
+  );
+}
+export function useCloseDay() {
+  return useAttMutation(
+    (date: string) => closeAttendanceDay(date),
+    (r) =>
+      r.workday
+        ? `أُغلق اليوم: ${r.absent} غياب · ${r.leave} إجازة`
+        : 'ليس يوم عمل (عطلة أسبوعية أو رسمية) — لا شيء يُغلق',
+    [ATT_KEY],
+  );
+}
+export function useSaveAttendanceConfig() {
+  return useAttMutation(
+    (c: AttendanceConfig) => saveAttendanceConfig(c),
+    () => 'تم حفظ طرق تسجيل الحضور',
+    [ATT_CFG_KEY],
+  );
+}
+export function useSaveHoliday() {
+  return useAttMutation(
+    (v: { holiday: PublicHoliday; isNew: boolean }) => saveHoliday(v.holiday, v.isNew),
+    () => 'تم حفظ العطلة',
+    [HOLIDAYS_KEY],
+  );
+}
+export function useSetBranchAttendance() {
+  return useAttMutation(
+    (v: { id: string; lat: number | null; lng: number | null; rotate: boolean }) =>
+      setBranchAttendance(v.id, v.lat, v.lng, v.rotate),
+    () => 'تم حفظ موقع الفرع',
+    [BRANCH_ATT_KEY],
   );
 }

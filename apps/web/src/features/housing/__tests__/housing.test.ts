@@ -14,9 +14,14 @@ describe('housing supervisor: attendance, scan & targets', () => {
     expect(resolveWorkerByBarcode('UNKNOWN')).toBeNull();
   });
 
-  it('takes attendance and updates the worker status', async () => {
-    await markAttendance('r7', 'present');
-    // re-resolving reflects the optimistic demo update
+  it('presence is taken by barcode: no scan → refused, entry scan → present', async () => {
+    // the supervisor cannot mark a worker present by hand (0072, configurable)
+    await expect(markAttendance('r7', 'present')).rejects.toThrow('بمسح باركودها');
+    // other statuses stay manual
+    await markAttendance('r7', 'medical');
+    expect(resolveWorkerByBarcode('MAS-W-1007')?.status).toBe('medical');
+    // scanning her barcode at the dorm entry IS her attendance
+    await logHousingScan('MAS-W-1007', 'in', null);
     expect(resolveWorkerByBarcode('MAS-W-1007')?.status).toBe('present');
   });
 
