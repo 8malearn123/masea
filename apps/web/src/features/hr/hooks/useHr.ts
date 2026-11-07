@@ -12,8 +12,12 @@ import {
   createPerformanceReview,
   decideAdjustment,
   listAccountOptions,
+  demoLeaveContext,
+  getLeaveBalance,
+  listLeaveTypes,
   persistEmployee,
   persistHouseWorker,
+  saveLeaveType,
   reactivateEmployee,
   terminateEmployee,
   type TerminationInput,
@@ -46,6 +50,7 @@ import type {
   HouseWorker,
   LeaveRequest,
   LeaveStatus,
+  LeaveTypeConfig,
   PayrollAdjustment,
   Payslip,
   PerformanceReview,
@@ -57,6 +62,8 @@ const PAYSLIPS_KEY = ['hr', 'payslips'] as const;
 const ADJ_KEY = ['hr', 'adjustments'] as const;
 
 const LEAVE_KEY = ['hr', 'leave'] as const;
+const LEAVE_TYPES_KEY = ['hr', 'leave-types'] as const;
+const BALANCE_KEY = ['hr', 'leave-balance'] as const;
 
 export function useEmployees() {
   return useQuery({
@@ -204,10 +211,10 @@ export function useUpdateLeave() {
   return useMutation<
     void,
     Error,
-    { id: string; status: LeaveStatus },
+    { id: string; status: LeaveStatus; note?: string },
     { prev: LeaveRequest[] | undefined }
   >({
-    mutationFn: ({ id, status }) => updateLeaveStatus(id, status),
+    mutationFn: ({ id, status, note }) => updateLeaveStatus(id, status, note),
     onMutate: async ({ id, status }) => {
       await qc.cancelQueries({ queryKey: LEAVE_KEY });
       const prev = qc.getQueryData<LeaveRequest[]>(LEAVE_KEY);
@@ -221,9 +228,18 @@ export function useUpdateLeave() {
       toast.error(e.message || 'تعذّر تحديث الطلب');
     },
     onSuccess: (_d, { status }) => {
-      // an approved leave changes the employee status (في إجازة) on the backend
-      if (!isDemoMode()) void qc.invalidateQueries({ queryKey: EMP_KEY });
-      toast.success(status === 'approved' ? 'تم اعتماد الإجازة' : 'تم تحديث الطلب');
+      // status (في إجازة), balances and pay (unpaid/sick tiers) all follow the decision
+      void qc.invalidateQueries({ queryKey: EMP_KEY });
+      void qc.invalidateQueries({ queryKey: LEAVE_KEY });
+      void qc.invalidateQueries({ queryKey: BALANCE_KEY });
+      void qc.invalidateQueries({ queryKey: PAYSLIPS_KEY });
+      toast.success(
+        status === 'approved'
+          ? 'تم اعتماد الإجازة'
+          : status === 'cancelled'
+            ? 'تم إلغاء الإجازة'
+            : 'تم رفض الطلب',
+      );
     },
   });
 }
@@ -293,7 +309,9 @@ export function useAddLeave() {
     mutationFn: createLeaveRequest,
     onSuccess: (l) => {
       qc.setQueryData<LeaveRequest[]>(LEAVE_KEY, (old) => [l, ...(old ?? [])]);
-      if (!isDemoMode()) void qc.invalidateQueries({ queryKey: EMP_KEY });
+      void qc.invalidateQueries({ queryKey: EMP_KEY });
+      void qc.invalidateQueries({ queryKey: BALANCE_KEY });
+      void qc.invalidateQueries({ queryKey: PAYSLIPS_KEY });
       toast.success(
         l.status === 'approved' ? 'تم تعيين الإجازة للموظف' : 'تم رفع طلب الإجازة للاعتماد',
       );
@@ -345,12 +363,16 @@ export function usePayslips(
   settingsStamp: unknown,
 ) {
   const demo = isDemoMode();
-  const demoSlips = useMemo<Payslip[] | null>(
-    () => (demo && period ? runPayroll(employees, period, adjustments) : null),
-    // settingsStamp: the engine reads live config, so recompute when it changes
+  // leave affects pay (unpaid / sick tiers): recompute when leave or its rules change
+  const { data: leaves } = useLeaveRequests();
+  const { data: leaveTypes } = useLeaveTypes();
+  const demoSlips = useMemo<Payslip[] | null>(() => {
+    if (!demo || !period) return null;
+    const ctx = demoLeaveContext();
+    return runPayroll(employees, period, adjustments, ctx.leaves, ctx.types);
+    // settingsStamp / leaves / leaveTypes: the engine reads live stores, so recompute on change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [demo, employees, period, adjustments, settingsStamp],
-  );
+  }, [demo, employees, period, adjustments, settingsStamp, leaves, leaveTypes]);
   const q = useQuery<Payslip[]>({
     queryKey: [...PAYSLIPS_KEY, period, employees.map((e) => e.id).join(',')],
     queryFn: () => computePayslips(employees, period ?? '', adjustments),
@@ -404,5 +426,52 @@ export function useAccountOptions(enabled: boolean) {
     queryFn: listAccountOptions,
     enabled,
     staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+/* ------------------------------ leave types ------------------------------ */
+export function useLeaveTypes() {
+  return useQuery({
+    queryKey: LEAVE_TYPES_KEY,
+    queryFn: listLeaveTypes,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function useSaveLeaveType() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { type: LeaveTypeConfig; isNew: boolean }>({
+    mutationFn: ({ type, isNew }) => saveLeaveType(type, isNew),
+    onSuccess: (_d, { isNew }) => {
+      void qc.invalidateQueries({ queryKey: LEAVE_TYPES_KEY });
+      void qc.invalidateQueries({ queryKey: BALANCE_KEY });
+      void qc.invalidateQueries({ queryKey: ['audit-log'] });
+      toast.success(isNew ? 'تمت إضافة نوع الإجازة' : 'تم حفظ نوع الإجازة');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ نوع الإجازة'),
+  });
+}
+
+/** Leave balance of one employee as of a date (null employee → disabled). */
+export function useLeaveBalance(employee: Employee | null | undefined, asOf: string) {
+  return useQuery({
+    queryKey: [...BALANCE_KEY, employee?.id ?? '', asOf],
+    queryFn: () => getLeaveBalance(employee as Employee, asOf),
+    enabled: !!employee && !!asOf,
+    staleTime: 30_000,
+  });
+}
+
+/** Balances of many employees (the «الأرصدة» view) in one query. */
+export function useLeaveBalances(employees: Employee[], asOf: string) {
+  return useQuery({
+    queryKey: [...BALANCE_KEY, 'all', employees.map((e) => e.id).join(','), asOf],
+    queryFn: async () => {
+      const rows = await Promise.all(employees.map((e) => getLeaveBalance(e, asOf)));
+      return new Map(employees.map((e, i) => [e.id, rows[i]!]));
+    },
+    enabled: employees.length > 0,
+    staleTime: 30_000,
   });
 }

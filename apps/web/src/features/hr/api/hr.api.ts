@@ -2,10 +2,19 @@ import { GOSI } from '@masiat/shared';
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { scopeToViewerBranch } from '@/lib/branchScope';
+import { recordAudit } from '@/shared/lib/auditTrail';
 import { useAuth } from '@/store/auth';
 import { FALLBACK_WORKERS } from '@/lib/funnel';
 import { DEMO_ACCOUNTS } from '@/lib/demo';
 import * as live from '@/features/hr/api/hr.live';
+import {
+  DEFAULT_LEAVE_TYPES,
+  daysInclusive,
+  leaveBalance,
+  leaveDeductionDays,
+  validateLeave,
+} from '@/features/hr/lib/leaveEngine';
+import { leaveTypeSchema } from '@/features/hr/lib/leaveTypeSchema';
 import { ADJ_IS_ADDITION } from '@/features/hr/types';
 import type {
   AccountOption,
@@ -18,8 +27,10 @@ import type {
   EmployeeDocument,
   HouseWorker,
   IqamaRecord,
+  LeaveBalance,
   LeaveRequest,
   LeaveStatus,
+  LeaveTypeConfig,
   PayrollAdjustment,
   PayrollRow,
   Payslip,
@@ -359,6 +370,7 @@ const ATTENDANCE: AttendanceRecord[] = [
 const LEAVE: LeaveRequest[] = [
   {
     id: 'l1',
+    employee_id: 'e4',
     employee_name: 'ريم الزهراني',
     type: 'annual',
     from_date: '2026-06-12',
@@ -369,6 +381,7 @@ const LEAVE: LeaveRequest[] = [
   },
   {
     id: 'l2',
+    employee_id: 'e3',
     employee_name: 'نورة العتيبي',
     type: 'sick',
     from_date: '2026-06-14',
@@ -379,6 +392,7 @@ const LEAVE: LeaveRequest[] = [
   },
   {
     id: 'l3',
+    employee_id: 'e5',
     employee_name: 'بدر المالكي',
     type: 'emergency',
     from_date: '2026-06-13',
@@ -389,6 +403,7 @@ const LEAVE: LeaveRequest[] = [
   },
   {
     id: 'l4',
+    employee_id: 'e7',
     employee_name: 'راجيش كومار',
     type: 'annual',
     from_date: '2026-07-01',
@@ -401,7 +416,17 @@ const LEAVE: LeaveRequest[] = [
 
 /** Demo: the viewer sees only their branch (cross-branch roles see all) — same rule as RLS. */
 function demoEmployees(): Employee[] {
-  return scopeToViewerBranch(EMPLOYEES, (e) => e.branch).map((e) => ({ ...e }));
+  const today = new Date().toISOString().slice(0, 10);
+  // «في إجازة» is derived from an approved leave covering today (same as live)
+  const away = new Set(
+    LEAVE.filter((l) => l.status === 'approved' && l.from_date <= today && l.to_date >= today).map(
+      (l) => l.employee_id,
+    ),
+  );
+  return scopeToViewerBranch(EMPLOYEES, (e) => e.branch).map((e) => ({
+    ...e,
+    status: e.status === 'terminated' ? 'terminated' : away.has(e.id) ? 'on_leave' : 'active',
+  }));
 }
 
 /** Demo rows of child tables follow their employee's branch (like hr_can_see in 0068). */
@@ -533,18 +558,74 @@ export async function createLeaveRequest(l: LeaveRequest): Promise<LeaveRequest>
   return addLeaveRequest(l);
 }
 
-/** Add a leave request to the demo store (persists across refetch). */
+/** Demo request — validated with the same rules as validate_leave_request() (0070). */
 export function addLeaveRequest(l: LeaveRequest): LeaveRequest {
-  LEAVE.unshift(l);
-  return l;
+  const e = EMPLOYEES.find((x) => x.id === l.employee_id || x.full_name === l.employee_name);
+  const req = { ...l, days: daysInclusive(l.from_date, l.to_date) };
+  if (e) validateLeave(req, e, LEAVE, LEAVE_TYPES);
+  LEAVE.unshift(req);
+  return req;
 }
 
-export async function updateLeaveStatus(id: string, status: LeaveStatus): Promise<void> {
+/** Approve / reject / cancel. Approval re-checks the rules (balance may have changed). */
+export async function updateLeaveStatus(
+  id: string,
+  status: LeaveStatus,
+  note?: string,
+): Promise<void> {
+  if (!isDemoMode() && !isDemoId(id)) return live.liveUpdateLeave(id, status, note);
   const local = LEAVE.find((l) => l.id === id);
-  if (local) local.status = status; // keep the demo store in sync with the optimistic update
-  if (isDemoMode() || isDemoId(id)) return;
-  const { error } = await supabase.from('leave_requests').update({ status }).eq('id', id);
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+  if (!local) return;
+  if (status === 'approved') {
+    const e = EMPLOYEES.find(
+      (x) => x.id === local.employee_id || x.full_name === local.employee_name,
+    );
+    if (e) validateLeave({ ...local, status }, e, LEAVE, LEAVE_TYPES);
+  }
+  local.status = status;
+  if (note) local.decision_note = note;
+}
+
+/* ------------------------------ leave types ------------------------------ */
+/** Demo store of `leave_types` — starts from the labour-law defaults. */
+const LEAVE_TYPES: LeaveTypeConfig[] = DEFAULT_LEAVE_TYPES.map((t) => ({ ...t }));
+
+export async function listLeaveTypes(): Promise<LeaveTypeConfig[]> {
+  if (!isDemoMode()) return live.liveListLeaveTypes();
+  return LEAVE_TYPES.map((t) => ({ ...t })).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+export async function saveLeaveType(t: LeaveTypeConfig, isNew: boolean): Promise<void> {
+  const parsed = leaveTypeSchema.parse(t);
+  if (!isDemoMode()) return live.liveSaveLeaveType(parsed, isNew);
+  const i = LEAVE_TYPES.findIndex((x) => x.code === parsed.code);
+  if (isNew && i >= 0) throw new Error('رمز النوع مستخدم');
+  const before = i >= 0 ? LEAVE_TYPES[i]! : null;
+  if (i >= 0) LEAVE_TYPES[i] = parsed;
+  else LEAVE_TYPES.push(parsed);
+  // same shape as audit_row_change (changed fields only)
+  const changed = (Object.keys(parsed) as (keyof LeaveTypeConfig)[]).filter(
+    (k) => !before || before[k] !== parsed[k],
+  );
+  recordAudit({
+    action: before ? 'update' : 'insert',
+    entity: 'leave_types',
+    record_ref: parsed.name_ar,
+    old_data: before ? Object.fromEntries(changed.map((k) => [k, before[k]])) : null,
+    new_data: Object.fromEntries(changed.map((k) => [k, parsed[k]])),
+    branch: null,
+  });
+}
+
+/** Balance as of a date (annual accrued / used / pending, sick this year). */
+export async function getLeaveBalance(e: Employee, asOf: string): Promise<LeaveBalance> {
+  if (!isDemoMode()) return live.liveLeaveBalance(e.id, asOf);
+  return leaveBalance(e, LEAVE, LEAVE_TYPES, asOf);
+}
+
+/** Demo leave rows for the payroll engine (live: the server reads its own). */
+export function demoLeaveContext(): { leaves: LeaveRequest[]; types: LeaveTypeConfig[] } {
+  return { leaves: LEAVE, types: LEAVE_TYPES };
 }
 
 /** Total monthly cost to the company: base + allowances + employer GOSI share
@@ -701,6 +782,8 @@ export function calculatePayslip(
   e: Employee,
   period: string,
   adjustments: PayrollAdjustment[],
+  leaves: LeaveRequest[] = [],
+  leaveTypes: LeaveTypeConfig[] = DEFAULT_LEAVE_TYPES,
 ): Payslip {
   const cfg = PAYROLL_CONFIG;
   const basic = e.base_salary;
@@ -741,9 +824,13 @@ export function calculatePayslip(
     : 0;
   const gosiEmployee = round2(gosiBase * gosiRate);
 
+  // approved leave: unpaid days + sick days in the reduced-pay tiers (0070)
+  const leave = leaveDeductionDays(e, period, leaves, leaveTypes);
+  const leaveDeduction = round2(dailyWage * (leave.unpaid_days + leave.sick_deduction_days));
+
   const gross = round2(basic + housing + transport + other + overtimeAmount + additions);
   const totalDeductions = round2(
-    absenceDeduction + lateDeduction + gosiEmployee + manualDeductions,
+    absenceDeduction + lateDeduction + gosiEmployee + manualDeductions + leaveDeduction,
   );
   const net = round2(gross - totalDeductions);
 
@@ -767,6 +854,9 @@ export function calculatePayslip(
     gosi_system: gosiSystem,
     gosi_employee: gosiEmployee,
     manual_deductions: round2(manualDeductions),
+    unpaid_leave_days: leave.unpaid_days,
+    sick_deduction_days: leave.sick_deduction_days,
+    leave_deduction: leaveDeduction,
     gross,
     total_deductions: totalDeductions,
     net,
@@ -778,10 +868,12 @@ export function runPayroll(
   employees: Employee[],
   period: string,
   adjustments: PayrollAdjustment[],
+  leaves: LeaveRequest[] = [],
+  leaveTypes: LeaveTypeConfig[] = DEFAULT_LEAVE_TYPES,
 ): Payslip[] {
   return employees
     .filter((e) => e.status !== 'terminated')
-    .map((e) => calculatePayslip(e, period, adjustments));
+    .map((e) => calculatePayslip(e, period, adjustments, leaves, leaveTypes));
 }
 
 /** Payslips for a period: calculate_payslip() on the backend, the mirror engine in demo. */
@@ -791,7 +883,7 @@ export async function computePayslips(
   adjustments: PayrollAdjustment[],
 ): Promise<Payslip[]> {
   if (!isDemoMode()) return live.livePayslips(employees, period);
-  return runPayroll(employees, period, adjustments);
+  return runPayroll(employees, period, adjustments, LEAVE, LEAVE_TYPES);
 }
 
 /** WPS-style payroll file (CSV) — bank, IBAN, basic, allowances, deductions, net. */

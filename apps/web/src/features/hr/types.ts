@@ -172,8 +172,32 @@ export const ATT_STATUS_TONE: Record<AttendanceStatus, BadgeTone> = {
 };
 
 /* -------------------------------- leave ---------------------------------- */
-export type LeaveType = 'annual' | 'sick' | 'emergency' | 'unpaid';
-export type LeaveStatus = 'pending' | 'approved' | 'rejected';
+/** Leave type code — managed in `leave_types` (0070), not a fixed enum. */
+export type LeaveType = string;
+export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type LeaveCategory = 'annual' | 'sick' | 'statutory' | 'unpaid' | 'other';
+
+/** One row of `leave_types` — the rules HR manages from the settings screen. */
+export interface LeaveTypeConfig {
+  code: string;
+  name_ar: string;
+  category: LeaveCategory;
+  /** annual: days/year (first years) · sick: full-pay days · statutory/other: max days */
+  entitlement_days: number | null;
+  entitlement_days_after: number | null;
+  after_years: number | null;
+  sick_partial_days: number | null;
+  sick_partial_pay_pct: number | null;
+  sick_unpaid_days: number | null;
+  paid: boolean;
+  deducts_from_annual: boolean;
+  gender: 'male' | 'female' | null;
+  min_service_months: number;
+  once_per_service: boolean;
+  requires_attachment: boolean;
+  is_active: boolean;
+  sort_order: number;
+}
 
 export interface LeaveRequest {
   id: string;
@@ -185,23 +209,37 @@ export interface LeaveRequest {
   days: number;
   status: LeaveStatus;
   reason: string;
+  decision_note?: string;
 }
 
-export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = {
-  annual: 'سنوية',
-  sick: 'مرضية',
-  emergency: 'اضطرارية',
-  unpaid: 'بدون راتب',
+export interface LeaveBalance {
+  annual_accrued: number;
+  annual_used: number;
+  annual_pending: number;
+  annual_remaining: number;
+  sick_used_this_year: number;
+  sick_full_left: number;
+  sick_total_limit: number;
+}
+
+export const LEAVE_CATEGORY_LABEL: Record<LeaveCategory, string> = {
+  annual: 'سنوية (رصيد تراكمي)',
+  sick: 'مرضية (شرائح أجر)',
+  statutory: 'نظامية (عدد أيام ثابت)',
+  unpaid: 'بدون أجر',
+  other: 'أخرى (حد سنوي)',
 };
 export const LEAVE_STATUS_LABEL: Record<LeaveStatus, string> = {
   pending: 'بانتظار الاعتماد',
   approved: 'معتمدة',
   rejected: 'مرفوضة',
+  cancelled: 'ملغاة',
 };
 export const LEAVE_STATUS_TONE: Record<LeaveStatus, BadgeTone> = {
   pending: 'gold',
   approved: 'success',
   rejected: 'danger',
+  cancelled: 'neutral',
 };
 
 /* --------------------------- house workers (عاملات) ---------------------- */
@@ -424,6 +462,10 @@ export interface Payslip {
   gosi_system: 'old' | 'new';
   gosi_employee: number;
   manual_deductions: number; // approved penalty/advance
+  /** approved leave: unpaid days + sick days in a reduced-pay tier (0070). */
+  unpaid_leave_days: number;
+  sick_deduction_days: number;
+  leave_deduction: number;
   gross: number;
   total_deductions: number;
   net: number;

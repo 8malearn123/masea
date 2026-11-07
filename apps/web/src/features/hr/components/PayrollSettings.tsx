@@ -26,6 +26,7 @@ import {
   PAYROLL_DEFAULTS,
 } from '@/features/hr/api/payrollSettings.api';
 import type { GosiConfig, PayrollConfig } from '@/features/hr/api/hr.api';
+import { LeaveTypesSettings } from '@/features/hr/components/LeaveTypesSettings';
 
 /* ------------------------------- helpers --------------------------------- */
 type Errors<T> = Partial<Record<keyof T, string>>;
@@ -139,6 +140,8 @@ export default function PayrollSettings() {
         />
         <GosiConfigCard key={JSON.stringify(data.gosi)} initial={data.gosi} editable={canManage} />
       </div>
+
+      <LeaveTypesSettings editable={canManage} />
 
       <SettingsHistory />
     </div>
@@ -429,7 +432,9 @@ function GosiConfigCard({ initial, editable }: { initial: GosiConfig; editable: 
                   {r.emp ? (
                     rateInput(r.emp, `${r.label} — حصة الموظف`)
                   ) : (
-                    <span className="num block pt-2.5 text-purple">0٪ (معفى)</span>
+                    <div className="pt-2.5 text-purple">
+                      <span className="num">0٪ (معفى)</span>
+                    </div>
                   )}
                 </td>
                 <td className="py-2">{rateInput(r.co, `${r.label} — حصة المنشأة`)}</td>
@@ -494,7 +499,12 @@ function SettingsHistory() {
   const qc = useQueryClient();
   const payroll = useAuditLog({ ...EMPTY_AUDIT_FILTERS, entity: 'payroll_config' });
   const gosi = useAuditLog({ ...EMPTY_AUDIT_FILTERS, entity: 'gosi_config' });
-  const entries: AuditEntry[] = [...(payroll.data ?? []), ...(gosi.data ?? [])]
+  const leaveTypes = useAuditLog({ ...EMPTY_AUDIT_FILTERS, entity: 'leave_types' });
+  const entries: AuditEntry[] = [
+    ...(payroll.data ?? []),
+    ...(gosi.data ?? []),
+    ...(leaveTypes.data ?? []),
+  ]
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .slice(0, 10);
   const loading = payroll.isLoading || gosi.isLoading;
@@ -526,8 +536,12 @@ function SettingsHistory() {
             <li key={e.id} className="rounded-xl border border-navy-100 px-3 py-2 text-xs">
               <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
                 <span className="font-semibold text-navy">
-                  {e.entity === 'gosi_config' ? 'التأمينات' : 'الرواتب'} ·{' '}
-                  {e.actor_name ?? 'النظام'}
+                  {e.entity === 'gosi_config'
+                    ? 'التأمينات'
+                    : e.entity === 'leave_types'
+                      ? `الإجازات (${e.record_ref ?? ''})`
+                      : 'الرواتب'}{' '}
+                  · {e.actor_name ?? 'النظام'}
                 </span>
                 <span className="num text-purple">
                   {new Date(e.created_at).toLocaleString('ar-SA-u-ca-gregory')}

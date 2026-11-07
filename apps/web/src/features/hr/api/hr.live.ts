@@ -27,8 +27,9 @@ import {
   type HouseWorker,
   type IqamaRecord,
   type LeaveRequest,
+  type LeaveBalance,
   type LeaveStatus,
-  type LeaveType,
+  type LeaveTypeConfig,
   type PayrollAdjustment,
   type AdjustmentType,
   type Payslip,
@@ -309,32 +310,37 @@ export async function liveListAttendance(): Promise<AttendanceRecord[]> {
 }
 
 /* --------------------------------- leave ---------------------------------- */
-const LEAVE_TYPES: LeaveType[] = ['annual', 'sick', 'emergency', 'unpaid'];
+const LEAVE_STATUSES: LeaveStatus[] = ['pending', 'approved', 'rejected', 'cancelled'];
 
 export async function liveListLeave(): Promise<LeaveRequest[]> {
   const { data, error } = await supabase
     .from('leave_requests')
-    .select('id, employee_id, type, start_date, end_date, status, notes, employees(full_name)')
+    .select(
+      'id, employee_id, type, start_date, end_date, days, status, notes, decision_note, employees(full_name)',
+    )
     .order('start_date', { ascending: false });
   fail(error, 'تحميل الإجازات');
   return ((data ?? []) as unknown as Row[]).map((r) => {
     const from = str(r.start_date);
     const to = str(r.end_date);
-    const t = str(r.type) as LeaveType;
-    return {
+    const st = str(r.status) as LeaveStatus;
+    const l: LeaveRequest = {
       id: str(r.id),
       employee_id: str(r.employee_id),
       employee_name: empName(r),
-      type: LEAVE_TYPES.includes(t) ? t : 'annual',
+      type: str(r.type), // a leave_types code (0070)
       from_date: from,
       to_date: to,
-      days: daysInclusive(from, to),
-      status: str(r.status) as LeaveStatus,
+      days: r.days == null ? daysInclusive(from, to) : num(r.days),
+      status: LEAVE_STATUSES.includes(st) ? st : 'pending',
       reason: str(r.notes),
     };
+    if (r.decision_note) l.decision_note = str(r.decision_note);
+    return l;
   });
 }
 
+/** Insert — the server validates (validate_leave_request) and computes the days. */
 export async function liveAddLeave(l: LeaveRequest): Promise<LeaveRequest> {
   const { data, error } = await supabase
     .from('leave_requests')
@@ -346,10 +352,80 @@ export async function liveAddLeave(l: LeaveRequest): Promise<LeaveRequest> {
       status: l.status,
       notes: l.reason || null,
     })
-    .select('id')
+    .select('id, days')
     .single();
   fail(error, 'حفظ الإجازة');
-  return { ...l, id: str((data as Row).id) };
+  return { ...l, id: str((data as Row).id), days: num((data as Row).days) };
+}
+
+export async function liveUpdateLeave(
+  id: string,
+  status: LeaveStatus,
+  note?: string,
+): Promise<void> {
+  const patch: Row = { status };
+  if (note) patch.decision_note = note;
+  const { error } = await supabase.from('leave_requests').update(patch).eq('id', id);
+  fail(error, 'تحديث الإجازة');
+}
+
+const LEAVE_TYPE_COLS =
+  'code, name_ar, category, entitlement_days, entitlement_days_after, after_years, ' +
+  'sick_partial_days, sick_partial_pay_pct, sick_unpaid_days, paid, deducts_from_annual, gender, ' +
+  'min_service_months, once_per_service, requires_attachment, is_active, sort_order';
+
+export async function liveListLeaveTypes(): Promise<LeaveTypeConfig[]> {
+  const { data, error } = await supabase
+    .from('leave_types')
+    .select(LEAVE_TYPE_COLS)
+    .order('sort_order');
+  fail(error, 'تحميل أنواع الإجازات');
+  const n = (v: unknown) => (v == null ? null : Number(v));
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    code: str(r.code),
+    name_ar: str(r.name_ar),
+    category: str(r.category) as LeaveTypeConfig['category'],
+    entitlement_days: n(r.entitlement_days),
+    entitlement_days_after: n(r.entitlement_days_after),
+    after_years: n(r.after_years),
+    sick_partial_days: n(r.sick_partial_days),
+    sick_partial_pay_pct: n(r.sick_partial_pay_pct),
+    sick_unpaid_days: n(r.sick_unpaid_days),
+    paid: r.paid !== false,
+    deducts_from_annual: r.deducts_from_annual === true,
+    gender: r.gender === 'male' || r.gender === 'female' ? r.gender : null,
+    min_service_months: num(r.min_service_months),
+    once_per_service: r.once_per_service === true,
+    requires_attachment: r.requires_attachment === true,
+    is_active: r.is_active !== false,
+    sort_order: num(r.sort_order),
+  }));
+}
+
+export async function liveSaveLeaveType(t: LeaveTypeConfig, isNew: boolean): Promise<void> {
+  const row = { ...t, updated_at: new Date().toISOString() };
+  const { error } = isNew
+    ? await supabase.from('leave_types').insert(row)
+    : await supabase.from('leave_types').update(row).eq('code', t.code);
+  fail(error, 'حفظ نوع الإجازة');
+}
+
+export async function liveLeaveBalance(employeeId: string, asOf: string): Promise<LeaveBalance> {
+  const { data, error } = await supabase.rpc('leave_balance', {
+    p_employee_id: employeeId,
+    p_as_of: asOf,
+  });
+  fail(error, 'تحميل رصيد الإجازات');
+  const b = (data ?? {}) as Row;
+  return {
+    annual_accrued: num(b.annual_accrued),
+    annual_used: num(b.annual_used),
+    annual_pending: num(b.annual_pending),
+    annual_remaining: num(b.annual_remaining),
+    sick_used_this_year: num(b.sick_used_this_year),
+    sick_full_left: num(b.sick_full_left),
+    sick_total_limit: num(b.sick_total_limit),
+  };
 }
 
 /* -------------------------- documents / iqamas ---------------------------- */
@@ -578,6 +654,9 @@ export async function livePayslips(employees: Employee[], period: string): Promi
         gosi_system: s.gosi_system === 'old' ? 'old' : 'new',
         gosi_employee: num(s.gosi_employee),
         manual_deductions: num(s.manual_deductions),
+        unpaid_leave_days: num(s.unpaid_leave_days),
+        sick_deduction_days: num(s.sick_deduction_days),
+        leave_deduction: num(s.leave_deduction),
         gross: num(s.gross),
         total_deductions: num(s.total_deductions),
         net: num(s.net),

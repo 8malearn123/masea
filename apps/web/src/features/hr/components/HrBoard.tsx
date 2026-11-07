@@ -51,6 +51,7 @@ import { ROLE_META } from '@/lib/permissions';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { EmployeeProfile } from '@/features/hr/components/EmployeeProfile';
 import { EmployeeForm } from '@/features/hr/components/EmployeeForm';
+import { LeaveBoard } from '@/features/hr/components/LeaveBoard';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   useAddAdjustment,
@@ -61,7 +62,6 @@ import {
   useEmployees,
   useHouseWorkers,
   useIqamas,
-  useAddLeave,
   useAddPerformance,
   useLeaveRequests,
   usePayrollSettings,
@@ -71,7 +71,6 @@ import {
   useSaveEmployee,
   useTerminateEmployee,
   useSaveHouseWorker,
-  useUpdateLeave,
 } from '@/features/hr/hooks/useHr';
 import {
   ADJUSTMENT_TYPES,
@@ -100,9 +99,6 @@ import {
   DOC_STATUS_TONE,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
-  LEAVE_STATUS_LABEL,
-  LEAVE_STATUS_TONE,
-  LEAVE_TYPE_LABEL,
   SKILL_OPTIONS,
   WORKER_LANGUAGES,
   WORKER_NATIONALITIES,
@@ -117,8 +113,6 @@ import {
   type EmployeeStatus,
   type HouseWorker,
   type IqamaRecord,
-  type LeaveRequest,
-  type LeaveType,
   type Payslip,
   type PerformanceReview,
   TERMINATION_REASON_LABEL,
@@ -177,7 +171,7 @@ export default function HrBoard() {
         />
       )}
       {tab === 'attendance' && <Attendance />}
-      {tab === 'leave' && <Leave employees={employees} />}
+      {tab === 'leave' && <LeaveBoard employees={employees} />}
       {tab === 'payroll' && <Payroll employees={employees} />}
       {tab === 'eos' && <Eos employees={employees} />}
       {tab === 'documents' && <Documents />}
@@ -252,7 +246,7 @@ function Overview({ employees: all }: { employees: Employee[] }) {
 
   const leaveByEmp = new Map<string, number>();
   leave
-    .filter((l) => l.status !== 'rejected')
+    .filter((l) => l.status === 'approved')
     .forEach((l) =>
       leaveByEmp.set(l.employee_name, (leaveByEmp.get(l.employee_name) ?? 0) + l.days),
     );
@@ -543,7 +537,9 @@ function AdminEmployees({
         <div>
           <span className="font-semibold text-navy">{e.full_name}</span>
           {e.employee_no && (
-            <span className="num block text-[11px] text-purple">{e.employee_no}</span>
+            <div className="text-[11px] text-purple">
+              <span className="num">{e.employee_no}</span>
+            </div>
           )}
         </div>
       ),
@@ -866,179 +862,6 @@ function Attendance() {
   );
 }
 
-/* -------------------------------- leave ---------------------------------- */
-function daysBetween(a: string, b: string): number {
-  if (!a || !b) return 0;
-  const d = Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000) + 1;
-  return d > 0 ? d : 0;
-}
-
-function Leave({ employees }: { employees: Employee[] }) {
-  const { can } = usePermissions();
-  const canApprove = can('hr', 'edit') || can('hr', 'approve');
-  const addLeaveMut = useAddLeave();
-  const { data: rows = [], isLoading, isError, refetch } = useLeaveRequests();
-  const update = useUpdateLeave();
-  const [addOpen, setAddOpen] = useState(false);
-
-  function addLeave(l: LeaveRequest) {
-    addLeaveMut.mutate(l, { onSuccess: () => setAddOpen(false) });
-  }
-
-  const columns: Column<LeaveRequest>[] = [
-    {
-      key: 'employee_name',
-      header: 'الموظف',
-      cell: (l) => <span className="font-semibold text-navy">{l.employee_name}</span>,
-    },
-    { key: 'type', header: 'النوع', cell: (l) => LEAVE_TYPE_LABEL[l.type] },
-    {
-      key: 'period',
-      header: 'الفترة',
-      cell: (l) => (
-        <span className="num text-xs">
-          {dateAr(l.from_date)} → {dateAr(l.to_date)}
-        </span>
-      ),
-    },
-    { key: 'days', header: 'الأيام', cell: (l) => <span className="num">{l.days}</span> },
-    {
-      key: 'status',
-      header: 'الحالة',
-      cell: (l) => <Badge tone={LEAVE_STATUS_TONE[l.status]}>{LEAVE_STATUS_LABEL[l.status]}</Badge>,
-    },
-    {
-      key: 'actions',
-      header: '',
-      cell: (l) =>
-        canApprove && l.status === 'pending' ? (
-          <div className="flex gap-1.5">
-            <button
-              type="button"
-              onClick={() => update.mutate({ id: l.id, status: 'approved' })}
-              className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
-            >
-              <CheckCircle2 size={13} /> اعتماد
-            </button>
-            <button
-              type="button"
-              onClick={() => update.mutate({ id: l.id, status: 'rejected' })}
-              className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
-            >
-              <XCircle size={13} /> رفض
-            </button>
-          </div>
-        ) : null,
-    },
-  ];
-
-  return (
-    <div>
-      {canApprove && (
-        <div className="mb-4 flex justify-end">
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus size={16} /> تعيين إجازة لموظف
-          </Button>
-        </div>
-      )}
-      <Table
-        columns={columns}
-        rows={rows}
-        rowKey={(l) => l.id}
-        isLoading={isLoading}
-        isError={isError}
-        onRetry={() => void refetch()}
-        emptyTitle="لا توجد طلبات إجازة"
-      />
-      {addOpen && (
-        <LeaveModal
-          employees={currentEmployees(employees)}
-          onAdd={addLeave}
-          onClose={() => setAddOpen(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function LeaveModal({
-  employees,
-  onAdd,
-  onClose,
-}: {
-  employees: Employee[];
-  onAdd: (l: LeaveRequest) => void;
-  onClose: () => void;
-}) {
-  const [empId, setEmpId] = useState(employees[0]?.id ?? '');
-  const [type, setType] = useState<LeaveType>('annual');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const days = daysBetween(from, to);
-
-  function submit() {
-    const emp = employees.find((e) => e.id === empId);
-    if (!emp || !from || !to || days <= 0) {
-      setError('أكمل بيانات الإجازة (الموظف والتواريخ).');
-      return;
-    }
-    onAdd({
-      id: `l-${Date.now()}`,
-      employee_id: emp.id,
-      employee_name: emp.full_name,
-      type,
-      from_date: from,
-      to_date: to,
-      days,
-      status: 'approved',
-      reason,
-    });
-  }
-
-  return (
-    <Modal open onClose={onClose} title="تعيين إجازة لموظف">
-      <div className="space-y-3">
-        <Select
-          label="الموظف"
-          value={empId}
-          onChange={(e) => setEmpId(e.target.value)}
-          options={employees.map((e) => ({ value: e.id, label: e.full_name }))}
-        />
-        <Select
-          label="نوع الإجازة"
-          value={type}
-          onChange={(e) => setType(e.target.value as LeaveType)}
-          options={(Object.keys(LEAVE_TYPE_LABEL) as LeaveType[]).map((t) => ({
-            value: t,
-            label: LEAVE_TYPE_LABEL[t],
-          }))}
-        />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            label="من تاريخ"
-            type="date"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-          <Input label="إلى تاريخ" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </div>
-        <Input label="السبب (اختياري)" value={reason} onChange={(e) => setReason(e.target.value)} />
-        {days > 0 && (
-          <p className="text-xs text-purple">
-            عدد الأيام: <span className="num font-semibold text-navy">{days}</span>
-          </p>
-        )}
-        {error && <p className="text-xs text-red-600">{error}</p>}
-        <Button onClick={submit} className="w-full">
-          <CalendarCheck size={16} /> تعيين الإجازة
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
 /* -------------------------------- payroll -------------------------------- */
 const PAYROLL_PERIODS = payrollPeriods();
 
@@ -1122,7 +945,7 @@ function Payroll({ employees }: { employees: Employee[] }) {
       cell: (r) => (
         <span
           className="num text-red-600"
-          title={`تأمينات ${sar(r.gosi_employee)} · تغيّب ${sar(r.absence_deduction)} · تأخير ${sar(r.late_deduction)} · جزاءات/سلف ${sar(r.manual_deductions)}`}
+          title={`تأمينات ${sar(r.gosi_employee)} · تغيّب ${sar(r.absence_deduction)} · تأخير ${sar(r.late_deduction)} · إجازات ${sar(r.leave_deduction)} · جزاءات/سلف ${sar(r.manual_deductions)}`}
         >
           {r.total_deductions > 0 ? `-${sar(r.total_deductions)}` : '0.00'}
         </span>
@@ -1331,6 +1154,12 @@ function PayslipModal({
               value={slip.late_deduction > 0 ? sar(slip.late_deduction) : '0.00'}
               tone="text-red-600"
               hint={`${slip.late_minutes} دقيقة`}
+            />
+            <SlipLine
+              label="خصم الإجازات"
+              value={slip.leave_deduction > 0 ? sar(slip.leave_deduction) : '0.00'}
+              tone="text-red-600"
+              hint={`${slip.unpaid_leave_days} يوم بدون راتب · ${slip.sick_deduction_days} يوم مرضية مخفّضة`}
             />
             <SlipLine
               label="جزاءات/سلف معتمدة"

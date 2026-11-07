@@ -81,7 +81,7 @@ describe('HR fixes', () => {
     addLeaveRequest({
       id: 'l-test',
       employee_name: 'سلطان القحطاني',
-      type: 'annual',
+      type: 'unpaid', // no hire date → no annual balance; unpaid has no balance rule
       from_date: '2026-11-10',
       to_date: '2026-11-12',
       days: 3,

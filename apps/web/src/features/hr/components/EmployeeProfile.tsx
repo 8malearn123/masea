@@ -9,12 +9,16 @@ import {
   Plus,
   Upload,
   AlertTriangle,
+  CalendarCheck,
 } from 'lucide-react';
 import { Badge, Button, Card, Input, Modal, Select } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { ROLE_META } from '@/lib/permissions';
 import { expiryStatus } from '@/features/hr/api/hr.api';
 import {
+  useLeaveBalance,
+  useLeaveRequests,
+  useLeaveTypes,
   useAddDocument,
   useAddEmergencyContact,
   useDocuments,
@@ -27,13 +31,15 @@ import {
   DOC_TYPE_OPTIONS,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
+  LEAVE_STATUS_LABEL,
+  LEAVE_STATUS_TONE,
   TERMINATION_REASON_LABEL,
   type Employee,
 } from '@/features/hr/types';
 
 const DOC_TYPES = DOC_TYPE_OPTIONS;
 
-type Tab = 'overview' | 'personal' | 'job' | 'finance' | 'docs' | 'emergency';
+type Tab = 'overview' | 'personal' | 'job' | 'finance' | 'leave' | 'docs' | 'emergency';
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -109,6 +115,7 @@ export function EmployeeProfile({
     { value: 'personal', label: 'البيانات الشخصية', icon: IdCard },
     { value: 'job', label: 'الوظيفية', icon: ShieldCheck },
     { value: 'finance', label: 'الراتب والبنك', icon: Wallet },
+    { value: 'leave', label: 'الإجازات', icon: CalendarCheck },
     { value: 'docs', label: 'المستندات والإقامات', icon: FileText },
     { value: 'emergency', label: 'الطوارئ', icon: Phone },
   ];
@@ -263,6 +270,8 @@ export function EmployeeProfile({
             />
           </div>
         )}
+
+        {tab === 'leave' && <ProfileLeave employee={employee} />}
 
         {tab === 'docs' && (
           <div className="space-y-3">
@@ -428,5 +437,55 @@ export function EmployeeProfile({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Leave tab: balance as of today + this employee's requests. */
+function ProfileLeave({ employee }: { employee: Employee }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: b, isLoading } = useLeaveBalance(employee, today);
+  const { data: all = [] } = useLeaveRequests();
+  const { data: types = [] } = useLeaveTypes();
+  const mine = all.filter((l) =>
+    l.employee_id ? l.employee_id === employee.id : l.employee_name === employee.full_name,
+  );
+  const name = (code: string) => types.find((t) => t.code === code)?.name_ar ?? code;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Field
+          label="المستحق حتى اليوم"
+          value={isLoading || !b ? '…' : `${b.annual_accrued} يوم`}
+        />
+        <Field label="المستخدم" value={isLoading || !b ? '…' : `${b.annual_used} يوم`} />
+        <Field label="الرصيد المتبقي" value={isLoading || !b ? '…' : `${b.annual_remaining} يوم`} />
+        <Field
+          label="المرضية هذا العام"
+          value={isLoading || !b ? '…' : `${b.sick_used_this_year} / ${b.sick_total_limit}`}
+        />
+      </div>
+      {mine.length === 0 ? (
+        <Card className="py-6 text-center text-sm text-purple">لا توجد إجازات مسجلة.</Card>
+      ) : (
+        <ul className="space-y-2">
+          {mine.map((l) => (
+            <li
+              key={l.id}
+              className="flex items-center justify-between rounded-xl border border-navy-50 px-3 py-2"
+            >
+              <div>
+                <p className="text-sm font-semibold text-navy">
+                  {name(l.type)} · <span className="num">{l.days}</span> يوم
+                </p>
+                <p className="num text-[11px] text-purple">
+                  {dateAr(l.from_date)} → {dateAr(l.to_date)}
+                </p>
+              </div>
+              <Badge tone={LEAVE_STATUS_TONE[l.status]}>{LEAVE_STATUS_LABEL[l.status]}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

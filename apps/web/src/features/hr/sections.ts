@@ -35,7 +35,7 @@ export const HR_SECTIONS: { key: HrSection; label: string; icon: LucideIcon; slu
   { key: 'documents', label: 'المستندات', icon: FileText, slug: 'documents' },
   { key: 'performance', label: 'الأداء', icon: Gauge, slug: 'performance' },
   { key: 'visas', label: 'التأشيرات والإقامات', icon: IdCard, slug: 'visas' },
-  { key: 'settings', label: 'إعدادات الرواتب', icon: SlidersHorizontal, slug: 'settings' },
+  { key: 'settings', label: 'الإعدادات', icon: SlidersHorizontal, slug: 'settings' },
 ];
 
 /** slug → section key (for routing). */
