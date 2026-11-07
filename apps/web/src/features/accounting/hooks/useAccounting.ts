@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
+import { payPayrollRun, postPayrollRun } from '@/features/hr/api/hr.api';
+import {
+  buildPayrollEntry,
+  buildPayrollPaymentEntry,
+  totalsFromRun,
+} from '@/features/accounting/data/payroll';
 import {
   addAccount,
   addBankAccount,
@@ -567,5 +573,47 @@ export function useToggleCatalogItem() {
       toast.success(active ? 'تم تفعيل الصنف' : 'تم تعطيل الصنف');
     },
     onError: (e) => toast.error(e.message || 'تعذّر التحديث'),
+  });
+}
+
+/* ---------------- payroll run → ledger (mirror of 0071) ---------------- */
+/** Post the accrual entry of an APPROVED run from its frozen totals. */
+export function usePostPayrollRun() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { period: string; runId: string }>({
+    mutationFn: ({ period, runId }) =>
+      postPayrollRun(period, runId, (_slips, run) =>
+        postPayrollEntry(buildPayrollEntry(totalsFromRun(run), period, null)),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['accounting', 'payroll-posted'] });
+      void qc.invalidateQueries({ queryKey: ['hr', 'payroll-run'] });
+      toast.success('تم ترحيل قيد استحقاق الرواتب');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر ترحيل قيد الرواتب'),
+  });
+}
+
+/** Record the salary transfer (WPS): DR 2130 / CR bank. */
+export function usePayPayrollRun() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    void,
+    Error,
+    { period: string; runId: string; paidOn: string; bankCode: string }
+  >({
+    mutationFn: ({ period, runId, paidOn, bankCode }) =>
+      payPayrollRun(period, runId, paidOn, bankCode, (run) =>
+        postPayrollEntry(buildPayrollPaymentEntry(totalsFromRun(run), period, paidOn, bankCode)),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['hr', 'payroll-run'] });
+      toast.success('تم تسجيل صرف الرواتب');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر تسجيل الصرف'),
   });
 }

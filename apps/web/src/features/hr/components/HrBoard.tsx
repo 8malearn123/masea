@@ -1,34 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   AlertTriangle,
   Award,
   Building2,
   CalendarCheck,
-  CheckCircle2,
-  ChevronDown,
   Clock,
   Coins,
-  Download,
   Link2,
-  FileText,
   Gauge,
-  HandCoins,
   HeartHandshake,
   IdCard,
   Pencil,
-  Play,
   Plus,
   RotateCcw,
   Search,
-  Send,
   TrendingUp,
   UserMinus,
   UserPlus,
   UserRound,
   Users,
-  Wallet,
-  XCircle,
 } from 'lucide-react';
 import { sectionFromSlug } from '@/features/hr/sections';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -42,7 +33,6 @@ import {
   Select,
   SkeletonCard,
   Table,
-  useToast,
   type Column,
 } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
@@ -52,12 +42,10 @@ import { BRANCHES_AR } from '@/lib/funnel';
 import { EmployeeProfile } from '@/features/hr/components/EmployeeProfile';
 import { EmployeeForm } from '@/features/hr/components/EmployeeForm';
 import { LeaveBoard } from '@/features/hr/components/LeaveBoard';
+import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
-  useAddAdjustment,
-  useAdjustments,
   useAttendance,
-  useDecideAdjustment,
   useDocuments,
   useEmployees,
   useHouseWorkers,
@@ -65,7 +53,6 @@ import {
   useAddPerformance,
   useLeaveRequests,
   usePayrollSettings,
-  usePayslips,
   usePerformance,
   useReactivateEmployee,
   useSaveEmployee,
@@ -73,25 +60,18 @@ import {
   useSaveHouseWorker,
 } from '@/features/hr/hooks/useHr';
 import {
-  ADJUSTMENT_TYPES,
   buildEmployee,
   buildHouseWorker,
-  buildWpsCsv,
   computeEos,
   currentEmployees,
   expiryStatus,
   monthlyCost,
-  PAYROLL_CONFIG,
-  payrollPeriods,
   ratingLabel,
   workedHours,
   type EmployeeInput,
   type HouseWorkerInput,
 } from '@/features/hr/api/hr.api';
 import {
-  ADJ_STATUS_LABEL,
-  ADJ_STATUS_TONE,
-  ADJ_TYPE_LABEL,
   ATT_STATUS_LABEL,
   ATT_STATUS_TONE,
   DEPARTMENTS,
@@ -105,7 +85,6 @@ import {
   WORKER_PROFESSIONS,
   WORKER_STATUS_LABEL,
   WORKER_STATUS_TONE,
-  type AdjustmentType,
   type AttendanceRecord,
   type DocStatus,
   type Employee,
@@ -113,7 +92,6 @@ import {
   type EmployeeStatus,
   type HouseWorker,
   type IqamaRecord,
-  type Payslip,
   type PerformanceReview,
   TERMINATION_REASON_LABEL,
   type TerminationReason,
@@ -172,7 +150,7 @@ export default function HrBoard() {
       )}
       {tab === 'attendance' && <Attendance />}
       {tab === 'leave' && <LeaveBoard employees={employees} />}
-      {tab === 'payroll' && <Payroll employees={employees} />}
+      {tab === 'payroll' && <PayrollBoard employees={employees} />}
       {tab === 'eos' && <Eos employees={employees} />}
       {tab === 'documents' && <Documents />}
       {tab === 'performance' && <Performance employees={employees} />}
@@ -859,488 +837,6 @@ function Attendance() {
         emptyTitle="لا يوجد سجل مطابق"
       />
     </div>
-  );
-}
-
-/* -------------------------------- payroll -------------------------------- */
-const PAYROLL_PERIODS = payrollPeriods();
-
-function Payroll({ employees }: { employees: Employee[] }) {
-  const { can } = usePermissions();
-  const editable = can('hr', 'edit');
-  const toast = useToast();
-  const { data: adjustments = [] } = useAdjustments();
-  const { data: settings } = usePayrollSettings(); // engine reads the live config
-  const [period, setPeriod] = useState(PAYROLL_PERIODS[0] ?? '');
-  const [ranPeriod, setRanPeriod] = useState('');
-  // Derived from sources, so approving/rejecting an adjustment updates the run live.
-  const {
-    data: slips,
-    isLoading: slipsLoading,
-    isError: slipsError,
-    refetch: refetchSlips,
-  } = usePayslips(employees, ranPeriod || null, adjustments, settings);
-  const [openSlip, setOpenSlip] = useState<Payslip | null>(null);
-
-  const pendingThisPeriod = adjustments.filter(
-    (a) => a.period === period && a.status === 'pending',
-  ).length;
-
-  const totals = useMemo(() => {
-    const list = slips ?? [];
-    return {
-      net: list.reduce((s, r) => s + r.net, 0),
-      gross: list.reduce((s, r) => s + r.gross, 0),
-      ded: list.reduce((s, r) => s + r.total_deductions, 0),
-      gosi: list.reduce((s, r) => s + r.gosi_employee, 0),
-    };
-  }, [slips]);
-
-  function run() {
-    setRanPeriod(period);
-    if (period === ranPeriod) void refetchSlips();
-    toast.success(
-      `تم تشغيل مسير رواتب ${period} لعدد ${currentEmployees(employees).length} موظف من المصادر`,
-    );
-  }
-
-  function exportWps() {
-    if (!slips) return;
-    const blob = new Blob(['\ufeff', buildWpsCsv(slips)], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `wps-${ranPeriod}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('تم تنزيل ملف حماية الأجور (WPS)');
-  }
-
-  const columns: Column<Payslip>[] = [
-    {
-      key: 'employee_name',
-      header: 'الموظف',
-      cell: (r) => <span className="font-semibold text-navy">{r.employee_name}</span>,
-    },
-    { key: 'basic', header: 'الأساسي', cell: (r) => <span className="num">{sar(r.basic)}</span> },
-    {
-      key: 'overtime',
-      header: 'الإضافي',
-      cell: (r) => (
-        <span className="num text-green-600" title={`${r.overtime_hours} ساعة`}>
-          {r.overtime_amount > 0 ? `+${sar(r.overtime_amount)}` : '—'}
-        </span>
-      ),
-    },
-    {
-      key: 'additions',
-      header: 'إضافات معتمدة',
-      cell: (r) => (
-        <span className="num text-green-600">{r.additions > 0 ? `+${sar(r.additions)}` : '—'}</span>
-      ),
-    },
-    {
-      key: 'deductions',
-      header: 'الاستقطاعات',
-      cell: (r) => (
-        <span
-          className="num text-red-600"
-          title={`تأمينات ${sar(r.gosi_employee)} · تغيّب ${sar(r.absence_deduction)} · تأخير ${sar(r.late_deduction)} · إجازات ${sar(r.leave_deduction)} · جزاءات/سلف ${sar(r.manual_deductions)}`}
-        >
-          {r.total_deductions > 0 ? `-${sar(r.total_deductions)}` : '0.00'}
-        </span>
-      ),
-    },
-    {
-      key: 'net',
-      header: 'الصافي',
-      cell: (r) => <span className="num font-bold text-navy">{sar(r.net)} ر.س</span>,
-    },
-    {
-      key: 'actions',
-      header: '',
-      cell: (r) => (
-        <button
-          type="button"
-          onClick={() => setOpenSlip(r)}
-          className="inline-flex items-center gap-1 rounded-lg bg-navy-50 px-2.5 py-1.5 text-xs font-medium text-navy hover:bg-navy-100"
-        >
-          <ChevronDown size={13} /> تفصيل القسيمة
-        </button>
-      ),
-    },
-  ];
-
-  return (
-    <div className="space-y-5">
-      {/* run controls — salary computed from sources, not typed by hand */}
-      <Card>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-sm font-bold text-navy">
-              <Wallet size={16} /> تشغيل مسير الرواتب
-            </h2>
-            <p className="mt-1 max-w-xl text-xs leading-relaxed text-purple">
-              يُحسب الراتب آليًا من المصادر: الحضور (تغيّب/تأخير/عمل إضافي) + ملف الموظف
-              (الأساسي/البدلات/الجنسية/نظام التأمينات) + التعديلات المعتمدة. لا تُدخل أي أرقام
-              يدويًا.
-            </p>
-          </div>
-          <div className="flex items-end gap-2">
-            <Select
-              label="الشهر"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              options={PAYROLL_PERIODS.map((p) => ({ value: p, label: p }))}
-            />
-            {editable ? (
-              <Button onClick={run}>
-                <Play size={16} /> تشغيل المسير
-              </Button>
-            ) : (
-              <span className="pb-2 text-xs text-purple">عرض فقط</span>
-            )}
-          </div>
-        </div>
-        {pendingThisPeriod > 0 && (
-          <div className="mt-3 flex items-center gap-2 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
-            <AlertTriangle size={16} /> يوجد{' '}
-            <span className="num font-semibold">{pendingThisPeriod}</span> طلب تعديل بانتظار
-            الاعتماد لهذا الشهر — لن يُحتسب في المسير حتى يُعتمد.
-          </div>
-        )}
-      </Card>
-
-      {ranPeriod && (slipsLoading || slipsError) ? (
-        <Table
-          columns={columns}
-          rows={[]}
-          rowKey={(r) => r.employee_id}
-          isLoading={slipsLoading}
-          isError={slipsError}
-          onRetry={() => void refetchSlips()}
-          emptyTitle="لا يوجد مسير رواتب"
-        />
-      ) : !slips ? (
-        <Card className="py-10 text-center">
-          <Wallet size={28} className="mx-auto text-navy-200" />
-          <p className="mt-3 text-sm text-purple">
-            لم يُشغّل المسير بعد. اختر الشهر واضغط «تشغيل المسير» لاحتساب الرواتب من المصادر.
-          </p>
-        </Card>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            <Stat label={`مسير ${ranPeriod}`} value={`${slips.length} موظف`} />
-            <Stat label="إجمالي المستحق" value={sar(totals.gross)} tone="text-green-600" />
-            <Stat label="إجمالي صافي الرواتب" value={sar(totals.net)} tone="text-gold-600" />
-            <Stat label="إجمالي الاستقطاعات" value={sar(totals.ded)} tone="text-red-600" />
-            <Stat label="إجمالي التأمينات (GOSI)" value={sar(totals.gosi)} />
-          </div>
-          {editable && (
-            <div className="flex justify-end">
-              <Button variant="outline" onClick={exportWps}>
-                <Download size={16} /> تنزيل ملف الأجور (WPS)
-              </Button>
-            </div>
-          )}
-          <Table
-            columns={columns}
-            rows={slips}
-            rowKey={(r) => r.employee_id}
-            emptyTitle="لا يوجد مسير رواتب"
-          />
-        </>
-      )}
-
-      <AdjustmentsPanel employees={employees} period={period} editable={editable} />
-
-      <PayslipModal slip={openSlip} period={ranPeriod} onClose={() => setOpenSlip(null)} />
-    </div>
-  );
-}
-
-/* ---- payslip detail (every number traceable to its source) ---- */
-function SlipLine({
-  label,
-  value,
-  tone = 'text-navy',
-  hint,
-}: {
-  label: string;
-  value: string;
-  tone?: string;
-  hint?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between border-b border-navy-50 py-2 text-sm last:border-0">
-      <span className="text-purple">
-        {label}
-        {hint && <span className="text-navy-300 mr-1 text-[11px]">({hint})</span>}
-      </span>
-      <span className={`num font-semibold ${tone}`}>{value}</span>
-    </div>
-  );
-}
-
-function PayslipModal({
-  slip,
-  period,
-  onClose,
-}: {
-  slip: Payslip | null;
-  period: string;
-  onClose: () => void;
-}) {
-  if (!slip) return null;
-  const allowances = slip.housing_allowance + slip.transport_allowance + slip.other_allowance;
-  return (
-    <Modal open onClose={onClose} title={`قسيمة راتب — ${slip.employee_name}`}>
-      <div className="max-h-[72vh] space-y-4 overflow-y-auto pl-1">
-        <div className="flex items-center justify-between rounded-xl bg-navy-50 px-4 py-3 text-sm">
-          <span className="text-purple">
-            الشهر: <span className="num font-semibold text-navy">{period}</span>
-          </span>
-          <span className="text-purple">
-            حضور <span className="num font-semibold text-navy">{slip.present_days}</span> يوم · غياب{' '}
-            <span className="num font-semibold text-red-600">{slip.absent_days}</span> · تأخير{' '}
-            <span className="num font-semibold text-gold-600">{slip.late_minutes}</span> د
-          </span>
-        </div>
-
-        <div>
-          <p className="mb-1 text-xs font-bold text-green-700">المستحقات</p>
-          <div className="rounded-xl border border-navy-100 px-3">
-            <SlipLine label="الراتب الأساسي" value={sar(slip.basic)} tone="text-green-600" />
-            <SlipLine label="البدلات" value={sar(allowances)} tone="text-green-600" />
-            <SlipLine
-              label="العمل الإضافي"
-              value={slip.overtime_amount > 0 ? sar(slip.overtime_amount) : '0.00'}
-              tone="text-green-600"
-              hint={`${slip.overtime_hours} ساعة × ${PAYROLL_CONFIG.overtimeMultiplier}`}
-            />
-            <SlipLine
-              label="تعديلات معتمدة (مكافآت/بدلات)"
-              value={slip.additions > 0 ? sar(slip.additions) : '0.00'}
-              tone="text-green-600"
-            />
-            <SlipLine label="إجمالي المستحق" value={`${sar(slip.gross)} ر.س`} />
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-1 text-xs font-bold text-red-700">الاستقطاعات</p>
-          <div className="rounded-xl border border-navy-100 px-3">
-            <SlipLine
-              label="التأمينات الاجتماعية (GOSI)"
-              value={slip.gosi_employee > 0 ? sar(slip.gosi_employee) : '0.00'}
-              tone="text-red-600"
-              hint={
-                slip.nationality === 'السعودية'
-                  ? slip.gosi_system === 'old'
-                    ? 'النظام القديم'
-                    : 'النظام الجديد'
-                  : 'وافد — معفى'
-              }
-            />
-            <SlipLine
-              label="خصم التغيّب"
-              value={slip.absence_deduction > 0 ? sar(slip.absence_deduction) : '0.00'}
-              tone="text-red-600"
-              hint={`${slip.absent_days} يوم`}
-            />
-            <SlipLine
-              label="خصم التأخير"
-              value={slip.late_deduction > 0 ? sar(slip.late_deduction) : '0.00'}
-              tone="text-red-600"
-              hint={`${slip.late_minutes} دقيقة`}
-            />
-            <SlipLine
-              label="خصم الإجازات"
-              value={slip.leave_deduction > 0 ? sar(slip.leave_deduction) : '0.00'}
-              tone="text-red-600"
-              hint={`${slip.unpaid_leave_days} يوم بدون راتب · ${slip.sick_deduction_days} يوم مرضية مخفّضة`}
-            />
-            <SlipLine
-              label="جزاءات/سلف معتمدة"
-              value={slip.manual_deductions > 0 ? sar(slip.manual_deductions) : '0.00'}
-              tone="text-red-600"
-            />
-            <SlipLine label="إجمالي الاستقطاعات" value={`${sar(slip.total_deductions)} ر.س`} />
-          </div>
-        </div>
-
-        <div className="bg-gold-50 flex items-center justify-between rounded-xl px-4 py-3">
-          <span className="text-sm font-bold text-navy">صافي الراتب</span>
-          <span className="num text-xl font-bold text-gold-600">{sar(slip.net)} ر.س</span>
-        </div>
-
-        <Button variant="outline" className="w-full" onClick={() => window.print()}>
-          <FileText size={16} /> طباعة / حفظ PDF
-        </Button>
-      </div>
-    </Modal>
-  );
-}
-
-/* ---- adjustment requests: submit → HR approves → flows into the run ---- */
-function AdjustmentsPanel({
-  employees,
-  period,
-  editable,
-}: {
-  employees: Employee[];
-  period: string;
-  editable: boolean;
-}) {
-  const { can } = usePermissions();
-  const canApprove = can('hr', 'approve') || can('hr', 'edit');
-  const { data: adjustments = [] } = useAdjustments();
-  const decide = useDecideAdjustment();
-  const [addOpen, setAddOpen] = useState(false);
-
-  const rows = adjustments.filter((a) => a.period === period);
-
-  return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-navy">
-          <HandCoins size={16} /> طلبات التعديل — {period}
-        </h2>
-        {editable && (
-          <Button variant="outline" onClick={() => setAddOpen(true)}>
-            <Send size={15} /> رفع طلب تعديل
-          </Button>
-        )}
-      </div>
-      <p className="mb-3 text-xs leading-relaxed text-purple">
-        يرفع المدير/المشرف طلب مكافأة أو جزاء أو سلفة، ويعتمده مسؤول الموارد البشرية. لا يدخل في
-        المسير إلا الطلب <span className="font-semibold text-green-700">المعتمد</span>.
-      </p>
-      {rows.length === 0 ? (
-        <p className="py-6 text-center text-sm text-purple">لا توجد طلبات تعديل لهذا الشهر.</p>
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((a) => (
-            <li
-              key={a.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-navy-100 px-3 py-2.5 text-sm"
-            >
-              <div className="min-w-0">
-                <span className="font-semibold text-navy">{a.employee_name}</span>
-                <span className="mr-2 text-purple">— {ADJ_TYPE_LABEL[a.type]}</span>
-                {a.reason && <span className="block text-xs text-purple">{a.reason}</span>}
-                <span className="text-navy-300 text-[11px]">طلب: {a.submitted_by}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`num font-semibold ${
-                    a.type === 'penalty' || a.type === 'advance' ? 'text-red-600' : 'text-green-600'
-                  }`}
-                >
-                  {a.type === 'penalty' || a.type === 'advance' ? '-' : '+'}
-                  {sar(a.amount)}
-                </span>
-                <Badge tone={ADJ_STATUS_TONE[a.status]}>{ADJ_STATUS_LABEL[a.status]}</Badge>
-                {canApprove && a.status === 'pending' && (
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => decide.mutate({ id: a.id, status: 'approved' })}
-                      className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
-                    >
-                      <CheckCircle2 size={13} /> اعتماد
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => decide.mutate({ id: a.id, status: 'rejected' })}
-                      className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
-                    >
-                      <XCircle size={13} /> رفض
-                    </button>
-                  </div>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {addOpen && (
-        <AdjustmentModal
-          employees={currentEmployees(employees)}
-          period={period}
-          onClose={() => setAddOpen(false)}
-        />
-      )}
-    </Card>
-  );
-}
-
-function AdjustmentModal({
-  employees,
-  period,
-  onClose,
-}: {
-  employees: Employee[];
-  period: string;
-  onClose: () => void;
-}) {
-  const add = useAddAdjustment();
-  const [empId, setEmpId] = useState(employees[0]?.id ?? '');
-  const [type, setType] = useState<AdjustmentType>('bonus');
-  const [amount, setAmount] = useState(0);
-  const [reason, setReason] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  function submit() {
-    const emp = employees.find((e) => e.id === empId);
-    if (!emp || amount <= 0) {
-      setError('اختر الموظف وأدخل مبلغًا صحيحًا.');
-      return;
-    }
-    add.mutate(
-      {
-        employee_id: emp.id,
-        employee_name: emp.full_name,
-        type,
-        amount,
-        reason,
-        period,
-        submitted_by: 'المدير المباشر',
-      },
-      { onSuccess: onClose },
-    );
-  }
-
-  return (
-    <Modal open onClose={onClose} title={`رفع طلب تعديل — ${period}`}>
-      <div className="space-y-3">
-        <Select
-          label="الموظف"
-          value={empId}
-          onChange={(e) => setEmpId(e.target.value)}
-          options={employees.map((e) => ({ value: e.id, label: e.full_name }))}
-        />
-        <Select
-          label="نوع التعديل"
-          value={type}
-          onChange={(e) => setType(e.target.value as AdjustmentType)}
-          options={ADJUSTMENT_TYPES.map((t) => ({ value: t, label: ADJ_TYPE_LABEL[t] }))}
-        />
-        <Input
-          label="المبلغ (ر.س)"
-          type="number"
-          min={0}
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-        />
-        <Input label="السبب" value={reason} onChange={(e) => setReason(e.target.value)} />
-        {error && <p className="text-xs text-red-600">{error}</p>}
-        <Button onClick={submit} className="w-full">
-          <Send size={16} /> رفع الطلب للاعتماد
-        </Button>
-      </div>
-    </Modal>
   );
 }
 

@@ -4,6 +4,9 @@ import { isDemoMode } from '@/shared/lib/demoBackend';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
+  approvePayrollRun,
+  calculatePayrollRun,
+  getPayrollRun,
   computePayslips,
   createAdjustment,
   createEmergencyContact,
@@ -474,4 +477,47 @@ export function useLeaveBalances(employees: Employee[], asOf: string) {
     enabled: employees.length > 0,
     staleTime: 30_000,
   });
+}
+
+/* ------------------------------ payroll runs ----------------------------- */
+const RUN_KEY = ['hr', 'payroll-run'] as const;
+
+/** The run of a period (snapshot + totals), or null if not calculated yet. */
+export function usePayrollRun(period: string) {
+  return useQuery({
+    queryKey: [...RUN_KEY, period],
+    queryFn: () => getPayrollRun(period),
+    enabled: !!period,
+    staleTime: 15_000,
+  });
+}
+
+function useRunMutation<V>(fn: (v: V) => Promise<void>, ok: string, fail: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, V>({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: RUN_KEY });
+      void qc.invalidateQueries({ queryKey: ADJ_KEY });
+      toast.success(ok);
+    },
+    onError: (e) => toast.error(e.message || fail),
+  });
+}
+
+export function useCalculateRun() {
+  return useRunMutation<string>(
+    (period) => calculatePayrollRun(period),
+    'تم احتساب المسير من المصادر وتجميد لقطته',
+    'تعذّر احتساب المسير',
+  );
+}
+
+export function useApproveRun() {
+  return useRunMutation<{ period: string; runId: string }>(
+    ({ period, runId }) => approvePayrollRun(period, runId),
+    'تم اعتماد المسير — أصبح مجمّدًا',
+    'تعذّر اعتماد المسير',
+  );
 }

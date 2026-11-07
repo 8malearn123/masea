@@ -466,7 +466,57 @@ export interface Payslip {
   unpaid_leave_days: number;
   sick_deduction_days: number;
   leave_deduction: number;
+  /** approved advances (recovered → 1160) and penalties (workers' fund → 2170), 0071 */
+  advance_deductions: number;
+  penalty_deductions: number;
+  /** employer GOSI share (expense 5200) */
+  gosi_employer: number;
+  /** days employed in the month (hired / terminated mid-month → prorated) */
+  eligible_days: number;
+  // frozen snapshot fields (payroll_runs / payslips) — for WPS and the printed slip
+  employee_no?: string;
+  id_number?: string;
+  iban?: string;
+  bank_name?: string;
   gross: number;
   total_deductions: number;
   net: number;
 }
+
+/* ------------------------------ payroll runs ----------------------------- */
+/** calculated (snapshot, editable by recalculation) → approved (frozen) → paid. */
+export type PayrollRunStatus = 'calculated' | 'approved' | 'paid';
+
+export interface PayrollRun {
+  id: string;
+  period: string;
+  status: PayrollRunStatus;
+  run_by: string | null;
+  run_by_name: string;
+  calculated_at: string | null;
+  approved_by_name: string;
+  approved_at: string | null;
+  posted_at: string | null;
+  paid_at: string | null;
+  employee_count: number;
+  total_gross: number;
+  total_deductions: number;
+  total_net: number;
+  /** expense: gross − absence − late − leave */
+  total_earnings: number;
+  total_gosi_employee: number;
+  total_gosi_employer: number;
+  total_advances: number;
+  total_penalties: number;
+}
+
+export const RUN_STATUS_LABEL: Record<PayrollRunStatus, string> = {
+  calculated: 'محتسب — بانتظار الاعتماد',
+  approved: 'معتمد ومجمّد',
+  paid: 'مصروف',
+};
+export const RUN_STATUS_TONE: Record<PayrollRunStatus, BadgeTone> = {
+  calculated: 'gold',
+  approved: 'success',
+  paid: 'navy',
+};

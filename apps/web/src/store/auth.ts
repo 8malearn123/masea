@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import type { UserProfile } from '@masiat/shared';
 import { supabase } from '@/lib/supabase';
 import { isBackendConfigured } from '@/shared/lib/env';
+import { queryClient } from '@/lib/queryClient';
 import {
   clearDemo,
   demoProfile,
@@ -79,5 +80,7 @@ export const useAuth = create<AuthState>((set) => ({
     clearDemo();
     await supabase.auth.signOut();
     set({ session: null, profile: null });
+    // the next user in this tab must never see the previous user's cached data
+    queryClient.clear();
   },
 }));

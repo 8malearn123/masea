@@ -3,6 +3,7 @@ import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { scopeToViewerBranch } from '@/lib/branchScope';
 import { recordAudit } from '@/shared/lib/auditTrail';
+import { roleCan, type RoleCode } from '@/lib/permissions';
 import { useAuth } from '@/store/auth';
 import { FALLBACK_WORKERS } from '@/lib/funnel';
 import { DEMO_ACCOUNTS } from '@/lib/demo';
@@ -34,6 +35,7 @@ import type {
   PayrollAdjustment,
   PayrollRow,
   Payslip,
+  PayrollRun,
   PerformanceReview,
   TerminationReason,
 } from '@/features/hr/types';
@@ -786,18 +788,21 @@ export function calculatePayslip(
   leaveTypes: LeaveTypeConfig[] = DEFAULT_LEAVE_TYPES,
 ): Payslip {
   const cfg = PAYROLL_CONFIG;
-  const basic = e.base_salary;
+  // partial month (0071): hired / terminated inside the period → pay × days ÷ 30
+  const { eligible, factor } = employmentFactor(e, period, cfg.standardWorkDays);
+  const basic = round2(e.base_salary * factor);
   // the employee file's split (0069); legacy records keep the total in housing
-  const housing = e.housing_allowance ?? e.allowances;
-  const transport = e.housing_allowance !== undefined ? (e.transport_allowance ?? 0) : 0;
-  const other = e.housing_allowance !== undefined ? (e.other_allowance ?? 0) : 0;
+  const housing = round2((e.housing_allowance ?? e.allowances) * factor);
+  const transport =
+    e.housing_allowance !== undefined ? round2((e.transport_allowance ?? 0) * factor) : 0;
+  const other = e.housing_allowance !== undefined ? round2((e.other_allowance ?? 0) * factor) : 0;
 
   const saudi = e.nationality === 'السعودية';
   const gosiSystem: 'old' | 'new' = e.gosi_system ?? 'new';
 
   const presentDays = Math.max(0, cfg.standardWorkDays - e.absence_days);
-  const dailyWage = round2(basic / cfg.standardWorkDays);
-  const hourly = round2(basic / (cfg.standardWorkDays * cfg.dailyHours));
+  const dailyWage = round2(e.base_salary / cfg.standardWorkDays);
+  const hourly = round2(e.base_salary / (cfg.standardWorkDays * cfg.dailyHours));
 
   const overtimeHours = e.overtime_hours ?? 0;
   const overtimeAmount = round2(overtimeHours * hourly * cfg.overtimeMultiplier);
@@ -811,9 +816,9 @@ export function calculatePayslip(
     (a) => a.employee_id === e.id && a.period === period && a.status === 'approved',
   );
   const additions = mine.filter((a) => ADJ_IS_ADDITION[a.type]).reduce((s, a) => s + a.amount, 0);
-  const manualDeductions = mine
-    .filter((a) => !ADJ_IS_ADDITION[a.type])
-    .reduce((s, a) => s + a.amount, 0);
+  const advances = mine.filter((a) => a.type === 'advance').reduce((s, a) => s + a.amount, 0);
+  const penalties = mine.filter((a) => a.type === 'penalty').reduce((s, a) => s + a.amount, 0);
+  const manualDeductions = advances + penalties;
 
   // GOSI: base = basic + housing, capped; employee rate by system; expat = 0
   const gosiBase = Math.min(basic + housing, GOSI_CONFIG.ceiling);
@@ -823,6 +828,7 @@ export function calculatePayslip(
       : GOSI_CONFIG.saudiNewEmployee
     : 0;
   const gosiEmployee = round2(gosiBase * gosiRate);
+  const gosiEmployer = employerGosiFor(basic, housing, saudi, gosiSystem);
 
   // approved leave: unpaid days + sick days in the reduced-pay tiers (0070)
   const leave = leaveDeductionDays(e, period, leaves, leaveTypes);
@@ -854,6 +860,10 @@ export function calculatePayslip(
     gosi_system: gosiSystem,
     gosi_employee: gosiEmployee,
     manual_deductions: round2(manualDeductions),
+    advance_deductions: round2(advances),
+    penalty_deductions: round2(penalties),
+    gosi_employer: gosiEmployer,
+    eligible_days: eligible,
     unpaid_leave_days: leave.unpaid_days,
     sick_deduction_days: leave.sick_deduction_days,
     leave_deduction: leaveDeduction,
@@ -861,6 +871,34 @@ export function calculatePayslip(
     total_deductions: totalDeductions,
     net,
   };
+}
+
+/** Days employed in a period and the pay factor (1 = full month), as in 0071. */
+export function employmentFactor(
+  e: Employee,
+  period: string,
+  standardDays: number,
+): { eligible: number; factor: number } {
+  const start = `${period}-01`;
+  const endD = new Date(`${start}T00:00:00Z`);
+  endD.setUTCMonth(endD.getUTCMonth() + 1);
+  endD.setUTCDate(0);
+  const end = endD.toISOString().slice(0, 10);
+  const monthDays = endD.getUTCDate();
+  const from = e.join_date && e.join_date > start ? e.join_date : start;
+  const to = e.termination_date && e.termination_date < end ? e.termination_date : end;
+  const eligible = to < from ? 0 : daysInclusive(from, to);
+  return { eligible, factor: eligible >= monthDays ? 1 : Math.min(eligible / standardDays, 1) };
+}
+
+/** Employees paid in a period: hired by its end, not terminated before its start. */
+export function periodEmployees(employees: Employee[], period: string): Employee[] {
+  const start = `${period}-01`;
+  return employees.filter((e) => {
+    const hiredBy = !e.join_date || e.join_date.slice(0, 7) <= period;
+    const stillThere = e.status !== 'terminated' || (e.termination_date ?? '') >= start;
+    return hiredBy && stillThere;
+  });
 }
 
 /** Run the full payroll for a period — one payslip per active employee. */
@@ -871,9 +909,9 @@ export function runPayroll(
   leaves: LeaveRequest[] = [],
   leaveTypes: LeaveTypeConfig[] = DEFAULT_LEAVE_TYPES,
 ): Payslip[] {
-  return employees
-    .filter((e) => e.status !== 'terminated')
-    .map((e) => calculatePayslip(e, period, adjustments, leaves, leaveTypes));
+  return periodEmployees(employees, period).map((e) =>
+    calculatePayslip(e, period, adjustments, leaves, leaveTypes),
+  );
 }
 
 /** Payslips for a period: calculate_payslip() on the backend, the mirror engine in demo. */
@@ -884,23 +922,6 @@ export async function computePayslips(
 ): Promise<Payslip[]> {
   if (!isDemoMode()) return live.livePayslips(employees, period);
   return runPayroll(employees, period, adjustments, LEAVE, LEAVE_TYPES);
-}
-
-/** WPS-style payroll file (CSV) — bank, IBAN, basic, allowances, deductions, net. */
-export function buildWpsCsv(slips: Payslip[]): string {
-  const header = ['الموظف', 'الجنسية', 'الأساسي', 'البدلات', 'الإضافي', 'الاستقطاعات', 'الصافي'];
-  const lines = slips.map((s) =>
-    [
-      s.employee_name,
-      s.nationality,
-      s.basic,
-      s.housing_allowance + s.transport_allowance + s.other_allowance + s.additions,
-      s.overtime_amount,
-      s.total_deductions,
-      s.net,
-    ].join(','),
-  );
-  return [header.join(','), ...lines].join('\n');
 }
 
 /* --------------------- payroll adjustment requests ----------------------- */
@@ -947,6 +968,7 @@ export async function listAdjustments(): Promise<PayrollAdjustment[]> {
 
 export type NewAdjustmentInput = Omit<PayrollAdjustment, 'id' | 'status'>;
 export function addAdjustment(input: NewAdjustmentInput): PayrollAdjustment {
+  assertPeriodOpen(input.period);
   const a: PayrollAdjustment = { ...input, id: `adj-${Date.now()}`, status: 'pending' };
   ADJUSTMENTS.unshift(a);
   return a;
@@ -960,6 +982,7 @@ export async function decideAdjustment(
   status: Exclude<AdjustmentStatus, 'pending'>,
 ): Promise<void> {
   const local = ADJUSTMENTS.find((a) => a.id === id);
+  if (local && isDemoMode()) assertPeriodOpen(local.period);
   if (local) local.status = status; // keep the demo store in sync with the optimistic update
   if (isDemoMode() || isDemoId(id)) return;
   const { error } = await supabase
@@ -1317,4 +1340,165 @@ export type HouseWorkerInput = Omit<HouseWorker, 'id'>;
 
 export function buildHouseWorker(input: HouseWorkerInput): HouseWorker {
   return { ...input, id: `w-${Date.now()}` };
+}
+
+/* ============================ Payroll runs (0071) =========================
+ * calculate (frozen snapshot) → approve by someone else (four eyes) → post to
+ * the ledger → pay. Demo mirror of calculate_payroll_run / approve_payroll_run /
+ * post_payroll_run / pay_payroll_run with the same rules and messages.
+ * ========================================================================= */
+interface DemoRun {
+  run: PayrollRun;
+  slips: Payslip[];
+}
+const RUNS = new Map<string, DemoRun>();
+
+/** Same as guard_adjustment_period (0071): an approved month takes no new adjustments. */
+export function assertPeriodOpen(period: string): void {
+  const r = RUNS.get(period)?.run;
+  if (r && r.status !== 'calculated')
+    throw new Error(`مسير ${period} معتمد — ارفع التعديل على الشهر التالي`);
+}
+
+function actor(): { id: string; name: string } {
+  const p = useAuth.getState().profile;
+  return { id: p?.id ?? 'anon', name: p?.full_name ?? '—' };
+}
+
+/** Run totals — the figures accounting posts from (never the individual slips). */
+export function runTotals(
+  slips: Payslip[],
+): Omit<
+  PayrollRun,
+  | 'id'
+  | 'period'
+  | 'status'
+  | 'run_by'
+  | 'run_by_name'
+  | 'calculated_at'
+  | 'approved_by_name'
+  | 'approved_at'
+  | 'posted_at'
+  | 'paid_at'
+> {
+  const sum = (f: (p: Payslip) => number) => round2(slips.reduce((s, p) => s + f(p), 0));
+  return {
+    employee_count: slips.length,
+    total_gross: sum((p) => p.gross),
+    total_deductions: sum((p) => p.total_deductions),
+    total_net: sum((p) => p.net),
+    total_earnings: sum(
+      (p) => p.gross - p.absence_deduction - p.late_deduction - p.leave_deduction,
+    ),
+    total_gosi_employee: sum((p) => p.gosi_employee),
+    total_gosi_employer: sum((p) => p.gosi_employer),
+    total_advances: sum((p) => p.advance_deductions),
+    total_penalties: sum((p) => p.penalty_deductions),
+  };
+}
+
+function snapshot(e: Employee, s: Payslip): Payslip {
+  const out: Payslip = { ...s };
+  if (e.employee_no) out.employee_no = e.employee_no;
+  const idNo = e.national_id ?? e.iqama_no;
+  if (idNo) out.id_number = idNo;
+  if (e.iban) out.iban = e.iban;
+  if (e.bank_name) out.bank_name = e.bank_name;
+  return out;
+}
+
+export async function getPayrollRun(
+  period: string,
+): Promise<{ run: PayrollRun; slips: Payslip[] } | null> {
+  if (!isDemoMode()) return live.liveGetPayrollRun(period);
+  const r = RUNS.get(period);
+  if (!r) return null;
+  // company totals: hr.manage or accounting only (payruns_read, 0071)
+  const role = useAuth.getState().profile?.role as RoleCode | undefined;
+  if (role && !roleCan(role, 'hr', 'manage') && !roleCan(role, 'accounting', 'view')) return null;
+  // a branch-scoped viewer sees only his branch's slips (payslips_read, 0071)
+  const visible = new Set(demoEmployees().map((e) => e.id));
+  // accounting posts from the totals and never opens individual slips
+  const slips = role && !roleCan(role, 'hr', 'view') ? [] : r.slips;
+  return { run: { ...r.run }, slips: slips.filter((p) => visible.has(p.employee_id)) };
+}
+
+export async function calculatePayrollRun(period: string): Promise<void> {
+  if (!isDemoMode()) return live.liveCalculateRun(period);
+  const existing = RUNS.get(period);
+  if (existing && existing.run.status !== 'calculated')
+    throw new Error(`مسير ${period} معتمد — التصحيح يكون بتعديل في الشهر التالي`);
+  const me = actor();
+  const slips = runPayroll(
+    EMPLOYEES.map((e) => ({ ...e })),
+    period,
+    ADJUSTMENTS,
+    LEAVE,
+    LEAVE_TYPES,
+  ).map((s) => snapshot(EMPLOYEES.find((e) => e.id === s.employee_id)!, s));
+  RUNS.set(period, {
+    slips,
+    run: {
+      id: existing?.run.id ?? `run-${period}`,
+      period,
+      status: 'calculated',
+      run_by: me.id,
+      run_by_name: me.name,
+      calculated_at: new Date().toISOString(),
+      approved_by_name: '',
+      approved_at: null,
+      posted_at: null,
+      paid_at: null,
+      ...runTotals(slips),
+    },
+  });
+}
+
+export async function approvePayrollRun(period: string, runId: string): Promise<void> {
+  if (!isDemoMode()) return live.liveApproveRun(runId);
+  const r = RUNS.get(period);
+  if (!r) throw new Error('مسير الرواتب غير موجود');
+  if (r.run.status !== 'calculated') throw new Error('المسير ليس بانتظار الاعتماد');
+  const me = actor();
+  if (r.run.run_by === me.id)
+    throw new Error('لا يعتمد المسيرَ من أعدّه — يعتمده شخص آخر (مبدأ الأربع أعين)');
+  r.run = {
+    ...r.run,
+    status: 'approved',
+    approved_by_name: me.name,
+    approved_at: new Date().toISOString(),
+  };
+}
+
+/** Accounting: accrual entry from the frozen run (live: post_payroll_run). */
+export async function postPayrollRun(
+  period: string,
+  runId: string,
+  postEntry: (slips: Payslip[], run: PayrollRun) => void,
+): Promise<void> {
+  if (!isDemoMode()) return live.livePostRun(runId);
+  const r = RUNS.get(period);
+  if (!r) throw new Error('مسير الرواتب غير موجود');
+  if (r.run.status === 'calculated') throw new Error('لا يُرحَّل إلا مسير معتمد');
+  if (r.run.posted_at) return;
+  postEntry(r.slips, r.run);
+  r.run = { ...r.run, posted_at: new Date().toISOString() };
+}
+
+/** Accounting: salaries transferred (WPS) — settles 2130 from a bank account. */
+export async function payPayrollRun(
+  period: string,
+  runId: string,
+  paidOn: string,
+  bankCode: string,
+  postEntry: (run: PayrollRun) => void,
+): Promise<void> {
+  if (!isDemoMode()) return live.livePayRun(runId, paidOn, bankCode);
+  const r = RUNS.get(period);
+  if (!r) throw new Error('مسير الرواتب غير موجود');
+  if (!r.run.posted_at) throw new Error('رحّل قيد الاستحقاق أولاً');
+  if (r.run.status === 'paid') return;
+  if (!bankCode.startsWith('111')) throw new Error('اختر حساب بنك أو صندوق');
+  postEntry(r.run);
+  r.run = { ...r.run, status: 'paid', paid_at: paidOn };
 }

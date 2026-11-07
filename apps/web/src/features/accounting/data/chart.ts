@@ -138,6 +138,22 @@ export const CHART: Account[] = [
     normal_balance: 'debit',
   },
   {
+    code: '1160',
+    name_ar: 'سلف الموظفين',
+    type: 'asset',
+    parent_code: '1100',
+    is_postable: true,
+    normal_balance: 'debit',
+  },
+  {
+    code: '2170',
+    name_ar: 'غرامات الموظفين (لصالح العمال)',
+    type: 'liability',
+    parent_code: '2100',
+    is_postable: true,
+    normal_balance: 'credit',
+  },
+  {
     code: '2110',
     name_ar: 'الذمم الدائنة (الموردون/المكاتب الخارجية)',
     type: 'liability',

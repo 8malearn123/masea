@@ -33,6 +33,7 @@ import {
   type PayrollAdjustment,
   type AdjustmentType,
   type Payslip,
+  type PayrollRun,
   type PerformanceReview,
   type WorkerStatus,
 } from '@/features/hr/types';
@@ -657,6 +658,10 @@ export async function livePayslips(employees: Employee[], period: string): Promi
         unpaid_leave_days: num(s.unpaid_leave_days),
         sick_deduction_days: num(s.sick_deduction_days),
         leave_deduction: num(s.leave_deduction),
+        advance_deductions: num(s.advance_deductions),
+        penalty_deductions: num(s.penalty_deductions),
+        gosi_employer: num(s.gosi_employer),
+        eligible_days: num(s.eligible_days),
         gross: num(s.gross),
         total_deductions: num(s.total_deductions),
         net: num(s.net),
@@ -730,4 +735,113 @@ export async function liveSaveWorker(w: HouseWorker, isNew: boolean): Promise<Ho
   const { error } = await supabase.from('worker_profiles').update(row).eq('id', w.id);
   fail(error, 'تحديث العاملة');
   return w;
+}
+
+/* ------------------------------ payroll runs ------------------------------ */
+export async function liveGetPayrollRun(
+  period: string,
+): Promise<{ run: PayrollRun; slips: Payslip[] } | null> {
+  const { data, error } = await supabase
+    .from('payroll_runs')
+    .select('*')
+    .eq('period', period)
+    .is('branch_id', null)
+    .maybeSingle();
+  fail(error, 'تحميل المسير');
+  if (!data) return null;
+  const r = data as Row;
+  const ids = [str(r.run_by), str(r.approved_by)].filter(Boolean);
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data: u } = await supabase.rpc('user_display_names', { p_ids: ids });
+    ((u ?? []) as Row[]).forEach((x) => names.set(str(x.id), str(x.full_name)));
+  }
+  const run: PayrollRun = {
+    id: str(r.id),
+    period: str(r.period),
+    status: r.status === 'paid' ? 'paid' : r.status === 'approved' ? 'approved' : 'calculated',
+    run_by: (r.run_by as string | null) ?? null,
+    run_by_name: names.get(str(r.run_by)) ?? '—',
+    calculated_at: (r.calculated_at as string | null) ?? null,
+    approved_by_name: names.get(str(r.approved_by)) ?? '',
+    approved_at: (r.approved_at as string | null) ?? null,
+    posted_at: (r.posted_at as string | null) ?? null,
+    paid_at: (r.paid_at as string | null) ?? null,
+    employee_count: num(r.employee_count),
+    total_gross: num(r.total_gross),
+    total_deductions: num(r.total_deductions),
+    total_net: num(r.total_net),
+    total_earnings: num(r.total_earnings),
+    total_gosi_employee: num(r.total_gosi_employee),
+    total_gosi_employer: num(r.total_gosi_employer),
+    total_advances: num(r.total_advances),
+    total_penalties: num(r.total_penalties),
+  };
+  // payslips: RLS returns only what the viewer may see (none for accounting)
+  const { data: ps, error: e2 } = await supabase
+    .from('payslips')
+    .select('*')
+    .eq('run_id', run.id)
+    .order('employee_name');
+  fail(e2, 'تحميل القسائم');
+  const slips = ((ps ?? []) as Row[]).map((p) => {
+    const slip: Payslip = {
+      employee_id: str(p.employee_id),
+      employee_name: str(p.employee_name),
+      nationality: str(p.nationality),
+      basic: num(p.basic),
+      housing_allowance: num(p.housing_allowance),
+      transport_allowance: num(p.transport_allowance),
+      other_allowance: num(p.other_allowance),
+      present_days: num(p.present_days),
+      absent_days: num(p.absent_days),
+      late_count: 0,
+      late_minutes: num(p.late_minutes),
+      overtime_hours: num(p.overtime_hours),
+      overtime_amount: num(p.overtime_amount),
+      additions: num(p.additions),
+      absence_deduction: num(p.absence_deduction),
+      late_deduction: num(p.late_deduction),
+      gosi_system: p.gosi_system === 'old' ? 'old' : 'new',
+      gosi_employee: num(p.gosi_employee),
+      manual_deductions: num(p.manual_deductions),
+      unpaid_leave_days: num(p.unpaid_leave_days),
+      sick_deduction_days: num(p.sick_deduction_days),
+      leave_deduction: num(p.leave_deduction),
+      advance_deductions: num(p.advance_deductions),
+      penalty_deductions: num(p.penalty_deductions),
+      gosi_employer: num(p.gosi_employer),
+      eligible_days: num(p.eligible_days),
+      gross: num(p.gross),
+      total_deductions: num(p.total_deductions),
+      net: num(p.net),
+    };
+    if (p.employee_no) slip.employee_no = str(p.employee_no);
+    if (p.id_number) slip.id_number = str(p.id_number);
+    if (p.iban) slip.iban = str(p.iban);
+    if (p.bank_name) slip.bank_name = str(p.bank_name);
+    return slip;
+  });
+  return { run, slips };
+}
+
+export async function liveCalculateRun(period: string): Promise<void> {
+  const { error } = await supabase.rpc('calculate_payroll_run', { p_period: period });
+  fail(error, 'احتساب المسير');
+}
+export async function liveApproveRun(runId: string): Promise<void> {
+  const { error } = await supabase.rpc('approve_payroll_run', { p_run_id: runId });
+  fail(error, 'اعتماد المسير');
+}
+export async function livePostRun(runId: string): Promise<void> {
+  const { error } = await supabase.rpc('post_payroll_run', { p_run_id: runId });
+  fail(error, 'ترحيل قيد الرواتب');
+}
+export async function livePayRun(runId: string, paidOn: string, bankCode: string): Promise<void> {
+  const { error } = await supabase.rpc('pay_payroll_run', {
+    p_run_id: runId,
+    p_paid_on: paidOn,
+    p_bank_code: bankCode,
+  });
+  fail(error, 'تسجيل صرف الرواتب');
 }
