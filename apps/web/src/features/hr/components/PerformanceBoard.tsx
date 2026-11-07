@@ -367,9 +367,11 @@ function CriteriaTable({ criteria }: { criteria: PerfCriterionScore[] }) {
                   {c.source !== 'manual' && ` — ${autoDetail(c.source, c.detail)}`}
                 </p>
               </td>
-              <td className="num px-3 py-2">{c.weight}</td>
-              <td className="num px-3 py-2 font-semibold">
-                {c.score === null ? 'لا يُحتسب' : `${c.score}٪`}
+              <td className="px-3 py-2">
+                <span className="num">{c.weight}</span>
+              </td>
+              <td className="px-3 py-2 font-semibold">
+                <span className="num">{c.score === null ? 'لا يُحتسب' : `${c.score}٪`}</span>
               </td>
             </tr>
           ))}

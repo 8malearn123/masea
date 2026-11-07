@@ -328,6 +328,22 @@ const CONFIG: ConfigItem[] = [
     unit: 'يوم',
     sort_order: 41,
   },
+  {
+    key: 'saudization_full_wage',
+    label_ar: 'أجر السعودي الأدنى ليُحتسب كاملاً في نطاقات',
+    grp: 'الموارد البشرية',
+    value: 4000,
+    unit: 'ريال',
+    sort_order: 42,
+  },
+  {
+    key: 'saudization_half_weight',
+    label_ar: 'وزن السعودي الأقل أجرًا في نطاقات',
+    grp: 'الموارد البشرية',
+    value: 0.5,
+    unit: 'موظف',
+    sort_order: 43,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;

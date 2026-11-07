@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   CalendarCheck,
   Clock,
   FileText,
@@ -22,6 +23,7 @@ export type HrSection =
   | 'documents'
   | 'performance'
   | 'visas'
+  | 'reports'
   | 'settings';
 
 /** HR sections — surfaced as primary sidebar links under «الموارد البشرية». */
@@ -35,6 +37,7 @@ export const HR_SECTIONS: { key: HrSection; label: string; icon: LucideIcon; slu
   { key: 'documents', label: 'المستندات', icon: FileText, slug: 'documents' },
   { key: 'performance', label: 'الأداء', icon: Gauge, slug: 'performance' },
   { key: 'visas', label: 'التأشيرات والإقامات', icon: IdCard, slug: 'visas' },
+  { key: 'reports', label: 'تقارير الموارد البشرية', icon: BarChart3, slug: 'reports' },
   { key: 'settings', label: 'الإعدادات', icon: SlidersHorizontal, slug: 'settings' },
 ];
 

@@ -43,6 +43,7 @@ import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
 import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
 import { EosBoard } from '@/features/hr/components/EosBoard';
 import { PerformanceBoard } from '@/features/hr/components/PerformanceBoard';
+import { HrReports } from '@/features/hr/components/HrReports';
 import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
@@ -141,6 +142,7 @@ export default function HrBoard() {
       {tab === 'documents' && <DocumentsRegister />}
       {tab === 'performance' && <PerformanceBoard employees={employees} />}
       {tab === 'visas' && <IqamasVisasBoard />}
+      {tab === 'reports' && <HrReports />}
       {tab === 'settings' && <PayrollSettings />}
     </div>
   );

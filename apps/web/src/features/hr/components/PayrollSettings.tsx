@@ -32,6 +32,7 @@ import { AttendanceSettings } from '@/features/hr/components/AttendanceSettings'
 import { DocAlertSettings } from '@/features/hr/components/DocumentsBoard';
 import { HrListsSettings } from '@/features/hr/components/HrListsSettings';
 import { PerfSettings } from '@/features/hr/components/PerfSettings';
+import { NitaqatSettings } from '@/features/hr/components/NitaqatSettings';
 
 /* ------------------------------- helpers --------------------------------- */
 type Errors<T> = Partial<Record<keyof T, string>>;
@@ -153,6 +154,8 @@ export default function PayrollSettings() {
       <DocAlertSettings editable={canManage} />
 
       <PerfSettings editable={canManage} />
+
+      <NitaqatSettings editable={canManage} />
 
       <HrListsSettings editable={canManage} />
 

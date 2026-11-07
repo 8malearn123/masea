@@ -735,3 +735,40 @@ export const LOOKUP_SCOPE_LABEL: Record<LookupScope, string> = {
   worker: 'للعمالة',
   both: 'للكل',
 };
+
+/* ------------------------------ reports (0077) ----------------------------- */
+/** One employee in a report period — hr_report_rows. */
+export interface HrReportRow {
+  employee_id: string;
+  full_name: string;
+  branch: string;
+  department: string;
+  job_title: string;
+  nationality: string;
+  is_saudi: boolean;
+  counts_saudization: boolean;
+  /** basic + housing — the wage Nitaqat counts */
+  nitaqat_wage: number;
+  /** status at the end of the period */
+  status: 'active' | 'terminated';
+  hire_date: string | null;
+  termination_date: string | null;
+  termination_reason: string | null;
+  /** gross + employer GOSI in the period; null = no access to salaries */
+  cost: number | null;
+  /** part of the cost estimated (months without an approved payroll) */
+  cost_estimated: boolean;
+  present_days: number;
+  late_days: number;
+  absent_days: number;
+  late_minutes: number;
+  leave_days: number;
+}
+
+export interface NitaqatBand {
+  code: string;
+  name_ar: string;
+  min_pct: number;
+  tone: 'success' | 'gold' | 'danger' | 'navy';
+  is_active: boolean;
+}
