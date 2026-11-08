@@ -13,14 +13,12 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Badge, Card } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
-import {
-  useDocuments,
-  useEmployees,
-  useIqamas,
-  useLeaveRequests,
-  usePerformance,
-} from '@/features/hr/hooks/useHr';
-import { expiryStatus, monthlyCost } from '@/features/hr/api/hr.api';
+import { useEmployees, useLeaveRequests } from '@/features/hr/hooks/useHr';
+import { usePerformanceReviews } from '@/features/hr/hooks/usePerformance';
+import { currentEmployees, monthlyCost } from '@/features/hr/api/hr.api';
+import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
+import { expiryAlerts } from '@/features/hr/lib/documentsEngine';
+import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import {
   DOC_STATUS_TONE,
   EMP_STATUS_LABEL,
@@ -59,42 +57,37 @@ function Kpi({
 export function HrDashboard() {
   const { data: employees = [] } = useEmployees();
   const { data: leaves = [] } = useLeaveRequests();
-  const { data: documents = [] } = useDocuments();
-  const { data: iqamas = [] } = useIqamas();
-  const { data: performance = [] } = usePerformance();
+  const { data: documents = [] } = useHrDocuments();
+  const alertDays = useDocAlertDays();
+  const lk = useHrLookups();
+  const { data: allReviews = [] } = usePerformanceReviews();
+  const performance = allReviews.filter((r) => r.is_active);
 
   const stats = useMemo(() => {
     const active = employees.filter((e) => e.status === 'active').length;
     const onLeave = employees.filter((e) => e.status === 'on_leave').length;
-    const payroll = employees.reduce((s, e) => s + monthlyCost(e), 0);
+    const payroll = currentEmployees(employees).reduce((s, e) => s + monthlyCost(e), 0);
     const pendingLeave = leaves.filter((l) => l.status === 'pending').length;
     const avgScore = performance.length
       ? Math.round(performance.reduce((s, p) => s + p.score, 0) / performance.length)
       : 0;
-    return { total: employees.length, active, onLeave, payroll, pendingLeave, avgScore };
+    return { total: active + onLeave, active, onLeave, payroll, pendingLeave, avgScore };
   }, [employees, leaves, performance]);
 
-  // expiring/expired docs + iqamas (soonest first)
-  const expiring = useMemo(() => {
-    const docs = documents.map((d) => ({
-      id: d.id,
-      name: d.employee_name,
-      kind: d.type,
-      expiry: d.expiry_date,
-      status: expiryStatus(d.expiry_date),
-    }));
-    const iq = iqamas.map((i) => ({
-      id: i.id,
-      name: i.employee_name,
-      kind: 'الإقامة',
-      expiry: i.expiry_date,
-      status: expiryStatus(i.expiry_date),
-    }));
-    return [...docs, ...iq]
-      .filter((x) => x.status !== 'valid')
-      .sort((a, b) => (a.expiry ?? '').localeCompare(b.expiry ?? ''))
-      .slice(0, 8);
-  }, [documents, iqamas]);
+  // expiring/expired current documents (staff + workers), soonest first
+  const expiring = useMemo(
+    () =>
+      expiryAlerts(documents, alertDays)
+        .slice(0, 8)
+        .map((a) => ({
+          id: a.doc.id,
+          name: a.doc.owner_name,
+          kind: lk.docTypeLabel(a.doc.type),
+          expiry: a.doc.expiry_date ?? '',
+          status: a.status,
+        })),
+    [documents, alertDays, lk],
+  );
 
   const pendingLeaves = useMemo(
     () => leaves.filter((l) => l.status === 'pending').slice(0, 6),

@@ -312,6 +312,38 @@ const CONFIG: ConfigItem[] = [
     unit: 'يوم',
     sort_order: 26,
   },
+  {
+    key: 'doc_expiry_alert_days',
+    label_ar: 'التنبيه قبل انتهاء الوثائق والإقامات',
+    grp: 'الموارد البشرية',
+    value: 60,
+    unit: 'يوم',
+    sort_order: 40,
+  },
+  {
+    key: 'perf_late_day_weight',
+    label_ar: 'يوم التأخير يُحتسب في تقييم الانضباط كنسبة من يوم حضور',
+    grp: 'الموارد البشرية',
+    value: 0.5,
+    unit: 'يوم',
+    sort_order: 41,
+  },
+  {
+    key: 'saudization_full_wage',
+    label_ar: 'أجر السعودي الأدنى ليُحتسب كاملاً في نطاقات',
+    grp: 'الموارد البشرية',
+    value: 4000,
+    unit: 'ريال',
+    sort_order: 42,
+  },
+  {
+    key: 'saudization_half_weight',
+    label_ar: 'وزن السعودي الأقل أجرًا في نطاقات',
+    grp: 'الموارد البشرية',
+    value: 0.5,
+    unit: 'موظف',
+    sort_order: 43,
+  },
 ];
 
 const byOrder = (a: RefItem, b: RefItem) => a.sort_order - b.sort_order;
@@ -395,7 +427,9 @@ export async function updateConfig(key: string, value: number): Promise<void> {
     .select('key');
   if (error) throw new Error(`تعذّر حفظ القيمة: ${error.message}`);
   if (!data || (data as unknown[]).length === 0) {
-    throw new Error('لم تُحفظ القيمة — تعديل قيم النظام للمدير العام فقط، أو أن المفتاح غير موجود');
+    throw new Error(
+      'لم تُحفظ القيمة — تعديل قيم النظام للمدير العام (وإعدادات الموارد البشرية لمديرها)، أو أن المفتاح غير موجود',
+    );
   }
 }
 

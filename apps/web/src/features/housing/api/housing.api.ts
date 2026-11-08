@@ -1,5 +1,6 @@
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { attendanceConfigSnapshot } from '@/features/hr/api/hr.api';
 import type {
   Dorm,
   HousingScan,
@@ -227,6 +228,20 @@ export async function markAttendance(residentId: string, status: ResidentStatus)
     if (!error) return;
   }
   const r = RESIDENTS.find((x) => x.id === residentId);
+  // presence is proven by a barcode entry scan today (guard_housing_presence, 0072)
+  if (
+    r &&
+    status === 'present' &&
+    r.status !== 'present' &&
+    attendanceConfigSnapshot().worker_barcode_required
+  ) {
+    const today = new Date().toISOString().slice(0, 10);
+    const scanned = DEMO_SCANS.some(
+      (sc) =>
+        sc.worker_id === r.id && sc.direction === 'in' && sc.scanned_at.slice(0, 10) === today,
+    );
+    if (!scanned) throw new Error('تحضير العاملة يكون بمسح باركودها');
+  }
   if (r) r.status = status; // demo: optimistic source of truth
 }
 
@@ -247,6 +262,8 @@ export async function logHousingScan(
     });
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   }
+  // a dorm entry scan IS the worker's attendance for the day (log_housing_scan, 0072)
+  if (direction === 'in') worker.status = 'present';
   DEMO_SCANS.push({
     id: `scan-${++scanSeq}`,
     worker_id: worker.id,

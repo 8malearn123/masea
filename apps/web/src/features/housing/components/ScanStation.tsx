@@ -236,7 +236,7 @@ export function ScanStation() {
         <WorkerCard worker={worker} />
       ) : (
         <Card className="grid place-items-center py-12 text-center text-sm text-purple">
-          <ScanLine size={28} className="text-navy-200 mb-2" />
+          <ScanLine size={28} className="mb-2 text-navy-200" />
           امسح باركود العاملة أو أدخله يدوياً لعرض ملفها وسجل دخولها للسكن.
         </Card>
       )}

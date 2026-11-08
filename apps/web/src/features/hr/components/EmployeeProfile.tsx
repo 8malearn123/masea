@@ -7,43 +7,33 @@ import {
   Phone,
   ShieldCheck,
   Plus,
-  Upload,
+  CalendarCheck,
   AlertTriangle,
 } from 'lucide-react';
-import { Badge, Button, Card, Input, Modal, Select } from '@/shared/ui';
+import { Badge, Button, Card, Input, Modal } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { ROLE_META } from '@/lib/permissions';
-import { expiryStatus } from '@/features/hr/api/hr.api';
+import { usePermissions } from '@/hooks/usePermissions';
+import { OwnerDocuments } from '@/features/hr/components/DocumentsBoard';
+import { useDocAlertDays, useHrDocuments } from '@/features/hr/hooks/useHrDocuments';
+import { docStatus, isCurrent } from '@/features/hr/lib/documentsEngine';
 import {
-  useAddDocument,
+  useLeaveBalance,
+  useLeaveRequests,
+  useLeaveTypes,
   useAddEmergencyContact,
-  useDocuments,
   useEmergencyContacts,
-  useIqamas,
 } from '@/features/hr/hooks/useHr';
 import {
-  DOC_STATUS_LABEL,
-  DOC_STATUS_TONE,
   EMP_STATUS_LABEL,
   EMP_STATUS_TONE,
+  LEAVE_STATUS_LABEL,
+  LEAVE_STATUS_TONE,
+  TERMINATION_REASON_LABEL,
   type Employee,
 } from '@/features/hr/types';
 
-const DOC_TYPES = [
-  'الهوية الوطنية',
-  'الإقامة',
-  'جواز سفر',
-  'رخصة العمل',
-  'التأشيرة',
-  'عقد عمل',
-  'السيرة الذاتية',
-  'شهادة علمية/مهنية',
-  'التأمين الطبي',
-  'رخصة قيادة',
-  'أخرى',
-];
-
-type Tab = 'overview' | 'personal' | 'job' | 'finance' | 'docs' | 'emergency';
+type Tab = 'overview' | 'personal' | 'job' | 'finance' | 'leave' | 'docs' | 'emergency';
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
@@ -64,49 +54,35 @@ export function EmployeeProfile({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>('overview');
-  const { data: allDocs = [] } = useDocuments();
-  const { data: allIqamas = [] } = useIqamas();
+  const { data: allDocs = [] } = useHrDocuments();
+  const alertDays = useDocAlertDays();
+  const canManageDocs = usePermissions().can('hr', 'manage');
   const { data: allEmergency = [] } = useEmergencyContacts();
-  const addDoc = useAddDocument();
   const addEmer = useAddEmergencyContact();
 
-  const docs = allDocs.filter((d) => d.employee_name === employee.full_name);
-  const iqamas = allIqamas.filter((i) => i.employee_name === employee.full_name);
-  const contacts = allEmergency.filter((c) => c.employee_name === employee.full_name);
+  // rows link by employee_id (backend); demo seeds without an id fall back to the name
+  const mine = (r: { employee_id?: string; employee_name: string }) =>
+    r.employee_id ? r.employee_id === employee.id : r.employee_name === employee.full_name;
+  const docs = allDocs.filter(
+    (d) => d.owner_kind === 'employee' && d.owner_id === employee.id && isCurrent(d),
+  );
+  const contacts = allEmergency.filter(mine);
 
   const idType = employee.id_type ?? (employee.nationality === 'السعودية' ? 'saudi' : 'expat');
-  const docNum = (t: string) => docs.find((d) => d.type.includes(t))?.number;
-  const iqama = employee.iqama_no ?? docNum('إقامة') ?? '';
-  const passport = employee.passport_no ?? docNum('جواز') ?? '';
-  const nationalId = employee.national_id ?? docNum('هوية') ?? '';
+  const docNum = (t: string) => docs.find((d) => d.type === t)?.number;
+  const iqama = employee.iqama_no ?? docNum('iqama') ?? '';
+  const passport = employee.passport_no ?? docNum('passport') ?? '';
+  const nationalId = employee.national_id ?? docNum('national_id') ?? '';
   const gosiSystem = employee.gosi_system ?? 'new';
   const countsSaudization = employee.counts_in_saudization ?? idType === 'saudi';
 
-  const alertsCount = docs.filter((d) => expiryStatus(d.expiry_date) !== 'valid').length;
+  const alertsCount = docs.filter((d) => docStatus(d.expiry_date, alertDays) !== 'valid').length;
 
-  const [doc, setDoc] = useState({
-    type: DOC_TYPES[0]!,
-    number: '',
-    issue_date: '',
-    expiry_date: '',
-  });
   const [contact, setContact] = useState({ name: '', relation: '', phone: '' });
-
-  function uploadDoc() {
-    if (!doc.number.trim()) return;
-    addDoc.mutate({
-      employee_name: employee.full_name,
-      type: doc.type,
-      number: doc.number.trim(),
-      issue_date: doc.issue_date || new Date().toISOString().slice(0, 10),
-      expiry_date: doc.expiry_date || null,
-    });
-    setDoc({ type: DOC_TYPES[0]!, number: '', issue_date: '', expiry_date: '' });
-  }
 
   function addContact() {
     if (!contact.name.trim() || !contact.phone.trim()) return;
-    addEmer.mutate({ employee_name: employee.full_name, ...contact });
+    addEmer.mutate({ employee_id: employee.id, employee_name: employee.full_name, ...contact });
     setContact({ name: '', relation: '', phone: '' });
   }
 
@@ -115,6 +91,7 @@ export function EmployeeProfile({
     { value: 'personal', label: 'البيانات الشخصية', icon: IdCard },
     { value: 'job', label: 'الوظيفية', icon: ShieldCheck },
     { value: 'finance', label: 'الراتب والبنك', icon: Wallet },
+    { value: 'leave', label: 'الإجازات', icon: CalendarCheck },
     { value: 'docs', label: 'المستندات والإقامات', icon: FileText },
     { value: 'emergency', label: 'الطوارئ', icon: Phone },
   ];
@@ -163,8 +140,19 @@ export function EmployeeProfile({
           })}
         </div>
 
+        {employee.status === 'terminated' && employee.termination_date && (
+          <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">
+            انتهت الخدمة في{' '}
+            <span className="num font-semibold">{dateAr(employee.termination_date)}</span>
+            {employee.termination_reason &&
+              ` — ${TERMINATION_REASON_LABEL[employee.termination_reason]}`}
+            {employee.termination_note && ` · ${employee.termination_note}`}
+          </div>
+        )}
+
         {tab === 'overview' && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="الرقم الوظيفي" value={employee.employee_no ?? ''} />
             <Field
               label="الراتب الإجمالي"
               value={`${sar(employee.base_salary + employee.allowances)} ر.س`}
@@ -193,6 +181,14 @@ export function EmployeeProfile({
             <Field label="الجوال" value={employee.phone} />
             <Field label="البريد" value={employee.email} />
             <Field label="الحالة الاجتماعية" value={employee.marital_status ?? ''} />
+            <Field label="الاسم بالإنجليزية" value={employee.english_name ?? ''} />
+            <Field label="تاريخ الميلاد" value={employee.dob ? dateAr(employee.dob) : ''} />
+            <Field
+              label="الجنس"
+              value={
+                employee.gender === 'female' ? 'أنثى' : employee.gender === 'male' ? 'ذكر' : ''
+              }
+            />
           </div>
         )}
 
@@ -215,13 +211,19 @@ export function EmployeeProfile({
             />
             <Field label="المدير المباشر" value={employee.manager ?? ''} />
             <Field label="يُحتسب في التوطين" value={countsSaudization ? 'نعم' : 'لا'} />
+            <Field label="حساب الدخول" value={employee.user_id ? 'مرتبط بحساب' : 'بدون حساب'} />
           </div>
         )}
 
         {tab === 'finance' && (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             <Field label="الراتب الأساسي" value={`${sar(employee.base_salary)} ر.س`} />
-            <Field label="البدلات" value={`${sar(employee.allowances)} ر.س`} />
+            <Field
+              label="بدل السكن"
+              value={`${sar(employee.housing_allowance ?? employee.allowances)} ر.س`}
+            />
+            <Field label="بدل النقل" value={`${sar(employee.transport_allowance ?? 0)} ر.س`} />
+            <Field label="بدلات أخرى" value={`${sar(employee.other_allowance ?? 0)} ر.س`} />
             <Field
               label="الإجمالي"
               value={`${sar(employee.base_salary + employee.allowances)} ر.س`}
@@ -245,104 +247,15 @@ export function EmployeeProfile({
           </div>
         )}
 
-        {tab === 'docs' && (
-          <div className="space-y-3">
-            {docs.length === 0 && iqamas.length === 0 ? (
-              <Card className="py-6 text-center text-sm text-purple">
-                لا توجد مستندات لهذا الموظف بعد.
-              </Card>
-            ) : (
-              <div className="space-y-2">
-                {docs.map((d) => {
-                  const st = expiryStatus(d.expiry_date);
-                  return (
-                    <div
-                      key={d.id}
-                      className="flex items-center justify-between rounded-xl border border-navy-50 px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-navy">{d.type}</p>
-                        <p className="num text-[11px] text-purple">
-                          {d.number} · انتهاء: {d.expiry_date ? dateAr(d.expiry_date) : 'دائم'}
-                        </p>
-                      </div>
-                      <Badge tone={DOC_STATUS_TONE[st]}>{DOC_STATUS_LABEL[st]}</Badge>
-                    </div>
-                  );
-                })}
-                {iqamas.map((i) => {
-                  const st = expiryStatus(i.expiry_date);
-                  return (
-                    <div
-                      key={i.id}
-                      className="flex items-center justify-between rounded-xl border border-navy-50 px-3 py-2"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-navy">
-                          إقامة · {i.profession}
-                          {i.work_permit ? ' · رخصة عمل سارية' : ''}
-                        </p>
-                        <p className="num text-[11px] text-purple">
-                          {i.iqama_no} · انتهاء: {dateAr(i.expiry_date)}
-                        </p>
-                      </div>
-                      <Badge tone={DOC_STATUS_TONE[st]}>{DOC_STATUS_LABEL[st]}</Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+        {tab === 'leave' && <ProfileLeave employee={employee} />}
 
-            {editable && (
-              <Card className="bg-navy-50/40">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-navy">
-                  <Upload size={14} /> رفع مستند رسمي
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Select
-                    value={doc.type}
-                    onChange={(e) => setDoc((d) => ({ ...d, type: e.target.value }))}
-                    options={DOC_TYPES.map((t) => ({ value: t, label: t }))}
-                  />
-                  <Input
-                    placeholder="الرقم"
-                    value={doc.number}
-                    onChange={(e) => setDoc((d) => ({ ...d, number: e.target.value }))}
-                  />
-                  <div>
-                    <label className="mb-1 block text-[11px] text-purple">تاريخ الإصدار</label>
-                    <input
-                      type="date"
-                      value={doc.issue_date}
-                      onChange={(e) => setDoc((d) => ({ ...d, issue_date: e.target.value }))}
-                      className="w-full rounded-xl border border-navy-100 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] text-purple">
-                      تاريخ الانتهاء (اختياري)
-                    </label>
-                    <input
-                      type="date"
-                      value={doc.expiry_date}
-                      onChange={(e) => setDoc((d) => ({ ...d, expiry_date: e.target.value }))}
-                      className="w-full rounded-xl border border-navy-100 bg-white px-3 py-2 text-sm outline-none focus:border-navy"
-                    />
-                  </div>
-                </div>
-                <Button
-                  className="mt-3 w-full"
-                  size="sm"
-                  loading={addDoc.isPending}
-                  onClick={uploadDoc}
-                >
-                  <span className="flex items-center justify-center gap-1.5">
-                    <Plus size={14} /> إضافة المستند
-                  </span>
-                </Button>
-              </Card>
-            )}
-          </div>
+        {tab === 'docs' && (
+          <OwnerDocuments
+            kind="employee"
+            ownerId={employee.id}
+            ownerName={employee.full_name}
+            editable={editable && canManageDocs}
+          />
         )}
 
         {tab === 'emergency' && (
@@ -409,5 +322,55 @@ export function EmployeeProfile({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** Leave tab: balance as of today + this employee's requests. */
+function ProfileLeave({ employee }: { employee: Employee }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: b, isLoading } = useLeaveBalance(employee, today);
+  const { data: all = [] } = useLeaveRequests();
+  const { data: types = [] } = useLeaveTypes();
+  const mine = all.filter((l) =>
+    l.employee_id ? l.employee_id === employee.id : l.employee_name === employee.full_name,
+  );
+  const name = (code: string) => types.find((t) => t.code === code)?.name_ar ?? code;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Field
+          label="المستحق حتى اليوم"
+          value={isLoading || !b ? '…' : `${b.annual_accrued} يوم`}
+        />
+        <Field label="المستخدم" value={isLoading || !b ? '…' : `${b.annual_used} يوم`} />
+        <Field label="الرصيد المتبقي" value={isLoading || !b ? '…' : `${b.annual_remaining} يوم`} />
+        <Field
+          label="المرضية هذا العام"
+          value={isLoading || !b ? '…' : `${b.sick_used_this_year} / ${b.sick_total_limit}`}
+        />
+      </div>
+      {mine.length === 0 ? (
+        <Card className="py-6 text-center text-sm text-purple">لا توجد إجازات مسجلة.</Card>
+      ) : (
+        <ul className="space-y-2">
+          {mine.map((l) => (
+            <li
+              key={l.id}
+              className="flex items-center justify-between rounded-xl border border-navy-50 px-3 py-2"
+            >
+              <div>
+                <p className="text-sm font-semibold text-navy">
+                  {name(l.type)} · <span className="num">{l.days}</span> يوم
+                </p>
+                <p className="num text-[11px] text-purple">
+                  {dateAr(l.from_date)} → {dateAr(l.to_date)}
+                </p>
+              </div>
+              <Badge tone={LEAVE_STATUS_TONE[l.status]}>{LEAVE_STATUS_LABEL[l.status]}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

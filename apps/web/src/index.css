@@ -59,6 +59,11 @@ body {
   unicode-bidi: embed;
   display: inline-block;
 }
+/* a numeric table cell must stay a cell (inline-block breaks the table layout) */
+td.num,
+th.num {
+  display: table-cell;
+}
 
 @layer components {
   .card {

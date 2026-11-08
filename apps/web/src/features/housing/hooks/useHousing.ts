@@ -45,15 +45,26 @@ export function useMyHousingTargets() {
 export function useMarkAttendance() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<void, Error, { id: string; status: ResidentStatus }>({
+  return useMutation<
+    void,
+    Error,
+    { id: string; status: ResidentStatus },
+    { prev: Resident[] | undefined }
+  >({
     mutationFn: ({ id, status }) => markAttendance(id, status),
     onMutate: ({ id, status }) => {
+      const prev = qc.getQueryData<Resident[]>(['housing', 'residents']);
       qc.setQueryData<Resident[]>(['housing', 'residents'], (old) =>
         old?.map((r) => (r.id === id ? { ...r, status } : r)),
       );
+      return { prev };
     },
     onSuccess: () => toast.success('تم تسجيل الحضور'),
-    onError: (e) => toast.error(e.message || 'تعذّر تسجيل الحضور'),
+    onError: (e, _v, ctx) => {
+      // a refused change (e.g. «حاضرة» without a barcode scan) must not stay on screen
+      if (ctx?.prev) qc.setQueryData(['housing', 'residents'], ctx.prev);
+      toast.error(e.message || 'تعذّر تسجيل الحضور');
+    },
   });
 }
 
@@ -68,6 +79,8 @@ export function useLogHousingScan() {
     mutationFn: ({ code, direction, note }) => logHousingScan(code, direction, note),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['housing', 'scans'] });
+      // an entry scan marks the worker present (0072)
+      void qc.invalidateQueries({ queryKey: ['housing', 'residents'] });
       toast.success('تم تسجيل الحركة');
     },
     onError: (e) => toast.error(e.message || 'تعذّر تسجيل المسح'),

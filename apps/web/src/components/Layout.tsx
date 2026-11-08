@@ -11,6 +11,7 @@ import {
   ScanLine,
   Smartphone,
   Target,
+  Fingerprint,
 } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
 import { useAuth } from '@/store/auth';
@@ -138,6 +139,10 @@ export default function Layout() {
           <NavLink to="/" end className={({ isActive }) => navItemCls(isActive)}>
             <LayoutDashboard size={18} strokeWidth={1.8} />
             <span>لوحة التحكم</span>
+          </NavLink>
+          <NavLink to="/my-attendance" className={({ isActive }) => navItemCls(isActive)}>
+            <Fingerprint size={18} strokeWidth={1.8} />
+            <span>حضوري</span>
           </NavLink>
 
           {MODULE_GROUPS.map((group) => {

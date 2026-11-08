@@ -17,6 +17,7 @@ const ChatWidget = lazy(() =>
 const WorkerCatalog = lazy(() => import('@/features/catalog/components/WorkerCatalog'));
 const WorkerProfile = lazy(() => import('@/features/catalog/components/WorkerProfile'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const MyAttendance = lazy(() => import('@/features/hr/components/MyAttendance'));
 const ContractsList = lazy(() => import('@/features/contracts/components/ContractsList'));
 const ContractWizard = lazy(() => import('@/features/contracts/components/ContractWizard'));
 const ContractDetails = lazy(() => import('@/features/contracts/components/ContractDetails'));
@@ -117,6 +118,8 @@ export default function App() {
 
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
+            {/* every staff member — methods/roles are checked by the server (0072) */}
+            <Route path="my-attendance" element={<MyAttendance />} />
 
             <Route
               path="contracts"

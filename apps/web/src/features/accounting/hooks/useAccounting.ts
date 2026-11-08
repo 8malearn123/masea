@@ -2,6 +2,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
+  getEosProvision,
+  payEosSettlement,
+  payPayrollRun,
+  postEosProvision,
+  postEosSettlement,
+  postPayrollRun,
+} from '@/features/hr/api/hr.api';
+import { listDocCosts, postDocCost } from '@/features/hr/api/documents.api';
+import { DOC_COSTS_KEY, HR_DOCS_KEY } from '@/features/hr/hooks/useHrDocuments';
+import {
+  buildDocCostEntry,
+  buildEosPaymentEntry,
+  buildEosProvisionEntry,
+  buildEosSettlementEntry,
+  buildPayrollEntry,
+  buildPayrollPaymentEntry,
+  totalsFromRun,
+} from '@/features/accounting/data/payroll';
+import {
   addAccount,
   addBankAccount,
   addCatalogItem,
@@ -567,5 +586,125 @@ export function useToggleCatalogItem() {
       toast.success(active ? 'تم تفعيل الصنف' : 'تم تعطيل الصنف');
     },
     onError: (e) => toast.error(e.message || 'تعذّر التحديث'),
+  });
+}
+
+/* ---------------- payroll run → ledger (mirror of 0071) ---------------- */
+/** Post the accrual entry of an APPROVED run from its frozen totals. */
+export function usePostPayrollRun() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { period: string; runId: string }>({
+    mutationFn: ({ period, runId }) =>
+      postPayrollRun(period, runId, (_slips, run) =>
+        postPayrollEntry(buildPayrollEntry(totalsFromRun(run), period, null)),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['accounting', 'payroll-posted'] });
+      void qc.invalidateQueries({ queryKey: ['hr', 'payroll-run'] });
+      toast.success('تم ترحيل قيد استحقاق الرواتب');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر ترحيل قيد الرواتب'),
+  });
+}
+
+/** Record the salary transfer (WPS): DR 2130 / CR bank. */
+export function usePayPayrollRun() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    void,
+    Error,
+    { period: string; runId: string; paidOn: string; bankCode: string }
+  >({
+    mutationFn: ({ period, runId, paidOn, bankCode }) =>
+      payPayrollRun(period, runId, paidOn, bankCode, (run) =>
+        postPayrollEntry(buildPayrollPaymentEntry(totalsFromRun(run), period, paidOn, bankCode)),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['hr', 'payroll-run'] });
+      toast.success('تم تسجيل صرف الرواتب');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر تسجيل الصرف'),
+  });
+}
+
+/* -------------------- end of service → ledger (0073) -------------------- */
+export function useEosProvision(period: string) {
+  return useQuery({
+    queryKey: ['accounting', 'eos-provision', period],
+    queryFn: () => getEosProvision(period),
+    staleTime: 0,
+  });
+}
+
+function useEosLedger<V>(fn: (v: V) => Promise<void>, ok: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, V>({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['hr', 'eos'] });
+      void qc.invalidateQueries({ queryKey: ['accounting', 'eos-provision'] });
+      toast.success(ok);
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر الترحيل'),
+  });
+}
+
+export function usePostEosProvision() {
+  return useEosLedger(
+    (period: string) =>
+      postEosProvision(period, (delta) => postPayrollEntry(buildEosProvisionEntry(delta, period))),
+    'تم ترحيل قيد مخصص نهاية الخدمة',
+  );
+}
+export function usePostEosSettlement() {
+  return useEosLedger(
+    (id: string) => postEosSettlement(id, (s) => postPayrollEntry(buildEosSettlementEntry(s))),
+    'تم ترحيل قيد التسوية',
+  );
+}
+export function usePayEosSettlement() {
+  return useEosLedger(
+    (v: { id: string; paidOn: string; bankCode: string }) =>
+      payEosSettlement(v.id, v.paidOn, v.bankCode, (s) =>
+        postPayrollEntry(buildEosPaymentEntry(s, v.paidOn, v.bankCode)),
+      ),
+    'تم تسجيل صرف التسوية',
+  );
+}
+
+/* ---------------- government fees of HR documents (0074) ---------------- */
+export function useDocCosts() {
+  return useQuery({
+    queryKey: DOC_COSTS_KEY,
+    queryFn: listDocCosts,
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function usePostDocCost() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    void,
+    Error,
+    { id: string; paidOn: string; bankCode: string; typeLabel: string }
+  >({
+    mutationFn: (v) =>
+      postDocCost(v.id, v.paidOn, v.bankCode, (row) =>
+        postPayrollEntry(buildDocCostEntry(row, v.paidOn, v.bankCode, v.typeLabel)),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: DOC_COSTS_KEY });
+      void qc.invalidateQueries({ queryKey: HR_DOCS_KEY });
+      toast.success('تم ترحيل الرسوم الحكومية');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر الترحيل'),
   });
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculatePayslip,
   GOSI_CONFIG,
+  lateMinutesPerIncident,
   PAYROLL_CONFIG,
   runPayroll,
 } from '@/features/hr/api/hr.api';
@@ -67,7 +68,8 @@ describe('calculatePayslip', () => {
     // daily wage = 12000/30 = 400 → 2 days = 800
     expect(s.absence_deduction).toBe(800);
     // late = 1 incident × 30 min = 30 min → (30/60)*50 = 25
-    expect(s.late_minutes).toBe(PAYROLL_CONFIG.lateMinutesPerIncident);
+    expect(s.late_minutes).toBe(lateMinutesPerIncident());
+    expect(s.late_minutes).toBe(30); // 45 min arrival − 15 min grace
     expect(s.late_deduction).toBe(25);
     expect(s.absent_days).toBe(2);
     expect(s.present_days).toBe(28);
