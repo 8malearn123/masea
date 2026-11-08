@@ -1,6 +1,11 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isDemoMode } from '@/shared/lib/demoBackend';
+import {
+  listDormOptions,
+  saveWorkerFile,
+  type SaveWorkerResult,
+} from '@/features/hr/api/workerFile.api';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
@@ -313,6 +318,33 @@ export function useSaveHouseWorker() {
       toast.success(isNew ? 'تمت إضافة العاملة' : 'تم تحديث بيانات العاملة');
     },
     onError: (e) => toast.error(e.message || 'تعذّر حفظ العاملة'),
+  });
+}
+
+/** The whole worker file in one save: photo, profile, private file, documents, housing. */
+export function useSaveWorkerFile() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<SaveWorkerResult, Error, Parameters<typeof saveWorkerFile>[0]>({
+    mutationFn: saveWorkerFile,
+    onSuccess: (r, { isNew }) => {
+      void qc.invalidateQueries({ queryKey: ['hr', 'workers'] });
+      void qc.invalidateQueries({ queryKey: ['hr', 'documents'] });
+      void qc.invalidateQueries({ queryKey: ['worker_profiles'] });
+      void qc.invalidateQueries({ queryKey: ['housing'] });
+      if (r.failedDocs.length)
+        toast.error(`حُفظت العاملة، وتعذّر حفظ ${r.failedDocs.length} وثيقة: ${r.failedDocs[0]}`);
+      else toast.success(isNew ? 'تمت إضافة العاملة بملفها الكامل' : 'تم تحديث ملف العاملة');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ العاملة'),
+  });
+}
+
+export function useDormOptions() {
+  return useQuery({
+    queryKey: ['housing', 'dorm-options'],
+    queryFn: listDormOptions,
+    staleTime: QUERY_DEFAULTS.staleTime,
   });
 }
 

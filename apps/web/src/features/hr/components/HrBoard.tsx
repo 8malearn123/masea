@@ -45,6 +45,7 @@ import { EosBoard } from '@/features/hr/components/EosBoard';
 import { PerformanceBoard } from '@/features/hr/components/PerformanceBoard';
 import { HrReports } from '@/features/hr/components/HrReports';
 import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
+import { WorkerFileForm } from '@/features/hr/components/WorkerFileForm';
 import PayrollSettings from '@/features/hr/components/PayrollSettings';
 import {
   DocumentsRegister,
@@ -61,16 +62,13 @@ import {
   useReactivateEmployee,
   useSaveEmployee,
   useTerminateEmployee,
-  useSaveHouseWorker,
 } from '@/features/hr/hooks/useHr';
 import {
   buildEmployee,
-  buildHouseWorker,
   currentEmployees,
   monthlyCost,
   workedHours,
   type EmployeeInput,
-  type HouseWorkerInput,
 } from '@/features/hr/api/hr.api';
 import {
   EMP_STATUS_LABEL,
@@ -83,7 +81,9 @@ import {
   TERMINATION_REASON_LABEL,
   type TerminationReason,
   type WorkerStatus,
+  PAYMENT_METHOD_LABEL,
 } from '@/features/hr/types';
+import { maskIban } from '@/features/hr/lib/payrollDocs';
 
 function Stat({
   label,
@@ -751,39 +751,6 @@ function TerminateModal({ employee, onClose }: { employee: Employee; onClose: ()
 }
 
 /* --------------------------- house workers (عاملات) ---------------------- */
-function ChipMulti({
-  label,
-  options,
-  selected,
-  onToggle,
-}: {
-  label: string;
-  options: readonly string[];
-  selected: string[];
-  onToggle: (v: string) => void;
-}) {
-  return (
-    <div>
-      <p className="mb-1.5 text-sm font-medium text-navy-900">{label}</p>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => {
-          const on = selected.includes(o);
-          return (
-            <button
-              key={o}
-              type="button"
-              onClick={() => onToggle(o)}
-              className={`rounded-lg px-2.5 py-1 text-xs transition ${on ? 'bg-navy text-white' : 'bg-navy-50 text-navy hover:bg-navy-100'}`}
-            >
-              {o}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function WorkerAvatar({ worker, size = 'h-14 w-14' }: { worker: HouseWorker; size?: string }) {
   if (worker.photo_url) {
     return (
@@ -805,7 +772,6 @@ function HouseWorkers() {
   const { can } = usePermissions();
   const editable = can('hr', 'edit');
   const { data: workers = [], isLoading, isError, refetch } = useHouseWorkers();
-  const saveWorker = useSaveHouseWorker();
   const lk = useHrLookups();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
@@ -820,20 +786,6 @@ function HouseWorkers() {
       (nat === 'all' || w.nationality === nat) &&
       (!search.trim() || w.full_name.includes(search.trim())),
   );
-
-  function save(input: HouseWorkerInput) {
-    const isNew = !editTarget;
-    const worker = editTarget ? { ...editTarget, ...input } : buildHouseWorker(input);
-    saveWorker.mutate(
-      { worker, isNew },
-      {
-        onSuccess: () => {
-          setAddOpen(false);
-          setEditTarget(null);
-        },
-      },
-    );
-  }
 
   return (
     <div>
@@ -982,10 +934,9 @@ function HouseWorkers() {
         />
       )}
       {(addOpen || editTarget) && (
-        <WorkerModal
+        <WorkerFileForm
           key={editTarget?.id ?? 'new'}
           worker={editTarget}
-          onSave={save}
           onClose={() => {
             setAddOpen(false);
             setEditTarget(null);
@@ -1000,7 +951,12 @@ function DetailField({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-navy-50 p-3">
       <p className="text-[11px] text-purple">{label}</p>
-      <p className="num mt-0.5 text-sm font-semibold text-navy">{value}</p>
+      {/* numbers/codes read left-to-right; Arabic text keeps its own direction */}
+      <p
+        className={`${/[\u0600-\u06FF]/.test(value) ? '' : 'num'}mt-0.5 text-sm font-semibold text-navy`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -1052,12 +1008,44 @@ function WorkerDetailModal({
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <DetailField label="العمر" value={`${worker.age} سنة`} />
+          <DetailField
+            label="تاريخ الميلاد"
+            value={worker.birth_date ? dateAr(worker.birth_date) : '—'}
+          />
           <DetailField label="الخبرة" value={`${worker.experience_years} سنوات`} />
-          <DetailField label="الراتب الشهري" value={`${sar(worker.monthly_salary)} ر.س`} />
           <DetailField label="الفرع" value={worker.branch} />
-          <DetailField label="رقم الجواز" value={worker.passport_no || '—'} />
-          <DetailField label="رقم الإقامة" value={worker.iqama_no || '—'} />
+          <DetailField label="الجوال" value={worker.phone || '—'} />
+          <DetailField label="السكن" value={worker.dorm || 'بدون سكن'} />
         </div>
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-navy">الهوية والإقامة</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <DetailField label="رقم الجواز" value={worker.passport_no || '—'} />
+            <DetailField label="رقم الإقامة" value={worker.iqama_no || '—'} />
+            <DetailField label="رقم الحدود" value={worker.border_no || '—'} />
+            <DetailField
+              label="تاريخ الوصول"
+              value={worker.arrival_date ? dateAr(worker.arrival_date) : '—'}
+            />
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-navy">الراتب والحساب البنكي</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <DetailField label="الراتب الشهري" value={`${sar(worker.monthly_salary)} ر.س`} />
+            <DetailField label="طريقة الصرف" value={PAYMENT_METHOD_LABEL[worker.payment_method]} />
+            {worker.payment_method === 'bank' && (
+              <>
+                <DetailField label="البنك" value={worker.bank_name || '—'} />
+                <DetailField label="الآيبان" value={maskIban(worker.iban)} />
+              </>
+            )}
+          </div>
+        </div>
+
+        <DetailField label="باركود السكن" value={worker.barcode || 'يُولَّد عند الحفظ'} />
 
         {worker.languages.length > 0 && <ChipsRow label="اللغات" items={worker.languages} />}
         {worker.skills.length > 0 && <ChipsRow label="المهارات والصفات" items={worker.skills} />}
@@ -1080,176 +1068,9 @@ function WorkerDetailModal({
 
         {editable && (
           <Button onClick={onEdit} className="w-full">
-            <Pencil size={16} /> تعديل البيانات
+            <Pencil size={16} /> تعديل ملف العاملة
           </Button>
         )}
-      </div>
-    </Modal>
-  );
-}
-
-function WorkerModal({
-  worker,
-  onSave,
-  onClose,
-}: {
-  worker: HouseWorker | null;
-  onSave: (input: HouseWorkerInput) => void;
-  onClose: () => void;
-}) {
-  const w = worker;
-  const [full_name, setFullName] = useState(w?.full_name ?? '');
-  const [photoUrl, setPhotoUrl] = useState(w?.photo_url ?? '');
-  const lk = useHrLookups();
-  const [nationality, setNationality] = useState(
-    w?.nationality ?? lk.names('nationality', { scope: 'worker' })[0] ?? '',
-  );
-  const [profession, setProfession] = useState(w?.profession ?? lk.names('profession')[0] ?? '');
-  const [age, setAge] = useState(w?.age ?? 30);
-  const [experience_years, setExp] = useState(w?.experience_years ?? 3);
-  const [monthly_salary, setSalary] = useState(w?.monthly_salary ?? 1400);
-  const [passport_no, setPassport] = useState(w?.passport_no ?? '');
-  const [iqama_no, setIqama] = useState(w?.iqama_no ?? '');
-  const [status, setStatus] = useState<WorkerStatus>(w?.status ?? 'available');
-  const [branch, setBranch] = useState(w?.branch ?? 'نجران');
-  const [languages, setLanguages] = useState<string[]>(w?.languages ?? []);
-  const [skills, setSkills] = useState<string[]>(w?.skills ?? []);
-  const [bio, setBio] = useState(w?.bio ?? '');
-  const [error, setError] = useState<string | null>(null);
-
-  function toggle(list: string[], setList: (v: string[]) => void, v: string) {
-    setList(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
-  }
-
-  function submit() {
-    if (!full_name.trim()) {
-      setError('اسم العاملة مطلوب');
-      return;
-    }
-    onSave({
-      full_name,
-      photo_url: photoUrl || null,
-      nationality,
-      profession,
-      age,
-      experience_years,
-      monthly_salary,
-      languages,
-      skills,
-      passport_no,
-      iqama_no,
-      status,
-      branch,
-      bio,
-    });
-  }
-
-  return (
-    <Modal open onClose={onClose} title={worker ? 'تعديل بيانات العاملة' : 'إضافة عاملة'}>
-      <div className="max-h-[74vh] space-y-3 overflow-y-auto pl-1">
-        <div className="flex items-center gap-3">
-          {photoUrl ? (
-            <img src={photoUrl} alt="" className="h-16 w-16 rounded-2xl object-cover" />
-          ) : (
-            <span className="grid h-16 w-16 place-items-center rounded-2xl bg-navy-50 text-navy">
-              <UserRound size={28} />
-            </span>
-          )}
-          <div className="flex-1">
-            <Input
-              label="رابط الصورة (اختياري)"
-              placeholder="https://…"
-              value={photoUrl}
-              onChange={(e) => setPhotoUrl(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Input
-            label="الاسم الكامل"
-            value={full_name}
-            onChange={(e) => setFullName(e.target.value)}
-            error={error ?? undefined}
-          />
-          <Select
-            label="الجنسية"
-            value={nationality}
-            onChange={(e) => setNationality(e.target.value)}
-            options={lk.options('nationality', { scope: 'worker', keep: w?.nationality ?? null })}
-          />
-          <Select
-            label="المهنة"
-            value={profession}
-            onChange={(e) => setProfession(e.target.value)}
-            options={lk.options('profession', { keep: w?.profession ?? null })}
-          />
-          <Input
-            label="العمر"
-            type="number"
-            min={18}
-            value={age}
-            onChange={(e) => setAge(Number(e.target.value))}
-          />
-          <Input
-            label="سنوات الخبرة"
-            type="number"
-            min={0}
-            value={experience_years}
-            onChange={(e) => setExp(Number(e.target.value))}
-          />
-          <Input
-            label="الراتب الشهري"
-            type="number"
-            min={0}
-            value={monthly_salary}
-            onChange={(e) => setSalary(Number(e.target.value))}
-          />
-          <Input
-            label="رقم الجواز"
-            value={passport_no}
-            onChange={(e) => setPassport(e.target.value)}
-          />
-          <Input label="رقم الإقامة" value={iqama_no} onChange={(e) => setIqama(e.target.value)} />
-          <Select
-            label="الحالة"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as WorkerStatus)}
-            options={(Object.keys(WORKER_STATUS_LABEL) as WorkerStatus[]).map((s) => ({
-              value: s,
-              label: WORKER_STATUS_LABEL[s],
-            }))}
-          />
-          <Select
-            label="الفرع"
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            options={BRANCHES_AR.map((b) => ({ value: b, label: b }))}
-          />
-        </div>
-        <ChipMulti
-          label="اللغات"
-          options={lk.names('language', { keep: w?.languages ?? [] })}
-          selected={languages}
-          onToggle={(v) => toggle(languages, setLanguages, v)}
-        />
-        <ChipMulti
-          label="المهارات والصفات"
-          options={lk.names('skill', { keep: w?.skills ?? [] })}
-          selected={skills}
-          onToggle={(v) => toggle(skills, setSkills, v)}
-        />
-        <div>
-          <p className="mb-1.5 text-sm font-medium text-navy-900">نبذة / ملاحظات</p>
-          <textarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            rows={3}
-            className="w-full rounded-xl border border-navy-100 bg-white px-3.5 py-2.5 text-sm outline-none focus:border-navy focus:ring-2 focus:ring-navy/15"
-          />
-        </div>
-        <Button onClick={submit} className="w-full">
-          {worker ? 'حفظ التعديلات' : 'إضافة العاملة'}
-        </Button>
       </div>
     </Modal>
   );

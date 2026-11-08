@@ -11,7 +11,7 @@
  */
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
-import { ROLE_META, type RoleCode } from '@/lib/permissions';
+import { ROLE_META, roleCan, type RoleCode } from '@/lib/permissions';
 import { tokenFromQr } from '@/features/hr/lib/attendanceEngine';
 import {
   TERMINATION_REASON_LABEL,
@@ -746,6 +746,7 @@ export async function livePayslips(employees: Employee[], period: string): Promi
 const WORKER_STATUSES: WorkerStatus[] = ['available', 'reserved', 'on_service', 'medical'];
 
 export function mapWorker(r: Row): HouseWorker {
+  const d = one(r.worker_details);
   const st = str(r.status) as WorkerStatus;
   return {
     id: str(r.id),
@@ -758,11 +759,22 @@ export function mapWorker(r: Row): HouseWorker {
     monthly_salary: num(r.monthly_salary),
     languages: (r.languages as string[] | null) ?? [],
     skills: (r.skills as string[] | null) ?? [],
-    passport_no: str(r.passport_no),
-    iqama_no: str(r.iqama_no),
     status: WORKER_STATUSES.includes(st) ? st : 'available',
     branch: str(one(r.branches)?.city),
     bio: str(r.bio_ar),
+    // private file: RLS returns it only to HR in the worker's branch
+    passport_no: str(d?.passport_no),
+    iqama_no: str(d?.iqama_no),
+    border_no: str(d?.border_no),
+    birth_date: str(d?.birth_date),
+    arrival_date: str(d?.arrival_date),
+    phone: str(d?.phone),
+    dorm: str(one(d?.housing_dorms)?.name),
+    barcode: str(d?.barcode),
+    bank_name: str(d?.bank_name),
+    iban: str(d?.iban),
+    account_holder: str(d?.account_holder),
+    payment_method: d?.payment_method === 'cash' ? 'cash' : 'bank',
   };
 }
 
@@ -770,7 +782,8 @@ export async function liveListWorkers(): Promise<HouseWorker[]> {
   const { data, error } = await supabase
     .from('worker_profiles')
     .select(
-      'id, full_name, nationality, profession, age, experience_years, languages, skills, monthly_salary, status, photo_url, bio_ar, passport_no, iqama_no, branches(city)',
+      'id, full_name, nationality, profession, age, experience_years, languages, skills, monthly_salary, status, photo_url, bio_ar, branches(city), ' +
+        'worker_details(passport_no, iqama_no, border_no, birth_date, arrival_date, phone, barcode, bank_name, iban, account_holder, payment_method, housing_dorms(name))',
     )
     .eq('is_active', true)
     .order('created_at', { ascending: false });
@@ -791,10 +804,9 @@ export async function liveSaveWorker(w: HouseWorker, isNew: boolean): Promise<Ho
     status: w.status,
     photo_url: w.photo_url,
     bio_ar: w.bio || null,
-    passport_no: w.passport_no || null,
-    iqama_no: w.iqama_no || null,
     branch_id: await branchIdOf(w.branch),
   };
+  let id = w.id;
   if (isNew) {
     const { data, error } = await supabase
       .from('worker_profiles')
@@ -802,11 +814,45 @@ export async function liveSaveWorker(w: HouseWorker, isNew: boolean): Promise<Ho
       .select('id')
       .single();
     fail(error, 'إضافة العاملة');
-    return { ...w, id: str((data as Row).id) };
+    id = str((data as Row).id); // worker_details row + barcode created by the trigger
+  } else {
+    const { error } = await supabase.from('worker_profiles').update(row).eq('id', w.id);
+    fail(error, 'تحديث العاملة');
   }
-  const { error } = await supabase.from('worker_profiles').update(row).eq('id', w.id);
-  fail(error, 'تحديث العاملة');
-  return w;
+  let dormId: string | null = null;
+  if (w.dorm) {
+    const { data: dorm } = await supabase
+      .from('housing_dorms')
+      .select('id')
+      .eq('name', w.dorm)
+      .maybeSingle();
+    dormId = (dorm as Row | null)?.id ? str((dorm as Row).id) : null;
+  }
+  const role = useAuth.getState().profile?.role as RoleCode | undefined;
+  const details: Row = {
+    passport_no: w.passport_no || null,
+    iqama_no: w.iqama_no || null,
+    border_no: w.border_no || null,
+    birth_date: w.birth_date || null,
+    arrival_date: w.arrival_date || null,
+    phone: w.phone || null,
+    dorm_id: dormId,
+  };
+  // bank data only from hr.manage (guard_worker_details rejects it otherwise)
+  if (role && roleCan(role, 'hr', 'manage')) {
+    details.bank_name = w.bank_name || null;
+    details.iban = w.iban || null;
+    details.account_holder = w.account_holder || null;
+    details.payment_method = w.payment_method;
+  }
+  const { error: dErr } = await supabase.from('worker_details').update(details).eq('worker_id', id);
+  fail(dErr, 'حفظ ملف العاملة');
+  const { data: saved } = await supabase
+    .from('worker_details')
+    .select('barcode')
+    .eq('worker_id', id)
+    .maybeSingle();
+  return { ...w, id, barcode: str((saved as Row | null)?.barcode) || w.barcode };
 }
 
 /* ------------------------------ payroll runs ------------------------------ */
