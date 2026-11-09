@@ -1,10 +1,10 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
-import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { scopeToViewerBranch, viewerScope } from '@/lib/branchScope';
 import { DEMO_DRIVER_ID, advanceTripStage, listDrivers } from '@/features/orders/api/orders.api';
 import type { Order, OrderStatus } from '@/features/orders/types';
-import { resolveWorkerByBarcode } from '@/features/housing/api/housing.api';
+import { findWorkerByCode } from '@/features/housing/api/housing.api';
 import { SCAN_TYPE_LABEL, type DriverLocation, type ScanEvent } from '@/features/gps/types';
 
 const FALLBACK_LOCATIONS: DriverLocation[] = [
@@ -204,17 +204,19 @@ export async function logTripScan(
   lng: number | null = null,
   requestNo: string | null = null,
 ): Promise<{ id: string; worker_name: string; scan_label: string }> {
-  const worker = resolveWorkerByBarcode(barcode);
-  if (!worker) throw new Error('لا توجد عاملة بهذا الباركود');
+  // الخادم يتحقق من الباركود والنطاق؛ الاسم من البحث نفسه (find_worker_by_code، 0082)
+  const { resident: worker, outOfScope } = await findWorkerByCode(barcode);
+  if (!worker)
+    throw new Error(outOfScope ? 'هذه العاملة خارج نطاق فرعك' : 'لا توجد عاملة بهذا الباركود');
 
-  if (!isDemoId(worker.id)) {
+  if (!isDemoMode()) {
     const { error } = await supabase.rpc('log_trip_scan', {
-      p_barcode: barcode.trim(),
+      p_barcode: worker.barcode || barcode.trim(),
       p_scan_type: scanType,
       p_lat: lat,
       p_lng: lng,
     });
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+    if (error) throw new Error(error.message);
   }
   const id = `trip-${++tripSeq}`;
   MY_TRIP_SCANS.unshift({

@@ -1,5 +1,6 @@
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoMode } from '@/shared/lib/demoBackend';
+import { nowRiyadh } from '@/features/hr/lib/attendanceEngine';
 import { inViewerScope, scopeToViewerBranch } from '@/lib/branchScope';
 import { useAuth } from '@/store/auth';
 import { attendanceConfigSnapshot } from '@/features/hr/api/hr.api';
@@ -371,11 +372,70 @@ export function workerDormError(
   return dormAssignError(dorm ? withOccupancy(dorm) : undefined, workerBranch);
 }
 
+interface RawResident {
+  id: string;
+  full_name: string | null;
+  nationality: string | null;
+  dorm: string | null;
+  branch: string | null;
+  status: ResidentStatus;
+  check_in: string | null;
+  barcode: string | null;
+  iqama_no: string | null;
+}
+
+const residentOf = (r: RawResident): Resident => ({
+  id: r.id,
+  full_name: r.full_name ?? '—',
+  nationality: r.nationality ?? '',
+  dorm: r.dorm ?? '',
+  branch: r.branch ?? '',
+  status: r.status,
+  check_in: r.check_in ?? '',
+  barcode: r.barcode ?? '',
+  iqama_no: r.iqama_no ?? '',
+});
+
+/** العاملات المسكّنات ضمن نطاق المستخدم مع حالة اليوم (list_housing_residents، 0082). */
 export async function listResidents(): Promise<Resident[]> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.rpc('list_housing_residents');
+    if (error) throw new Error(`تعذّر تحميل العاملات: ${error.message}`);
+    return ((data ?? []) as RawResident[]).map(residentOf);
+  }
   return scopeToViewerBranch(RESIDENTS, (r) => r.branch).map((r) => ({ ...r }));
 }
 
+interface RawHousingScan {
+  id: string;
+  worker_id: string;
+  direction: ScanDirection;
+  note: string | null;
+  scanned_at: string;
+  workers: { full_name: string | null } | null;
+  housing_dorms: { name: string | null } | null;
+}
+
 export async function listHousingScans(workerId?: string): Promise<HousingScan[]> {
+  if (!isDemoMode()) {
+    let q = supabase
+      .from('housing_scans')
+      .select('id, worker_id, direction, note, scanned_at, workers(full_name), housing_dorms(name)')
+      .order('scanned_at', { ascending: false })
+      .limit(200);
+    if (workerId) q = q.eq('worker_id', workerId);
+    const { data, error } = await q;
+    if (error) throw new Error(`تعذّر تحميل سجل المسح: ${error.message}`);
+    return ((data ?? []) as unknown as RawHousingScan[]).map((r) => ({
+      id: r.id,
+      worker_id: r.worker_id,
+      worker_name: r.workers?.full_name ?? '—',
+      dorm: r.housing_dorms?.name ?? '',
+      direction: r.direction,
+      note: r.note,
+      scanned_at: r.scanned_at,
+    }));
+  }
   const branchOf = (s: HousingScan) => RESIDENTS.find((r) => r.id === s.worker_id)?.branch;
   const scoped = scopeToViewerBranch(DEMO_SCANS, branchOf);
   const rows = workerId ? scoped.filter((s) => s.worker_id === workerId) : scoped;
@@ -447,18 +507,42 @@ export function resolveResidentForViewer(code: string): {
     : { resident: null, outOfScope: true };
 }
 
+/**
+ * البحث عن عاملة بالباركود أو رقم الإقامة ضمن نطاق المستخدم (find_worker_by_code، 0082).
+ * `outOfScope` = موجودة لكن في فرع آخر.
+ */
+export async function findWorkerByCode(
+  code: string,
+): Promise<{ resident: Resident | null; outOfScope: boolean }> {
+  if (isDemoMode()) return resolveResidentForViewer(code);
+  const { data, error } = await supabase.rpc('find_worker_by_code', { p_code: code.trim() });
+  if (error) {
+    if (error.message.includes('خارج نطاق')) return { resident: null, outOfScope: true };
+    throw new Error(error.message);
+  }
+  const row = ((data ?? []) as RawResident[])[0];
+  if (!row) return { resident: null, outOfScope: false };
+  // حالة اليوم وتاريخ السكن من قائمة المقيمات إن كانت مسكّنة
+  const listed = (await listResidents().catch(() => [])).find((r) => r.id === row.id);
+  return {
+    resident: listed ?? residentOf({ ...row, status: 'absent', check_in: null }),
+    outOfScope: false,
+  };
+}
+
 /* ------------------------------ mutations -------------------------------- */
 /** Take attendance for one worker (housing_attendance upsert). */
 export async function markAttendance(residentId: string, status: ResidentStatus): Promise<void> {
-  if (!isDemoId(residentId)) {
+  if (!isDemoMode()) {
+    // اليوم بتوقيت الرياض (نفس الخادم)؛ السكن يُملأ من ملف العاملة (0082)
     const { error } = await supabase
       .from('housing_attendance')
       .upsert(
-        { worker_id: residentId, date: new Date().toISOString().slice(0, 10), status },
+        { worker_id: residentId, date: nowRiyadh().date, status },
         { onConflict: 'worker_id,date' },
       );
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+    if (error) throw new Error(error.message);
+    return;
   }
   const r = RESIDENTS.find((x) => x.id === residentId);
   // presence is proven by a barcode entry scan today (guard_housing_presence, 0072)
@@ -484,18 +568,35 @@ export async function logHousingScan(
   direction: ScanDirection,
   note: string | null,
 ): Promise<Resident> {
-  const worker = resolveWorkerByBarcode(code);
-  if (!worker) throw new Error('لا توجد عاملة بهذا الباركود');
-  if (!inViewerScope(worker.branch)) throw new Error(OUT_OF_BRANCH);
-
-  if (!isDemoId(worker.id)) {
-    const { error } = await supabase.rpc('log_housing_scan', {
+  if (!isDemoMode()) {
+    // الخادم يتحقق من الباركود/الإقامة والنطاق والصلاحية ويسجّل الحضور عند الدخول
+    const { data, error } = await supabase.rpc('log_housing_scan', {
       p_barcode: code.trim(),
       p_direction: direction,
       p_note: note,
     });
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+    if (error) throw new Error(error.message);
+    const id = (data as { id?: string } | null)?.id;
+    const found = (await listResidents()).find((r) => r.id === id);
+    if (found) return found;
+    const w = data as {
+      id: string;
+      full_name: string | null;
+      barcode: string | null;
+      iqama_no: string | null;
+    };
+    return residentOf({
+      ...w,
+      nationality: null,
+      dorm: null,
+      branch: null,
+      status: direction === 'in' ? 'present' : 'absent',
+      check_in: null,
+    });
   }
+  const worker = resolveWorkerByBarcode(code);
+  if (!worker) throw new Error('لا توجد عاملة بهذا الباركود');
+  if (!inViewerScope(worker.branch)) throw new Error(OUT_OF_BRANCH);
   // a dorm entry scan IS the worker's attendance for the day (log_housing_scan, 0072)
   if (direction === 'in') worker.status = 'present';
   DEMO_SCANS.push({

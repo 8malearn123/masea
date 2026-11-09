@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, CameraOff, LogIn, LogOut, ScanLine, UserRound } from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
-import { OUT_OF_BRANCH, resolveResidentForViewer } from '@/features/housing/api/housing.api';
+import { findWorkerByCode, OUT_OF_BRANCH } from '@/features/housing/api/housing.api';
 import { useHousingScans, useLogHousingScan } from '@/features/housing/hooks/useHousing';
 import {
   RESIDENT_STATUS_LABEL,
@@ -115,8 +115,14 @@ export function ScanStation() {
 
   const supportsCamera = Boolean(BarcodeDetectorCtor && navigator.mediaDevices?.getUserMedia);
 
-  function lookup(code: string) {
-    const { resident: w, outOfScope: other } = resolveResidentForViewer(code);
+  async function lookup(code: string) {
+    let found: Awaited<ReturnType<typeof findWorkerByCode>>;
+    try {
+      found = await findWorkerByCode(code);
+    } catch {
+      found = { resident: null, outOfScope: false };
+    }
+    const { resident: w, outOfScope: other } = found;
     setWorker(w);
     setOutOfScope(other);
     setNotFound(!w && !other);
@@ -159,7 +165,7 @@ export function ScanStation() {
         const codes = await detector.detect(videoRef.current);
         const raw = codes[0]?.rawValue;
         if (raw) {
-          lookup(raw);
+          void lookup(raw);
           return;
         }
       } catch {
@@ -217,7 +223,7 @@ export function ScanStation() {
           className="mt-4 flex gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (manual.trim()) lookup(manual);
+            if (manual.trim()) void lookup(manual);
           }}
         >
           <Input

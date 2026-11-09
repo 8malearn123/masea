@@ -1,5 +1,5 @@
 import { CodeScanner } from '@/shared/ui/CodeScanner';
-import { resolveWorkerByBarcode } from '@/features/housing/api/housing.api';
+import { findWorkerByCode, OUT_OF_BRANCH } from '@/features/housing/api/housing.api';
 import type { Resident } from '@/features/housing/types';
 
 /**
@@ -11,10 +11,11 @@ export function BarcodeScanner({ onResolved }: { onResolved: (worker: Resident) 
     <CodeScanner
       placeholder="أدخل الباركود أو رقم الإقامة يدوياً"
       notFoundText="لا توجد عاملة بهذا الباركود."
-      onCode={(code) => {
-        const w = resolveWorkerByBarcode(code);
-        if (w) onResolved(w);
-        return !!w;
+      onCode={async (code) => {
+        // البحث في الخادم ضمن نطاق المستخدم (find_worker_by_code، 0082)
+        const { resident, outOfScope } = await findWorkerByCode(code);
+        if (resident) onResolved(resident);
+        return resident ? true : outOfScope ? OUT_OF_BRANCH : false;
       }}
     />
   );
