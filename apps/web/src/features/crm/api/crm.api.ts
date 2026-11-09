@@ -508,8 +508,9 @@ export async function setQuoteStatus(
   id: string,
   status: Quote['status'],
   actor: string,
+  policy?: QuoteApprovalPolicy,
 ): Promise<void> {
-  await setPricingQuoteStatus(id, status, actor);
+  await setPricingQuoteStatus(id, status, actor, undefined, policy);
 }
 
 /** Convert a lead to a customer (reuses the customers table via the RPC). */

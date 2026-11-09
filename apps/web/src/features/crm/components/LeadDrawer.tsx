@@ -46,10 +46,15 @@ const KIND_OPTS = (Object.entries(ACTIVITY_LABEL) as [ActivityKind, string][]).m
 const SERVICE_OPTS = (Object.entries(SERVICE_LABEL) as [ServiceCode, string][]).map(
   ([value, label]) => ({ value, label }),
 );
-/** Current status + the moves the quote lifecycle allows (no invalid options). */
-function quoteStatusOpts(from: QuoteStatus) {
+/**
+ * Current status + the moves the quote lifecycle allows (no invalid options). A
+ * quote awaiting approval is decided only by an approver (leads.approve).
+ */
+function quoteStatusOpts(from: QuoteStatus, canApprove: boolean) {
   return (Object.entries(QUOTE_STATUS_LABEL) as [QuoteStatus, string][])
-    .filter(([to]) => to === from || canMoveTo(from, to))
+    .filter(
+      ([to]) => to === from || (canMoveTo(from, to) && (from !== 'pending_approval' || canApprove)),
+    )
     .map(([value, label]) => ({ value, label }));
 }
 const NAT_OPTS = NATIONALITIES.map((n) => ({ value: n, label: n }));
@@ -370,8 +375,10 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
                           actor: fullName,
                         })
                       }
-                      options={quoteStatusOpts(q.status)}
-                      disabled={!canEdit || quoteStatusOpts(q.status).length < 2}
+                      options={quoteStatusOpts(q.status, can('leads', 'approve'))}
+                      disabled={
+                        !canEdit || quoteStatusOpts(q.status, can('leads', 'approve')).length < 2
+                      }
                       aria-label="حالة العرض"
                       className="flex-1"
                     />

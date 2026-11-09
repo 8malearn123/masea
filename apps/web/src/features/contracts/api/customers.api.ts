@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch } from '@/lib/branchScope';
 
 export interface CustomerLite {
   id: string;
@@ -25,8 +26,10 @@ export async function searchCustomers(q: string): Promise<CustomerLite[]> {
     if (error) throw new Error(`تعذّر البحث في العملاء: ${error.message}`);
     return (data ?? []) as CustomerLite[];
   }
+  // نطاق الفرع كما في RLS على customers (مدير فرع جازان يرى عملاء جازان فقط)
+  const scoped = scopeToViewerBranch(FALLBACK, (c) => c.city);
   const s = q.trim();
-  return s ? FALLBACK.filter((c) => c.full_name.includes(s)) : FALLBACK;
+  return s ? scoped.filter((c) => c.full_name.includes(s)) : scoped;
 }
 
 /** New customer from the contract wizard — validated before it reaches the backend. */

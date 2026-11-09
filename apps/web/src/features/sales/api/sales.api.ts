@@ -118,8 +118,9 @@ export function applySalesFilters(rows: Sale[], f: SalesFilters): Sale[] {
     if (f.employee !== 'all' && s.sold_by_name !== f.employee) return false;
     if (f.service !== 'all' && s.service_code !== f.service) return false;
     if (f.status !== 'all' && s.status !== f.status) return false;
-    if (q && !`${s.sale_no} ${s.contract_no ?? ''} ${s.customer_name ?? ''}`.includes(q))
-      return false;
+    // رقم العملية يُعرض «SL-7» — البحث بنفس الصيغة (والرقم وحده) ودون حساسية لحالة الأحرف
+    const hay = `SL-${s.sale_no} ${s.contract_no ?? ''} ${s.customer_name ?? ''}`.toUpperCase();
+    if (q && !hay.includes(q.toUpperCase())) return false;
     return true;
   });
 }

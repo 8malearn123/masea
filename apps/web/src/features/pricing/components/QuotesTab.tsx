@@ -513,11 +513,13 @@ function QuoteDrawer({
               <CheckCircle2 size={14} /> قبول
             </Button>
           )}
-          {canEdit && canMoveTo(x.status, 'rejected') && (
-            <Button size="sm" variant="danger" onClick={() => setConfirm('rejected')}>
-              <XCircle size={14} /> رفض
-            </Button>
-          )}
+          {canEdit &&
+            canMoveTo(x.status, 'rejected') &&
+            (x.status !== 'pending_approval' || can('leads', 'approve')) && (
+              <Button size="sm" variant="danger" onClick={() => setConfirm('rejected')}>
+                <XCircle size={14} /> رفض
+              </Button>
+            )}
           {(can('pricing', 'create') || can('leads', 'create')) && (
             <Button
               size="sm"

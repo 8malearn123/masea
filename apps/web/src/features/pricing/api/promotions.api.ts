@@ -252,16 +252,35 @@ export async function listPromotions(): Promise<Promotion[]> {
   return ((data ?? []) as Record<string, unknown>[]).map(normalize);
 }
 
+/** رمز الخصم فريد (uq_promotions_code على upper(code)) — رسالة واضحة قبل الإرسال. */
+async function assertCodeFree(code: string | null | undefined, selfId?: string): Promise<void> {
+  const c = code?.trim().toUpperCase();
+  if (!c) return;
+  const taken = (await listPromotions()).find(
+    (p) => p.id !== selfId && p.code?.trim().toUpperCase() === c,
+  );
+  if (taken) throw new Error(`الرمز «${c}» مستخدم لخصم آخر («${taken.name}»)`);
+}
+
+const normCode = <T extends { code?: string | null }>(row: T): T =>
+  'code' in row ? { ...row, code: row.code?.trim().toUpperCase() || null } : row;
+
+function promotionError(message: string): string {
+  return message.includes('uq_promotions_code') ? 'رمز الخصم مستخدم لخصم آخر' : message;
+}
+
 export async function createPromotion(
-  row: Omit<Promotion, 'id' | 'usage_count'>,
+  input: Omit<Promotion, 'id' | 'usage_count'>,
 ): Promise<Promotion> {
+  const row = normCode(input);
+  await assertCodeFree(row.code);
   if (!isDemoMode()) {
     const { data, error } = await supabase
       .from('promotions')
       .insert({ ...row, type: 'manual' })
       .select(COLUMNS)
       .single();
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(promotionError(error.message));
     return normalize(data as Record<string, unknown>);
   }
   const local: Promotion = { ...row, id: `pm-${Date.now()}`, usage_count: 0 };
@@ -271,8 +290,10 @@ export async function createPromotion(
 
 export async function updatePromotion(
   id: string,
-  patch: Partial<Omit<Promotion, 'id' | 'usage_count'>>,
+  input: Partial<Omit<Promotion, 'id' | 'usage_count'>>,
 ): Promise<void> {
+  const patch = normCode(input);
+  if (patch.code) await assertCodeFree(patch.code, id);
   if (isDemoMode()) {
     const local = STORE.find((p) => p.id === id);
     if (local) Object.assign(local, patch);
@@ -283,7 +304,7 @@ export async function updatePromotion(
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('id');
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(promotionError(error.message));
   if (!data?.length) throw new Error('لا تملك صلاحية تعديل الخصومات');
 }
 

@@ -62,9 +62,8 @@ export function useCreateQuote() {
   >({
     mutationFn: ({ input, ...ctx }) => createQuote(input, ctx),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
-      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
-      void qc.invalidateQueries({ queryKey: LEADS_KEY });
+      // كل قوائم العروض (الدرج، ملف العميل، التسعير) والمرحلة الجديدة للعميل المحتمل
+      invalidateQuotes(qc);
       toast.success('تم إنشاء عرض السعر');
     },
     onError: (e) => toast.error(e.message || 'تعذّر إنشاء العرض'),
@@ -74,11 +73,11 @@ export function useCreateQuote() {
 export function useSetQuoteStatus() {
   const qc = useQueryClient();
   const toast = useToast();
+  const policy = useQuoteApprovalPolicy();
   return useMutation<void, Error, { id: string; status: Quote['status']; actor: string }>({
-    mutationFn: ({ id, status, actor }) => setQuoteStatus(id, status, actor),
+    mutationFn: ({ id, status, actor }) => setQuoteStatus(id, status, actor, policy),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['crm', 'quotes'] });
-      void qc.invalidateQueries({ queryKey: ['pricing', 'quotes'] });
+      invalidateQuotes(qc);
       toast.success('تم تحديث حالة العرض');
     },
     onError: (e) => toast.error(e.message || 'تعذّر التحديث'),

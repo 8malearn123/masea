@@ -68,6 +68,31 @@ select pg_temp.logout();
 select pg_temp.check((select status = 'sent' from quotes where id = '9a000000-0000-0000-0000-000000000001'),
   'direct quote update/delete has no effect');
 
+-- four eyes: the branch manager cannot approve the quote he created himself
+insert into auth.users (id, email) values ('ad000000-0000-0000-0000-000000000063', 'bm18@test') on conflict (id) do nothing;
+insert into user_profiles (id, full_name, role, branch_id) values
+  ('ad000000-0000-0000-0000-000000000063', 'سعد آل مريح', 'branch_manager', 'b0000000-0000-0000-0000-00000000000b')
+on conflict (id) do update set role = excluded.role, branch_id = excluded.branch_id;
+insert into quotes (id, service_code, base_amount, vat_amount, total_amount, status, branch_id, assigned_to, created_by, valid_until, customer_name)
+values ('9a000000-0000-0000-0000-000000000002', 'daily_rental', 1000, 150, 1150, 'pending_approval', 'b0000000-0000-0000-0000-00000000000b',
+        'ad000000-0000-0000-0000-000000000063', 'ad000000-0000-0000-0000-000000000063', current_date + 5, 'عميل اختبار المبيعات'),
+       ('9a000000-0000-0000-0000-000000000003', 'daily_rental', 1000, 150, 1150, 'pending_approval', 'b0000000-0000-0000-0000-00000000000b',
+        'ad000000-0000-0000-0000-000000000061', 'ad000000-0000-0000-0000-000000000061', current_date + 5, 'عميل اختبار المبيعات'),
+       ('9a000000-0000-0000-0000-000000000004', 'daily_rental', 1000, 150, 1150, 'pending_approval', 'b0000000-0000-0000-0000-00000000000b',
+        'ad000000-0000-0000-0000-000000000061', 'ad000000-0000-0000-0000-000000000061', current_date + 5, 'عميل اختبار المبيعات')
+on conflict (id) do nothing;
+select pg_temp.login('ad000000-0000-0000-0000-000000000063');
+select pg_temp.rejects($$ select set_quote_status('9a000000-0000-0000-0000-000000000002', 'sent') $$,
+  'من أنشأه', 'no self-approval');
+select set_quote_status('9a000000-0000-0000-0000-000000000003', 'sent');
+select pg_temp.logout();
+select pg_temp.check((select status = 'sent' and approved_by = 'ad000000-0000-0000-0000-000000000063'
+                        from quotes where id = '9a000000-0000-0000-0000-000000000003'), 'the BM approves a rep''s quote');
+select pg_temp.login('ad000000-0000-0000-0000-000000000061');
+select pg_temp.rejects($$ select set_quote_status('9a000000-0000-0000-0000-000000000004', 'sent') $$,
+  'لمدير الفرع', 'a sales rep cannot approve her own pending quote');
+select pg_temp.logout();
+
 -- ---- 3) contract from an expired quote / exhausted coupon is refused
 select pg_temp.rejects($$ insert into contracts (customer_id, branch_id, service_code, base_amount, status, quote_id)
   values ('c0000000-0000-0000-0000-0000000000f1', 'b0000000-0000-0000-0000-00000000000b', 'daily_rental', 1000, 'draft',

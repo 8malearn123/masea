@@ -297,6 +297,9 @@ export function setQuoteRecordStatus(
     throw new Error('الخصم يتجاوز الحد المسموح — أرسل العرض لاعتماد مدير الفرع أولاً');
   if (policy && from === 'pending_approval' && !policy.canApprove)
     throw new Error('اعتماد العرض أو رفضه لمدير الفرع');
+  // مبدأ الأربع أعين (guard_quote_approval، 0085): لا يعتمد العرض من أنشأه
+  if (from === 'pending_approval' && to === 'sent' && q.assigned_to && q.assigned_to === actor)
+    throw new Error('لا يعتمد العرض من أنشأه — يعتمده مدير آخر');
   q.status = to;
   const now = new Date().toISOString();
   if (to === 'sent') q.sent_at = now;

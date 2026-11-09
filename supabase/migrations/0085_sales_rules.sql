@@ -4,7 +4,7 @@
 --      عن موظف المبيعات بعد الحفظ لأن سياسة القراءة تشترط الإسناد له)، الجوال
 --      05xxxxxxxx (يُطبَّع +966/966)، القيمة لا تكون سالبة، إعادة الإسناد لمدير الفرع،
 --      ولا حذف نهائي (العميل غير المهتم = مرحلة «مفقود»).
---   2) عروض الأسعار تُكتب عبر دوال الخادم فقط (create_quote_from_price /
+--   2) عروض الأسعار تُكتب عبر دوال الخادم فقط، ولا يعتمد العرض من أنشأه (أربع أعين) (create_quote_from_price /
 --      set_quote_status / convert_quote_to_contract). سياسة quotes_write «for all» كانت
 --      تسمح بقبول العرض أو حذفه مباشرة متجاوزة دورة الحياة والاعتماد.
 --   3) تحويل العرض لعقد يعيد فحص الكوبون (فعّال، لم تنتهِ مدته، لم يُستنفد حده — مع
@@ -74,6 +74,20 @@ create policy leads_upd on leads for update to authenticated using (
 
 -- ---------- 2) quotes: RPC-only writes ----------------------------------------------
 drop policy if exists quotes_write on quotes;
+
+-- مبدأ الأربع أعين: لا يعتمد العرض (بانتظار الموافقة → مُرسل) من أنشأه
+create or replace function guard_quote_approval() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.status = 'pending_approval' and new.status = 'sent' and auth.uid() is not null
+     and auth.uid() in (old.created_by, old.assigned_to) then
+    raise exception 'لا يعتمد العرض من أنشأه — يعتمده مدير آخر' using errcode = '42501';
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_guard_quote_approval on quotes;
+create trigger trg_guard_quote_approval before update of status on quotes
+  for each row execute function guard_quote_approval();
 
 -- ---------- 3) contract from a quote: coupon + validity re-check ---------------------
 create or replace function guard_contract_from_quote() returns trigger

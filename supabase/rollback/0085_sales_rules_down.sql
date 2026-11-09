@@ -15,6 +15,8 @@ alter table contracts add column total_amount numeric(12,2) generated always as 
 drop trigger if exists trg_guard_contract_from_quote on contracts;
 drop function if exists guard_contract_from_quote();
 
+drop trigger if exists trg_guard_quote_approval on quotes;
+drop function if exists guard_quote_approval();
 drop policy if exists quotes_write on quotes;
 create policy quotes_write on quotes for all to authenticated using (
   has_perm('leads','edit') and (
