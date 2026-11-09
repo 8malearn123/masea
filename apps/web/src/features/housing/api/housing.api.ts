@@ -209,6 +209,38 @@ export async function listMyHousingTargets(): Promise<HousingTarget[]> {
   return DEMO_TARGETS;
 }
 
+/**
+ * Demo mirror of sync_ops_worker (0078): the HR worker file is the source —
+ * her barcode and dorm make her a resident the scan station resolves.
+ */
+export function upsertResidentFromWorker(w: {
+  full_name: string;
+  nationality: string;
+  branch: string;
+  dorm: string;
+  barcode: string;
+  iqama_no: string;
+}): void {
+  if (!w.barcode) return;
+  const i = RESIDENTS.findIndex((r) => r.barcode === w.barcode);
+  const base = {
+    full_name: w.full_name,
+    nationality: w.nationality,
+    branch: w.branch,
+    dorm: w.dorm,
+    barcode: w.barcode,
+    iqama_no: w.iqama_no,
+  };
+  if (i >= 0) RESIDENTS[i] = { ...RESIDENTS[i]!, ...base };
+  else if (w.dorm)
+    RESIDENTS.push({
+      ...base,
+      id: `r-${w.barcode}`,
+      status: 'absent',
+      check_in: new Date().toISOString().slice(0, 10),
+    });
+}
+
 export function resolveWorkerByBarcode(code: string): Resident | null {
   const q = code.trim();
   return RESIDENTS.find((r) => r.barcode === q || r.iqama_no === q) ?? null;

@@ -295,12 +295,31 @@ export interface HouseWorker {
   monthly_salary: number;
   languages: string[];
   skills: string[];
-  passport_no: string;
-  iqama_no: string;
   status: WorkerStatus;
   branch: string;
   bio: string;
+  /* ---- private file (worker_details, 0078) — HR only ---- */
+  passport_no: string;
+  iqama_no: string;
+  border_no: string;
+  birth_date: string;
+  arrival_date: string;
+  phone: string;
+  /** dorm name */
+  dorm: string;
+  /** system-generated — scanned in housing */
+  barcode: string;
+  /** bank data — hr.manage */
+  bank_name: string;
+  iban: string;
+  account_holder: string;
+  payment_method: 'bank' | 'cash';
 }
+
+export const PAYMENT_METHOD_LABEL: Record<HouseWorker['payment_method'], string> = {
+  bank: 'تحويل بنكي',
+  cash: 'نقدًا',
+};
 
 export const WORKER_STATUS_LABEL: Record<WorkerStatus, string> = {
   available: 'متاحة',
@@ -689,7 +708,8 @@ export type HrLookupKind =
   | 'profession'
   | 'skill'
   | 'language'
-  | 'doc_type';
+  | 'doc_type'
+  | 'bank';
 /** Who a nationality applies to (other lists use «both»). */
 export type LookupScope = 'staff' | 'worker' | 'both';
 

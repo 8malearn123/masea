@@ -1391,39 +1391,101 @@ export async function createEmergencyContact(
  * FALLBACK_WORKERS in demo). HR-only fields (passport/iqama/branch/skills)
  * are columns on worker_profiles (0068); in demo they sit in WORKER_HR below.
  * ========================================================================= */
-type WorkerHr = Pick<HouseWorker, 'skills' | 'passport_no' | 'iqama_no' | 'branch'>;
+type WorkerHr = Pick<
+  HouseWorker,
+  | 'skills'
+  | 'passport_no'
+  | 'iqama_no'
+  | 'branch'
+  | 'border_no'
+  | 'birth_date'
+  | 'arrival_date'
+  | 'phone'
+  | 'dorm'
+  | 'barcode'
+  | 'bank_name'
+  | 'iban'
+  | 'account_holder'
+  | 'payment_method'
+>;
+const NO_FILE: Omit<WorkerHr, 'skills' | 'branch'> = {
+  passport_no: '',
+  iqama_no: '',
+  border_no: '',
+  birth_date: '',
+  arrival_date: '',
+  phone: '',
+  dorm: '',
+  barcode: '',
+  bank_name: '',
+  iban: '',
+  account_holder: '',
+  payment_method: 'bank',
+};
 const WORKER_HR: Record<string, WorkerHr> = {
   w1: {
+    ...NO_FILE,
     skills: ['محبة للأطفال', 'التنظيف', 'الكي'],
     passport_no: 'P1234567',
     iqama_no: '2433445566',
+    border_no: '3011223344',
+    birth_date: '1992-03-14',
+    arrival_date: '2025-05-20',
+    phone: '0551230001',
     branch: 'نجران',
+    dorm: 'سكن نجران - أ',
+    barcode: 'MAS-W-1001',
+    bank_name: 'مصرف الراجحي',
+    iban: 'SA0380000000608010167519',
+    account_holder: 'MARIA SANTOS',
   },
   w3: {
+    ...NO_FILE,
     skills: ['تجيد الطبخ', 'التنظيف'],
     passport_no: 'A7654321',
     iqama_no: '2477889900',
+    border_no: '3022334455',
+    birth_date: '1990-08-02',
+    arrival_date: '2025-01-11',
+    phone: '0551230003',
     branch: 'جازان',
+    dorm: 'سكن جازان',
+    barcode: 'MAS-W-1002',
+    payment_method: 'cash',
   },
   w5: {
+    ...NO_FILE,
     skills: ['محبة للأطفال', 'رعاية ذوي الإعاقة'],
     passport_no: 'K1122334',
     iqama_no: '2411223344',
+    arrival_date: '2024-11-03',
     branch: 'شرورة',
+    dorm: 'سكن شرورة',
+    barcode: 'MAS-W-1003',
+    bank_name: 'مصرف الإنماء',
+    iban: 'SA4405000068202873140000',
+    account_holder: 'GRACE WANJIRU',
   },
   w9: {
+    ...NO_FILE,
     skills: ['التنظيف', 'الكي', 'العناية بكبار السن'],
     passport_no: 'B5544332',
     iqama_no: '2466778899',
     branch: 'حبونا',
+    dorm: 'سكن حبونا',
+    barcode: 'MAS-W-1005',
   },
   w11: {
+    ...NO_FILE,
     skills: ['محبة للأطفال', 'العناية بكبار السن'],
     passport_no: 'S9988776',
     iqama_no: '2455667780',
     branch: 'نجران',
+    dorm: 'سكن نجران - أ',
+    barcode: 'MAS-W-1004',
   },
 };
+let barcodeSeq = 2000;
 const WORKER_STATUS_SET = new Set(['available', 'reserved', 'on_service', 'medical']);
 
 function demoWorker(w: (typeof FALLBACK_WORKERS)[number]): HouseWorker {
@@ -1438,12 +1500,12 @@ function demoWorker(w: (typeof FALLBACK_WORKERS)[number]): HouseWorker {
     experience_years: w.experience_years,
     monthly_salary: w.monthly_salary,
     languages: [...w.languages],
-    skills: [...(hr?.skills ?? [])],
-    passport_no: hr?.passport_no ?? '',
-    iqama_no: hr?.iqama_no ?? '',
     status: (WORKER_STATUS_SET.has(w.status) ? w.status : 'available') as HouseWorker['status'],
-    branch: hr?.branch ?? '',
     bio: w.bio_ar ?? '',
+    ...NO_FILE,
+    ...(hr ?? {}),
+    skills: [...(hr?.skills ?? [])],
+    branch: hr?.branch ?? '',
   };
 }
 
@@ -1470,17 +1532,40 @@ export function saveHouseWorker(w: HouseWorker): HouseWorker {
   const i = FALLBACK_WORKERS.findIndex((x) => x.id === w.id);
   if (i >= 0) FALLBACK_WORKERS[i] = { ...FALLBACK_WORKERS[i], ...profile };
   else FALLBACK_WORKERS.unshift(profile);
+  const before = WORKER_HR[w.id];
   WORKER_HR[w.id] = {
     skills: [...w.skills],
     passport_no: w.passport_no,
     iqama_no: w.iqama_no,
     branch: w.branch,
+    border_no: w.border_no,
+    birth_date: w.birth_date,
+    arrival_date: w.arrival_date,
+    phone: w.phone,
+    dorm: w.dorm,
+    // system-managed (worker_barcode_seq in the database)
+    barcode: before?.barcode || w.barcode || `MAS-W-${(barcodeSeq += 1)}`,
+    bank_name: w.bank_name,
+    iban: w.iban,
+    account_holder: w.account_holder,
+    payment_method: w.payment_method,
   };
+  w.barcode = WORKER_HR[w.id]!.barcode;
   return w;
 }
 
 export async function persistHouseWorker(w: HouseWorker, isNew: boolean): Promise<HouseWorker> {
   if (!isDemoMode()) return live.liveSaveWorker(w, isNew);
+  // bank data is hr.manage (guard_worker_details, 0078)
+  const role = useAuth.getState().profile?.role as RoleCode | undefined;
+  const before = WORKER_HR[w.id];
+  const bankChanged =
+    (w.iban || '') !== (before?.iban ?? '') ||
+    (w.bank_name || '') !== (before?.bank_name ?? '') ||
+    (w.account_holder || '') !== (before?.account_holder ?? '') ||
+    (before ? w.payment_method !== before.payment_method : w.payment_method !== 'bank');
+  if (role && bankChanged && !roleCan(role, 'hr', 'manage'))
+    throw new Error('البيانات البنكية من صلاحية إدارة الموارد البشرية');
   return saveHouseWorker(w);
 }
 
@@ -1491,7 +1576,8 @@ type RenamableKind =
   | 'nationality'
   | 'profession'
   | 'skill'
-  | 'language';
+  | 'language'
+  | 'bank';
 
 /** Demo mirror of cascade_hr_lookup_rename: records that store the name follow it. */
 export function renameLookupValueDemo(kind: string, from: string, to: string): void {
@@ -1511,6 +1597,14 @@ export function renameLookupValueDemo(kind: string, from: string, to: string): v
     };
   });
   if (kind === 'skill') Object.values(WORKER_HR).forEach((h) => (h.skills = swap(h.skills)));
+  if (kind === 'bank') {
+    Object.values(WORKER_HR).forEach((h) => {
+      if (h.bank_name === from) h.bank_name = to;
+    });
+    EMPLOYEES.forEach((e) => {
+      if (e.bank_name === from) e.bank_name = to;
+    });
+  }
 }
 
 /** Demo mirror of hr_lookup_usage: how many records hold each name. */
@@ -1528,6 +1622,10 @@ export function lookupUsageDemo(kind: RenamableKind): Map<string, number> {
   if (kind === 'profession') FALLBACK_WORKERS.forEach((w) => add(w.profession));
   if (kind === 'language') FALLBACK_WORKERS.forEach((w) => w.languages.forEach(add));
   if (kind === 'skill') Object.values(WORKER_HR).forEach((h) => h.skills.forEach(add));
+  if (kind === 'bank') {
+    Object.values(WORKER_HR).forEach((h) => add(h.bank_name));
+    EMPLOYEES.forEach((e) => add(e.bank_name));
+  }
   return out;
 }
 
