@@ -126,7 +126,7 @@ interface RawPosition {
  */
 export async function listDriverLocations(): Promise<DriverLocation[]> {
   const profile = useAuth.getState().profile;
-  const drivers = await listDrivers();
+  const drivers = (await listDrivers()).filter((d) => d.is_active);
   if (isDemoMode()) {
     const rows = drivers.map((d) => {
       const pos = FALLBACK_LOCATIONS.find((l) => l.id === d.id);

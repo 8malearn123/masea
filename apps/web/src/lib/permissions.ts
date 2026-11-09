@@ -66,7 +66,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     // full + manage: إدارة المساكن والمستهدفات (0081)
     housing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
-    orders: 'full',
+    // full + manage: إدارة السائقين (0084)
+    orders: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     rating: 'full',
     rbac: 'manage',
     reports: 'full',
@@ -91,7 +92,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     // full + manage: إدارة المساكن والمستهدفات (0081)
     housing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
-    orders: 'full',
+    // full + manage: إدارة السائقين (0084)
+    orders: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     rating: 'full',
     reports: 'full',
     targets: 'full',
@@ -106,7 +108,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     // الرأس التشغيلي لفرعه فقط — يملك العمليات، لا المال ولا النظام.
     contracts: 'full', // إنشاء + اعتماد (فرعه)
     leads: 'full',
-    orders: 'full',
+    // full + manage: إدارة السائقين (0084)
+    orders: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     targets: 'full',
     loyalty: 'edit',
     call_center: 'edit',

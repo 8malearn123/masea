@@ -117,7 +117,9 @@ function DispatchBoard() {
     branch: filters.branch,
     search: '',
   });
-  const { data: allDrivers = [] } = useDrivers();
+  const { data: fleet = [] } = useDrivers();
+  // السائق المعطّل لا يظهر في اللوحة ولا يُسند (0084)
+  const allDrivers = useMemo(() => fleet.filter((d) => d.is_active), [fleet]);
   const drivers = useMemo(
     () =>
       filters.branch === 'all' ? allDrivers : allDrivers.filter((d) => d.branch === filters.branch),
@@ -342,10 +344,18 @@ function DispatchBoard() {
             <h2 className="mb-4 flex items-center justify-between text-sm font-bold text-navy">
               <span className="flex items-center gap-2">
                 <UserRound size={16} /> السائقون
+                <span className="num rounded-full bg-navy-50 px-2 py-0.5 text-xs text-navy">
+                  {drivers.length}
+                </span>
               </span>
-              <span className="num rounded-full bg-navy-50 px-2 py-0.5 text-xs text-navy">
-                {drivers.length}
-              </span>
+              {can('orders', 'manage') && (
+                <Link
+                  to="/orders/drivers"
+                  className="text-xs font-medium text-teal hover:underline"
+                >
+                  إدارة السائقين
+                </Link>
+              )}
             </h2>
             <ul className="space-y-2.5">
               {drivers.map((d) => {

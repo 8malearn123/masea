@@ -1,8 +1,13 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { scopeToViewerBranch } from '@/lib/branchScope';
+import { inViewerScope, scopeToViewerBranch } from '@/lib/branchScope';
 import { tripScanResult } from '@/features/orders/lib/trip';
+import {
+  driverChangeError,
+  type DriverAccount,
+  type DriverInput,
+} from '@/features/orders/lib/driverRules';
 import {
   driverAssignError,
   isTerminalOrderStatus,
@@ -34,6 +39,8 @@ const FALLBACK_DRIVERS: Driver[] = [
     status: 'available',
     vehicle_no: 'ABC-1234',
     rating: 4.8,
+    is_active: true,
+    user_id: null,
   },
   {
     id: 'd2',
@@ -43,6 +50,8 @@ const FALLBACK_DRIVERS: Driver[] = [
     status: 'on_route',
     vehicle_no: 'DEF-5678',
     rating: 4.6,
+    is_active: true,
+    user_id: null,
   },
   {
     id: 'd3',
@@ -52,6 +61,8 @@ const FALLBACK_DRIVERS: Driver[] = [
     status: 'on_route',
     vehicle_no: 'GHI-9012',
     rating: 4.9,
+    is_active: true,
+    user_id: null,
   },
   {
     id: 'd4',
@@ -61,6 +72,8 @@ const FALLBACK_DRIVERS: Driver[] = [
     status: 'off_duty',
     vehicle_no: 'JKL-3456',
     rating: 4.5,
+    is_active: true,
+    user_id: null,
   },
   {
     id: 'd5',
@@ -70,6 +83,8 @@ const FALLBACK_DRIVERS: Driver[] = [
     status: 'available',
     vehicle_no: 'MNO-7890',
     rating: 4.7,
+    is_active: true,
+    user_id: null,
   },
 ];
 
@@ -82,6 +97,9 @@ FALLBACK_DRIVERS.push({
   status: 'on_route',
   vehicle_no: 'PQR-2468',
   rating: 4.7,
+  is_active: true,
+  // حساب السائق التجريبي مربوط بسجله
+  user_id: DEMO_DRIVER_ID,
 });
 
 /** يسجّل سائقًا في مخزن العرض (الاختبارات وشاشات العرض بلا خادم). */
@@ -383,6 +401,8 @@ interface RawDriver {
   status: Driver['status'];
   vehicle_no: string | null;
   rating: number | null;
+  is_active: boolean | null;
+  user_id: string | null;
   branches: { name: string | null } | null;
 }
 
@@ -416,14 +436,97 @@ export async function listDrivers(): Promise<Driver[]> {
     );
   const { data, error } = await supabase
     .from('drivers')
-    .select('id, full_name, phone, status, vehicle_no, rating, branches(name)')
+    .select('id, full_name, phone, status, vehicle_no, rating, is_active, user_id, branches(name)')
     .order('full_name', { ascending: true });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as RawDriver[]).map(({ branches, rating, ...rest }) => ({
-    ...rest,
-    branch: branches?.name ?? null,
-    rating: rating ?? 0,
+  return ((data ?? []) as unknown as RawDriver[]).map(
+    ({ branches, rating, is_active, ...rest }) => ({
+      ...rest,
+      branch: branches?.name ?? null,
+      rating: rating ?? 0,
+      is_active: is_active ?? true,
+    }),
+  );
+}
+
+/** حسابات الدخول بدور «سائق» في مخزن العرض (لربطها بسجل السائق). */
+const DEMO_DRIVER_ACCOUNTS: Omit<DriverAccount, 'driver_id'>[] = [
+  { id: DEMO_DRIVER_ID, full_name: 'ماجد الحربي', branch: 'نجران' },
+  { id: 'acc-drv-jzn', full_name: 'ياسر الحازمي', branch: 'جازان' },
+  { id: 'acc-drv-srr', full_name: 'مشعل الصيعري', branch: 'شرورة' },
+];
+
+/** حسابات السائقين ضمن نطاق المستخدم ومن يرتبط بكل منها (list_driver_accounts، 0084). */
+export async function listDriverAccounts(): Promise<DriverAccount[]> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.rpc('list_driver_accounts');
+    if (error) throw new Error(`تعذّر تحميل حسابات السائقين: ${error.message}`);
+    return ((data ?? []) as DriverAccount[]).map((a) => ({ ...a, full_name: a.full_name ?? '—' }));
+  }
+  return scopeToViewerBranch(DEMO_DRIVER_ACCOUNTS, (a) => a.branch).map((a) => ({
+    ...a,
+    driver_id: FALLBACK_DRIVERS.find((d) => d.user_id === a.id)?.id ?? null,
   }));
+}
+
+/** عدد الطلبات النشطة للسائق (مُسند / قيد التنفيذ). */
+function demoBusy(driverId: string): number {
+  return FALLBACK_ORDERS.filter(
+    (o) => o.driver_id === driverId && (o.status === 'assigned' || o.status === 'in_progress'),
+  ).length;
+}
+
+/** إضافة/تعديل/تعطيل سائق (orders.manage — RLS + guard_driver). */
+export async function saveDriver(input: DriverInput): Promise<void> {
+  const drivers = await listDrivers();
+  const current = input.id ? (drivers.find((d) => d.id === input.id) ?? null) : null;
+  const busy = current
+    ? isDemoMode()
+      ? demoBusy(current.id)
+      : current.status === 'on_route'
+        ? 1
+        : 0
+    : 0;
+  const invalid = driverChangeError(input, { current, busy, accounts: await listDriverAccounts() });
+  if (invalid) throw new Error(invalid);
+  const row = {
+    full_name: input.full_name.trim(),
+    phone: input.phone?.trim() || null,
+    vehicle_no: input.vehicle_no?.trim().toUpperCase() || null,
+    user_id: input.user_id,
+    is_active: input.is_active,
+    // المعطّل «خارج الدوام»
+    status: input.is_active ? input.status : ('off_duty' as const),
+  };
+  if (!isDemoMode()) {
+    const { data: b } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('city', input.branch)
+      .maybeSingle();
+    const payload = { ...row, branch_id: (b as { id: string } | null)?.id ?? null };
+    const q = input.id
+      ? supabase.from('drivers').update(payload).eq('id', input.id).select('id')
+      : supabase.from('drivers').insert(payload).select('id');
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) throw new Error('لا تملك صلاحية إدارة هذا السائق');
+    return;
+  }
+  if (!inViewerScope(input.branch)) throw new Error('هذا الفرع خارج نطاقك');
+  const target = current ? FALLBACK_DRIVERS.find((d) => d.id === current.id) : undefined;
+  if (target) {
+    Object.assign(target, { ...row, branch: input.branch });
+    // اسم السائق في الطلبات يتبع سجله
+    FALLBACK_ORDERS.forEach((o) => o.driver_id === target.id && (o.driver_name = target.full_name));
+  } else {
+    FALLBACK_DRIVERS.push({
+      id: `drv-${Date.now().toString(36)}`,
+      rating: 0,
+      branch: input.branch,
+      ...row,
+    });
+  }
 }
 
 /* ------------------------------ mutations -------------------------------- */

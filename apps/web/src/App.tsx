@@ -25,6 +25,7 @@ const PipelineBoard = lazy(() => import('@/features/crm/components/PipelineBoard
 const LeadCreatePage = lazy(() => import('@/features/crm/components/LeadCreatePage'));
 const LeadProfile = lazy(() => import('@/features/crm/components/LeadProfile'));
 const OrdersBoard = lazy(() => import('@/features/orders/components/OrdersBoard'));
+const DriversManager = lazy(() => import('@/features/orders/components/DriversManager'));
 const GpsTracking = lazy(() => import('@/features/gps/components/GpsTracking'));
 const PricingBoard = lazy(() => import('@/features/pricing/components/PricingBoard'));
 const PaymentsBoard = lazy(() => import('@/features/payments/components/PaymentsBoard'));
@@ -175,6 +176,14 @@ export default function App() {
               element={
                 <RequirePerm module="orders">
                   <OrdersBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="orders/drivers"
+              element={
+                <RequirePerm module="orders" action="manage">
+                  <DriversManager />
                 </RequirePerm>
               }
             />

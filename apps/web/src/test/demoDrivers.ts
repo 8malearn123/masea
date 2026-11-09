@@ -17,6 +17,8 @@ export function freshDriver(branch: string | null = null): string {
     status: 'available',
     vehicle_no: null,
     rating: 5,
+    is_active: true,
+    user_id: null,
   });
   return id;
 }

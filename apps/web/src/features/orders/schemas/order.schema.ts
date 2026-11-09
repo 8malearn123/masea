@@ -30,6 +30,10 @@ export const driverSchema = z.object({
   status: driverStatusSchema,
   vehicle_no: z.string().nullable(),
   rating: z.number(),
+  /** الحذف = تعطيل (0084) */
+  is_active: z.boolean(),
+  /** حساب الدخول المربوط (مستخدم بدور «سائق») */
+  user_id: z.string().nullable(),
 });
 export type Driver = z.infer<typeof driverSchema>;
 
