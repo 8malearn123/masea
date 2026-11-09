@@ -14,13 +14,15 @@ import { Badge, Button, Input, Modal, Select } from '@/shared/ui';
 import { dateTimeAr, sar } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
-import { canMoveTo, quoteContractPath } from '@/shared/lib/quotesLedger';
+import { canMoveTo } from '@/shared/lib/quotesLedger';
 import { calculate, EMPTY_CALC, type CalcInput } from '@/features/pricing/lib/engine';
 import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import {
   useActivities,
   useAddActivity,
   useConvertLead,
+  useConvertQuote,
+  useLeadQuotes,
   useCreateQuote,
   useQuotes,
   useSetQuoteStatus,
@@ -71,6 +73,7 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
   const { stageLabel, stageTone, sourceLabel } = useCrmMeta();
   const { data: activities = [] } = useActivities(lead.id);
   const { data: quotes = [] } = useQuotes(lead.id);
+  const { data: quoteRecords = [] } = useLeadQuotes(lead.id);
   const addActivity = useAddActivity();
   const toggle = useToggleActivity();
   const convertLead = useConvertLead();
@@ -78,6 +81,7 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
   const setQuoteStatus = useSetQuoteStatus();
   const navigate = useNavigate();
   const { can, fullName } = usePermissions();
+  const convert = useConvertQuote();
   const canEdit = can('leads', 'edit');
   const canLog = can('leads', 'create');
   const { data: rules = [], isLoading: rulesLoading } = usePricingRules();
@@ -375,7 +379,16 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => navigate(quoteContractPath(q, q.coupon_code))}
+                        loading={convert.isPending}
+                        onClick={() =>
+                          convert.mutate(
+                            {
+                              quote: quoteRecords.find((r) => r.id === q.id) ?? null,
+                              actor: fullName,
+                            },
+                            { onSuccess: (r) => navigate(`/contracts/${r.contract_id}`) },
+                          )
+                        }
                       >
                         <FileSignature size={14} /> تحويل لعقد
                       </Button>

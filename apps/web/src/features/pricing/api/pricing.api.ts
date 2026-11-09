@@ -1,5 +1,5 @@
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import {
   DEFAULT_PRICING_CONFIG,
   type PriceArgs,
@@ -69,27 +69,26 @@ const FALLBACK: PricingRule[] = [
 
 /** All rules incl. disabled (price-list management). */
 export async function listAllPricingRules(): Promise<PricingRule[]> {
-  try {
+  if (isDemoMode()) return FALLBACK.map((r) => ({ ...r }));
+  {
     const { data, error } = await supabase
       .from('pricing_rules')
       .select(
         'id, service_code, nationality, profession, duration_unit, base_price, min_price, is_active, updated_at, branch_id, branches(city)',
       );
-    if (!error && data && data.length > 0)
-      return (
-        data as unknown as (PricingRule & { branches: { city: string | null } | null })[]
-      ).map(
-        // the UI resolves prices by branch NAME (same as demo rows); writes use the rule id
-        ({ branches, ...r }) => ({
-          ...r,
-          branch_id: r.branch_id ? (branches?.city ?? r.branch_id) : null,
-          branch_name: branches?.city ?? null,
-        }),
-      );
-  } catch {
-    /* fall through */
+    // خادم حقيقي: لا قواعد = لا أسعار (تظهر رسالة «لا توجد قاعدة سعر»)، لا أسعار تجريبية
+    if (error) throw new Error(`تعذّر تحميل قواعد الأسعار: ${error.message}`);
+    return (
+      (data ?? []) as unknown as (PricingRule & { branches: { city: string | null } | null })[]
+    ).map(
+      // the UI resolves prices by branch NAME (same as demo rows); writes use the rule id
+      ({ branches, ...r }) => ({
+        ...r,
+        branch_id: r.branch_id ? (branches?.city ?? r.branch_id) : null,
+        branch_name: branches?.city ?? null,
+      }),
+    );
   }
-  return FALLBACK.map((r) => ({ ...r }));
 }
 
 /** Active rules — the price source for the calculator, contracts and orders. */
@@ -99,18 +98,18 @@ export async function listPricingRules(): Promise<PricingRule[]> {
 
 const CHANGES: PricingRuleChange[] = [];
 export async function listRuleChanges(ruleId?: string): Promise<PricingRuleChange[]> {
-  try {
+  if (isDemoMode())
+    return CHANGES.filter((c) => !ruleId || c.rule_id === ruleId).map((c) => ({ ...c }));
+  {
     let q = supabase
       .from('pricing_rule_changes')
       .select('*')
       .order('changed_at', { ascending: false });
-    if (ruleId && !isDemoId(ruleId)) q = q.eq('rule_id', ruleId);
+    if (ruleId) q = q.eq('rule_id', ruleId);
     const { data, error } = await q;
-    if (!error && data && data.length > 0) return data as PricingRuleChange[];
-  } catch {
-    /* fall through */
+    if (error) throw new Error(`تعذّر تحميل سجل تغييرات الأسعار: ${error.message}`);
+    return (data ?? []) as PricingRuleChange[];
   }
-  return CHANGES.filter((c) => !ruleId || c.rule_id === ruleId).map((c) => ({ ...c }));
 }
 
 export interface RuleChangeInput {
@@ -139,7 +138,7 @@ export async function updatePricingRule(
   if (patch.reason.trim().length < 5) throw new Error('سبب التعديل مطلوب (5 أحرف على الأقل)');
   const cur = FALLBACK.find((r) => r.id === id);
   const now = new Date().toISOString();
-  if (!isDemoId(id)) {
+  if (!isDemoMode()) {
     const { error } = await supabase.rpc('change_pricing_rule', {
       p_rule_id: id,
       p_base: patch.base_price,
@@ -147,8 +146,8 @@ export async function updatePricingRule(
       p_effective_from: patch.effective_from,
       p_reason: patch.reason.trim(),
     });
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+    if (error) throw new Error(error.message);
+    return;
   }
   if (!cur) throw new Error('القاعدة غير موجودة');
   CHANGES.unshift({
@@ -182,15 +181,18 @@ export interface NewRuleInput {
 
 export async function createPricingRule(input: NewRuleInput, actor: string): Promise<PricingRule> {
   validateRule(input.base_price, input.min_price);
-  const dup = FALLBACK.find(
+  const existing = await listAllPricingRules();
+  const dup = existing.find(
     (r) =>
       r.is_active &&
       r.service_code === input.service_code &&
       (r.nationality ?? null) === (input.nationality ?? null) &&
       (r.profession ?? null) === (input.profession ?? null) &&
+      (r.duration_unit ?? null) === (input.duration_unit ?? null) &&
       (r.branch_id ?? null) === (input.branch ?? null),
   );
-  if (dup) throw new Error('توجد قاعدة نشطة لنفس الخدمة والجنسية/المهنة — عدّلها بدل التكرار');
+  if (dup)
+    throw new Error('توجد قاعدة نشطة لنفس الخدمة والجنسية/المهنة والفرع — عدّلها بدل التكرار');
   const now = new Date().toISOString();
   const { branch = null, ...cols } = input;
   const row: PricingRule = {
@@ -202,28 +204,25 @@ export async function createPricingRule(input: NewRuleInput, actor: string): Pro
     updated_at: now,
     updated_by: actor,
   };
-  try {
+  if (!isDemoMode()) {
+    let branchId: string | null = null;
+    if (branch) {
+      const { data: b } = await supabase
+        .from('branches')
+        .select('id')
+        .eq('city', branch)
+        .maybeSingle();
+      branchId = (b as { id: string } | null)?.id ?? null;
+      // لا يتحوّل سعر فرع إلى سعر عام لكل الفروع إن لم يُعثر على الفرع
+      if (!branchId) throw new Error(`الفرع «${branch}» غير موجود في قاعدة البيانات`);
+    }
     const { data, error } = await supabase
       .from('pricing_rules')
-      .insert({
-        ...cols,
-        is_active: true,
-        branch_id: branch
-          ? ((
-              (await supabase.from('branches').select('id').eq('city', branch).maybeSingle())
-                .data as {
-                id: string;
-              } | null
-            )?.id ?? null)
-          : null,
-      })
+      .insert({ ...cols, is_active: true, branch_id: branchId })
       .select('id')
       .single();
-    if (!error && data) return { ...row, id: (data as { id: string }).id };
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : '';
-    if (!isIgnorableWriteError(msg)) throw e;
+    if (error) throw new Error(error.message);
+    return { ...row, id: (data as { id: string }).id };
   }
   FALLBACK.push(row);
   return row;
@@ -235,13 +234,15 @@ export async function setPricingRuleActive(
   active: boolean,
   actor: string,
 ): Promise<void> {
-  if (!isDemoId(id)) {
-    const { error } = await supabase
+  if (!isDemoMode()) {
+    const { data, error } = await supabase
       .from('pricing_rules')
       .update({ is_active: active })
-      .eq('id', id);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+      .eq('id', id)
+      .select('id');
+    if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('لا تملك صلاحية تعديل قواعد الأسعار');
+    return;
   }
   const r = FALLBACK.find((x) => x.id === id);
   if (r) {
@@ -256,25 +257,24 @@ let CONFIG: PricingConfig = { ...DEFAULT_PRICING_CONFIG };
 let CONFIG_META: ConfigMeta = { updated_at: null, updated_by: null };
 
 export async function getPricingConfigMeta(): Promise<ConfigMeta> {
-  try {
+  if (isDemoMode()) return { ...CONFIG_META };
+  {
     const { data, error } = await supabase
       .from('pricing_config')
       .select('updated_at, updated_by_name')
       .eq('id', 1)
       .single();
-    if (!error && data)
-      return {
-        updated_at: (data as { updated_at: string | null }).updated_at,
-        updated_by: (data as { updated_by_name: string | null }).updated_by_name,
-      };
-  } catch {
-    /* fall through */
+    if (error) throw new Error(`تعذّر تحميل إعدادات التسعير: ${error.message}`);
+    return {
+      updated_at: (data as { updated_at: string | null }).updated_at,
+      updated_by: (data as { updated_by_name: string | null }).updated_by_name,
+    };
   }
-  return { ...CONFIG_META };
 }
 
 export async function getPricingConfig(): Promise<PricingConfig> {
-  try {
+  if (isDemoMode()) return { ...CONFIG };
+  {
     const { data, error } = await supabase
       .from('pricing_config')
       .select(
@@ -282,7 +282,9 @@ export async function getPricingConfig(): Promise<PricingConfig> {
       )
       .eq('id', 1)
       .single();
-    if (!error && data) {
+    // إعدادات افتراضية بدل الحقيقية = أسعار خاطئة؛ الخطأ يظهر بدلها
+    if (error) throw new Error(`تعذّر تحميل إعدادات التسعير: ${error.message}`);
+    {
       const rule = (data.absence_compensation_rule ?? {}) as {
         per_day?: number;
         max_days?: number;
@@ -297,10 +299,7 @@ export async function getPricingConfig(): Promise<PricingConfig> {
         absence_max_days: Number(rule.max_days ?? DEFAULT_PRICING_CONFIG.absence_max_days),
       };
     }
-  } catch {
-    /* fall through to local config */
   }
-  return { ...CONFIG };
 }
 
 /**
@@ -318,9 +317,12 @@ export async function updatePricingConfig(
   next: PricingConfig,
   actor = 'المستخدم الحالي',
 ): Promise<void> {
-  CONFIG = { ...next }; // local source of truth for demo mode
-  CONFIG_META = { updated_at: new Date().toISOString(), updated_by: actor };
-  const { error } = await supabase
+  if (isDemoMode()) {
+    CONFIG = { ...next }; // local source of truth for demo mode
+    CONFIG_META = { updated_at: new Date().toISOString(), updated_by: actor };
+    return;
+  }
+  const { data, error } = await supabase
     .from('pricing_config')
     .update({
       vat_rate: next.vat_rate,
@@ -330,8 +332,11 @@ export async function updatePricingConfig(
       cancellation_pct: next.cancellation_pct,
       absence_compensation_rule: { per_day: next.absence_per_day, max_days: next.absence_max_days },
     })
-    .eq('id', 1);
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+    .eq('id', 1)
+    .select('id');
+  if (error) throw new Error(error.message);
+  // RLS يرفض بصمت (0 صفوف) — لا يُعرض نجاحًا
+  if (!data?.length) throw new Error('لا تملك صلاحية تعديل إعدادات التسعير');
 }
 
 // ---------------------------- pricing_log -----------------------------------
@@ -353,17 +358,16 @@ const LOG: PricingLogEntry[] = [
 ];
 
 export async function listPricingLog(): Promise<PricingLogEntry[]> {
-  try {
+  if (isDemoMode()) return LOG.map((l) => ({ ...l }));
+  {
     const { data, error } = await supabase
       .from('pricing_log')
       .select('id, service_code, params, result, created_at, op_type, reference, user_name')
       .order('created_at', { ascending: false })
       .limit(50);
-    if (!error && data && data.length > 0) return data as unknown as PricingLogEntry[];
-  } catch {
-    /* fall through */
+    if (error) throw new Error(`تعذّر تحميل سجل التسعير: ${error.message}`);
+    return (data ?? []) as unknown as PricingLogEntry[];
   }
-  return LOG.map((l) => ({ ...l }));
 }
 
 /** Demo-mode logging: calc_price() logs on the backend; mirror it locally. */

@@ -254,9 +254,12 @@ export function useConvertQuote() {
   return useMutation<
     { contract_id: string; contract_no: string | null },
     Error,
-    { quote: QuoteRecord; actor: string }
+    { quote: QuoteRecord | null; actor: string }
   >({
-    mutationFn: ({ quote, actor }) => convertQuote(quote, actor),
+    mutationFn: async ({ quote, actor }) => {
+      if (!quote) throw new Error('عرض السعر غير موجود — حدّث الصفحة');
+      return convertQuote(quote, actor);
+    },
     onSuccess: (r) => {
       invalidateQuotes(qc);
       void qc.invalidateQueries({ queryKey: ['contracts'] });

@@ -1,9 +1,8 @@
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
 import {
   addEvent,
   addQuoteRecord,
-  getQuoteRecord,
   linkQuoteContract,
   listQuoteEvents,
   listQuoteRecords,
@@ -51,7 +50,8 @@ function fromQuoteRow(q: QuoteRow, assignedTo: string | null = null): PricingQuo
 }
 
 export async function listQuotes(): Promise<PricingQuote[]> {
-  try {
+  if (isDemoMode()) return listQuoteRecords();
+  {
     const { data, error } = await supabase
       .from('quotes')
       .select(
@@ -59,28 +59,21 @@ export async function listQuotes(): Promise<PricingQuote[]> {
       )
       .order('created_at', { ascending: false })
       .limit(200);
-    if (!error && data && data.length > 0)
-      return (data as unknown as QuoteRow[]).map((q) => fromQuoteRow(q));
-  } catch {
-    /* fall through */
+    // خادم حقيقي: لا عروض = قائمة فارغة، والخطأ يظهر (لا دفتر تجريبي)
+    if (error) throw new Error(`تعذّر تحميل عروض الأسعار: ${error.message}`);
+    return ((data ?? []) as unknown as QuoteRow[]).map((q) => fromQuoteRow(q));
   }
-  return listQuoteRecords();
 }
 
 export async function listEvents(quoteId: string): Promise<QuoteEvent[]> {
-  try {
-    if (!isDemoId(quoteId)) {
-      const { data, error } = await supabase
-        .from('quote_events')
-        .select('*')
-        .eq('quote_id', quoteId)
-        .order('at');
-      if (!error && data && data.length > 0) return data as QuoteEvent[];
-    }
-  } catch {
-    /* fall through */
-  }
-  return listQuoteEvents(quoteId);
+  if (isDemoMode()) return listQuoteEvents(quoteId);
+  const { data, error } = await supabase
+    .from('quote_events')
+    .select('*')
+    .eq('quote_id', quoteId)
+    .order('at');
+  if (error) throw new Error(`تعذّر تحميل سجل العرض: ${error.message}`);
+  return (data ?? []) as QuoteEvent[];
 }
 
 export interface CreateQuoteInput {
@@ -141,7 +134,8 @@ export async function createQuote(
     .slice(0, 10);
   const isDaily = input.calc.service === 'daily_rental';
 
-  try {
+  if (!isDemoMode()) {
+    // سعر الخادم هو المرجع (calc_price)؛ أي خطأ يظهر للمستخدم — لا عرض محلي بسعر الواجهة
     const { data, error } = await supabase.rpc('create_quote_from_price', {
       p_service_code: input.calc.service,
       p_params: {
@@ -153,6 +147,8 @@ export async function createQuote(
         cancelled: input.calc.cancelled,
         promotion_id: input.calc.promotion?.id ?? null,
         promotion_code: input.calc.couponCode,
+        // فرع التسعير المختار (يُستخدم حين لا يحدّده العميل المحتمل أو فرع المستخدم)
+        branch: input.extra?.branch ?? input.calc.branch ?? null,
       },
       p_customer_name: input.customer_name.trim(),
       p_customer_phone: input.customer_phone,
@@ -179,14 +175,9 @@ export async function createQuote(
         end_time: input.extra?.end_time ?? null,
       },
     });
-    if (!error && data) {
-      const q = fromQuoteRow(data as unknown as QuoteRow, ctx.actor);
-      return { ...q, snapshot: q.snapshot ?? snapshot };
-    }
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : '';
-    if (!isIgnorableWriteError(msg)) throw e;
+    if (error) throw new Error(error.message);
+    const q = fromQuoteRow(data as unknown as QuoteRow, ctx.actor);
+    return { ...q, snapshot: q.snapshot ?? snapshot };
   }
   const rec = addQuoteRecord(
     {
@@ -243,15 +234,15 @@ export async function setQuoteStatus(
   note?: string,
   policy?: QuoteApprovalPolicy,
 ): Promise<PricingQuote> {
-  if (!isDemoId(id) && !getQuoteRecord(id)) {
+  if (!isDemoMode()) {
     const { data, error } = await supabase.rpc('set_quote_status', {
       p_quote_id: id,
       p_status: to,
       p_note: note ?? null,
     });
-    // a real row: the backend is the record — never fall through to the demo ledger
-    if (!error && data) return fromQuoteRow(data as unknown as QuoteRow, actor);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+    // the backend is the record — never fall through to the demo ledger
+    if (error) throw new Error(error.message);
+    return fromQuoteRow(data as unknown as QuoteRow, actor);
   }
   return setQuoteRecordStatus(id, to, actor, note, policy);
 }

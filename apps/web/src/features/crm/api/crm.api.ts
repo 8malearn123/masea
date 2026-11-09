@@ -2,16 +2,25 @@ import { supabase } from '@/shared/lib/supabase';
 import {
   getQuoteRecord,
   linkQuoteContract,
-  listQuoteRecords,
   quoteCoupon,
   setQuoteRecordStatus,
   type QuoteApprovalPolicy,
   type QuoteRecord,
 } from '@/shared/lib/quotesLedger';
-import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
+import { useAuth } from '@/store/auth';
+import { listEmployees } from '@/features/hr/api/hr.api';
+import { targetBoard } from '@/features/hr/api/performance.api';
+import { createContractFromQuote, listContracts } from '@/features/contracts/api/contracts.api';
+import {
+  contractInsight,
+  EXPIRY_WINDOW_KEY,
+  RENEWAL_WINDOW_DAYS,
+} from '@/features/contracts/lib/contractInsights';
+import { configValue, listConfig } from '@/features/settings/api/settings.api';
+import { parseLeadInput, parseLeadPatch } from '@/features/crm/lib/leadInput';
 import { scopeToViewerBranch, viewerScope } from '@/lib/branchScope';
 import { recordAudit } from '@/shared/lib/auditTrail';
-import { createContractFromQuote } from '@/features/contracts/api/contracts.api';
 import { addLocalOrder } from '@/features/orders/api/orders.api';
 import { demoBookingForQuote } from '@/features/hourly/api/hourly.api';
 import type { PricingConfig } from '@/shared/lib/pricing';
@@ -218,22 +227,24 @@ const DEMO_TARGET: SalesTarget = {
 
 /* ------------------------------- queries --------------------------------- */
 export async function listLeads(): Promise<Lead[]> {
-  try {
-    const { data, error } = await supabase
-      .from('leads')
-      .select(
-        'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
-      )
-      .order('updated_at', { ascending: false });
-    if (!error && data && data.length > 0)
-      return (data as unknown as (Lead & { branches: { city: string | null } | null })[]).map(
-        ({ branches, ...l }) => ({ ...l, branch: branches?.city ?? null }),
-      );
-  } catch {
-    /* fall through */
-  }
-  return scopeToViewerBranch([...DEMO_LEADS], (l) => l.branch).sort((a, b) =>
-    b.updated_at.localeCompare(a.updated_at),
+  if (isDemoMode())
+    return scopeToViewerBranch([...DEMO_LEADS], (l) => l.branch).sort((a, b) =>
+      b.updated_at.localeCompare(a.updated_at),
+    );
+  // خادم حقيقي: لا عملاء = قائمة فارغة، والخطأ يظهر للمستخدم (لا بيانات تجريبية)
+  const { data, error } = await supabase
+    .from('leads')
+    .select(
+      'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
+    )
+    .order('updated_at', { ascending: false });
+  if (error) throw new Error(`تعذّر تحميل العملاء المحتملين: ${error.message}`);
+  return ((data ?? []) as unknown as (Lead & { branches: { city: string | null } | null })[]).map(
+    ({ branches, ...l }) => ({
+      ...l,
+      est_value: Number(l.est_value ?? 0),
+      branch: branches?.city ?? null,
+    }),
   );
 }
 
@@ -242,18 +253,56 @@ export async function getLead(id: string): Promise<Lead | null> {
 }
 
 export async function listActivities(leadId?: string): Promise<LeadActivity[]> {
+  if (!isDemoMode()) {
+    let q = supabase
+      .from('lead_activities')
+      .select('id, lead_id, kind, note, follow_up_at, done, created_at')
+      .not('lead_id', 'is', null)
+      .order('created_at', { ascending: false });
+    if (leadId) q = q.eq('lead_id', leadId);
+    const { data, error } = await q;
+    if (error) throw new Error(`تعذّر تحميل المتابعات: ${error.message}`);
+    return (data ?? []) as LeadActivity[];
+  }
   const rows = leadId ? DEMO_ACTIVITIES.filter((a) => a.lead_id === leadId) : DEMO_ACTIVITIES;
   return [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
 export async function listQuotes(leadId?: string): Promise<Quote[]> {
-  const all = listQuoteRecords();
+  // نفس مصدر عروض التسعير (الخادم مع قاعدة حقيقية، الدفتر في وضع العرض)
+  const all = await listPricingQuotes();
   const rows = leadId ? all.filter((q) => q.lead_id === leadId) : all.filter((q) => q.lead_id);
   return rows.map(toCrmQuote).sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
-export async function getMyTarget(): Promise<SalesTarget> {
-  return DEMO_TARGET;
+/**
+ * «هدفي هذا الشهر»: الهدف المُسند للموظف في الأداء والأهداف (performance_targets)
+ * والمحقَّق محسوب من مبيعاته الفعلية. `null` = لا هدف لهذا الشهر (لا أرقام افتراضية).
+ */
+export async function getMyTarget(): Promise<SalesTarget | null> {
+  if (isDemoMode()) return DEMO_TARGET;
+  const uid = useAuth.getState().profile?.id;
+  const me = (await listEmployees()).find((e) => e.user_id === uid);
+  if (!me) return null;
+  const now = new Date();
+  const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const board = await targetBoard(period);
+  const mine = board.find((r) => r.employee_id === me.id);
+  if (!mine) return null;
+  const ranked = [...board].sort(
+    (a, b) => b.contracts_achieved - a.contracts_achieved || b.sales_achieved - a.sales_achieved,
+  );
+  return {
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+    contracts_target: mine.contracts_target,
+    contracts_achieved: mine.contracts_achieved,
+    collection_target: mine.sales_target,
+    collection_achieved: mine.sales_achieved,
+    commission_earned: 0,
+    rank: ranked.findIndex((r) => r.employee_id === me.id) + 1,
+    rank_total: ranked.length,
+  };
 }
 
 export interface Renewal {
@@ -264,32 +313,53 @@ export interface Renewal {
   total_amount: number;
 }
 
-/** My contracts nearing expiry (renewal opportunities). */
+/**
+ * فرص التجديد: عقودي السارية التي تقترب من نهايتها ضمن مهلة التنبيه المُدارة
+ * (contract_expiry_alert_days) — من العقود الفعلية لا من قائمة ثابتة.
+ */
 export async function listRenewals(): Promise<Renewal[]> {
-  return [
-    {
-      id: 'rnw-1',
-      customer_name: 'سلطان آل غانم',
-      service_code: 'monthly_rental',
-      end_date: iso(9).slice(0, 10),
-      total_amount: 7500,
-    },
-    {
-      id: 'rnw-2',
-      customer_name: 'ريم الوادعي',
-      service_code: 'recruitment',
-      end_date: iso(21).slice(0, 10),
-      total_amount: 16500,
-    },
-    {
-      id: 'rnw-3',
-      customer_name: 'ماجد آل سالم',
-      service_code: 'monthly_rental',
-      end_date: iso(28).slice(0, 10),
-      total_amount: 6800,
-    },
-  ];
+  if (isDemoMode()) return DEMO_RENEWALS;
+  const [contracts, config] = await Promise.all([
+    listContracts({ status: 'all', service: 'all', branch: 'all', search: '' }),
+    listConfig(),
+  ]);
+  const windowDays = configValue(config, EXPIRY_WINDOW_KEY, RENEWAL_WINDOW_DAYS);
+  const now = new Date();
+  return contracts
+    .filter((c) => c.status === 'active' && contractInsight(c, now, windowDays).nearExpiry)
+    .map((c) => ({
+      id: c.id,
+      customer_name: c.customer_name ?? '—',
+      service_code: c.service_code ?? '',
+      end_date: c.end_date ?? '',
+      total_amount: c.total_amount,
+    }))
+    .sort((a, b) => a.end_date.localeCompare(b.end_date));
 }
+
+const DEMO_RENEWALS: Renewal[] = [
+  {
+    id: 'rnw-1',
+    customer_name: 'سلطان آل غانم',
+    service_code: 'monthly_rental',
+    end_date: iso(9).slice(0, 10),
+    total_amount: 7500,
+  },
+  {
+    id: 'rnw-2',
+    customer_name: 'ريم الوادعي',
+    service_code: 'recruitment',
+    end_date: iso(21).slice(0, 10),
+    total_amount: 16500,
+  },
+  {
+    id: 'rnw-3',
+    customer_name: 'ماجد آل سالم',
+    service_code: 'monthly_rental',
+    end_date: iso(28).slice(0, 10),
+    total_amount: 6800,
+  },
+];
 
 /* ------------------------------ mutations -------------------------------- */
 export interface LeadInput {
@@ -303,40 +373,64 @@ export interface LeadInput {
 }
 
 export async function createLead(input: LeadInput): Promise<Lead> {
+  const clean = parseLeadInput(input);
+  if (!isDemoMode()) {
+    // الفرع والإسناد للمنشئ يُضبطان في الخادم (trg_default_branch، guard_lead — 0085)
+    const { data, error } = await supabase
+      .from('leads')
+      .insert(clean)
+      .select(
+        'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
+      )
+      .single();
+    if (error) throw new Error(leadError(error.message));
+    const { branches, ...l } = data as unknown as Lead & {
+      branches: { city: string | null } | null;
+    };
+    return { ...l, est_value: Number(l.est_value ?? 0), branch: branches?.city ?? null };
+  }
   const row: Lead = {
     id: `lead-${++seq}`,
-    ...input,
+    ...clean,
     branch: viewerScope().branch,
     customer_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
-  try {
-    const { data, error } = await supabase.from('leads').insert(input).select().single();
-    if (!error && data) return data as Lead;
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-  } catch {
-    /* demo */
-  }
   DEMO_LEADS.unshift(row);
   return row;
 }
 
+/** رسائل الخادم بصياغة المستخدم. */
+function leadError(message: string): string {
+  if (message.includes('leads_phone_chk')) return 'الجوال بصيغة 05xxxxxxxx';
+  if (message.includes('leads_est_value_chk')) return 'القيمة المتوقعة لا تكون سالبة';
+  if (message.includes('leads_name_chk')) return 'اسم العميل مطلوب';
+  return message;
+}
+
 export async function updateLead(id: string, patch: Partial<LeadInput>): Promise<void> {
-  if (!isDemoId(id)) {
-    const { error } = await supabase.from('leads').update(patch).eq('id', id);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+  const clean = parseLeadPatch(patch);
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.from('leads').update(clean).eq('id', id).select('id');
+    if (error) throw new Error(leadError(error.message));
+    if (!data?.length) throw new Error('لا تملك صلاحية تعديل هذا العميل المحتمل');
+    return;
   }
   const row = DEMO_LEADS.find((l) => l.id === id);
-  if (row) Object.assign(row, patch, { updated_at: new Date().toISOString() });
+  if (row) Object.assign(row, clean, { updated_at: new Date().toISOString() });
 }
 
 export async function setLeadStage(id: string, stage: LeadStageCode): Promise<void> {
-  if (!isDemoId(id)) {
-    const { error } = await supabase.from('leads').update({ stage_code: stage }).eq('id', id);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+  if (!isDemoMode()) {
+    const { data, error } = await supabase
+      .from('leads')
+      .update({ stage_code: stage })
+      .eq('id', id)
+      .select('id');
+    if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('لا تملك صلاحية تعديل هذا العميل المحتمل');
+    return;
   }
   const row = DEMO_LEADS.find((l) => l.id === id);
   if (row) {
@@ -351,10 +445,10 @@ export async function addActivity(input: {
   note: string | null;
   follow_up_at: string | null;
 }): Promise<void> {
-  if (!isDemoId(input.lead_id)) {
+  if (!isDemoMode()) {
     const { error } = await supabase.from('lead_activities').insert(input);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+    if (error) throw new Error(error.message);
+    return;
   }
   DEMO_ACTIVITIES.unshift({
     id: `act-${++seq}`,
@@ -365,10 +459,10 @@ export async function addActivity(input: {
 }
 
 export async function toggleActivityDone(id: string, done: boolean): Promise<void> {
-  if (!isDemoId(id)) {
+  if (!isDemoMode()) {
     const { error } = await supabase.from('lead_activities').update({ done }).eq('id', id);
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+    if (error) throw new Error(error.message);
+    return;
   }
   const row = DEMO_ACTIVITIES.find((a) => a.id === id);
   if (row) row.done = done;
@@ -420,10 +514,10 @@ export async function setQuoteStatus(
 
 /** Convert a lead to a customer (reuses the customers table via the RPC). */
 export async function convertLead(leadId: string): Promise<void> {
-  if (!isDemoId(leadId)) {
+  if (!isDemoMode()) {
     const { error } = await supabase.rpc('convert_lead_to_customer', { p_lead_id: leadId });
-    if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
-    if (!error) return;
+    if (error) throw new Error(error.message);
+    return;
   }
   const lead = DEMO_LEADS.find((l) => l.id === leadId);
   if (lead) {
@@ -593,6 +687,3 @@ export function captureLead(input: {
     updated_at: new Date().toISOString(),
   });
 }
-
-/** Commission rate (placeholder for a managed settings value). */
-export const COMMISSION_RATE = 0.025;

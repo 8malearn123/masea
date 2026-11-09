@@ -4,6 +4,7 @@
  * تقصر مدير الفرع على فرعه وموظف المبيعات على مبيعاته. في الوضع التجريبي تُشتق
  * من مخزن العقود نفسه بنفس القاعدة (حالة البيع المعتمدة)، فلا تكرار للبيانات.
  */
+import { riyadhDay } from '@/shared/lib/format';
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
 import { useAuth } from '@/store/auth';
@@ -110,7 +111,7 @@ export async function listSales(): Promise<Sale[]> {
 export function applySalesFilters(rows: Sale[], f: SalesFilters): Sale[] {
   const q = f.search.trim();
   return rows.filter((s) => {
-    const day = s.sold_at.slice(0, 10);
+    const day = riyadhDay(s.sold_at);
     if (f.from && day < f.from) return false;
     if (f.to && day > f.to) return false;
     if (f.branch !== 'all' && s.branch !== f.branch) return false;

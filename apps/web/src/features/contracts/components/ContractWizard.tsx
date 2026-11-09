@@ -311,7 +311,11 @@ export default function ContractWizard() {
         if (fromQuote) {
           // accept + link the quote, mark the sales lead won
           void convertQuoteToContract(fromQuote, created.contract_no ?? created.id)
-            .catch(() => undefined)
+            .catch((e: unknown) =>
+              toast.error(
+                `أُنشئ العقد لكن تعذّر ربطه بعرض السعر: ${e instanceof Error ? e.message : ''}`,
+              ),
+            )
             .finally(() => {
               void qc.invalidateQueries({ queryKey: ['pricing'] });
               void qc.invalidateQueries({ queryKey: ['crm'] });

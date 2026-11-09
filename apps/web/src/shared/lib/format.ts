@@ -50,3 +50,18 @@ export function toArabicDigits(value: string | number): string {
   const map = '٠١٢٣٤٥٦٧٨٩';
   return String(value).replace(/[0-9]/g, (d) => map[Number(d)] ?? d);
 }
+
+/**
+ * اليوم (YYYY-MM-DD) بتوقيت الرياض لطابع زمني — لا `slice(0, 10)` على UTC: عملية
+ * الساعة 1 صباحًا بتوقيت المملكة تقع في يومها لا في اليوم السابق.
+ */
+export function riyadhDay(value: string | Date): string {
+  const d = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return typeof value === 'string' ? value.slice(0, 10) : '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}

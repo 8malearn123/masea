@@ -562,60 +562,50 @@ export async function getContract(id: string): Promise<ContractListItem | null> 
 }
 
 export async function getClauses(contractId: string): Promise<ContractClause[]> {
-  try {
-    const { data, error } = await supabase
-      .from('contract_clauses')
-      .select('*')
-      .eq('contract_id', contractId)
-      .order('sort_order', { ascending: true });
-    if (!error && data && data.length > 0) return data as ContractClause[];
-  } catch {
-    /* fall through */
-  }
-  return [...(FALLBACK_CLAUSES[contractId] ?? [])];
+  if (isDemoMode()) return [...(FALLBACK_CLAUSES[contractId] ?? [])];
+  const { data, error } = await supabase
+    .from('contract_clauses')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('sort_order', { ascending: true });
+  if (error) throw new Error(`تعذّر جلب بنود العقد: ${error.message}`);
+  return (data ?? []) as ContractClause[];
 }
 
 export async function getHistory(contractId: string): Promise<ContractStatusHistory[]> {
-  try {
-    const { data, error } = await supabase
-      .from('contract_status_history')
-      .select('*')
-      .eq('contract_id', contractId)
-      .order('created_at', { ascending: true });
-    if (!error && data && data.length > 0) return data as ContractStatusHistory[];
-  } catch {
-    /* fall through */
+  if (isDemoMode()) {
+    if (FALLBACK_HISTORY[contractId]) return [...FALLBACK_HISTORY[contractId]];
+    const c = FALLBACK.find((x) => x.id === contractId);
+    return c ? synthHistory(c) : [];
   }
-  if (FALLBACK_HISTORY[contractId]) return [...FALLBACK_HISTORY[contractId]];
-  const c = FALLBACK.find((x) => x.id === contractId);
-  return c ? synthHistory(c) : [];
+  const { data, error } = await supabase
+    .from('contract_status_history')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`تعذّر جلب سجل العقد: ${error.message}`);
+  return (data ?? []) as ContractStatusHistory[];
 }
 
 export async function getSignatures(contractId: string): Promise<ContractSignature[]> {
-  try {
-    const { data, error } = await supabase
-      .from('contract_signatures')
-      .select('*')
-      .eq('contract_id', contractId)
-      .order('signed_at', { ascending: true });
-    if (!error && data && data.length > 0) return data as ContractSignature[];
-  } catch {
-    /* fall through */
-  }
-  return [...(FALLBACK_SIGNATURES[contractId] ?? [])];
+  if (isDemoMode()) return [...(FALLBACK_SIGNATURES[contractId] ?? [])];
+  const { data, error } = await supabase
+    .from('contract_signatures')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('signed_at', { ascending: true });
+  if (error) throw new Error(`تعذّر جلب توقيعات العقد: ${error.message}`);
+  return (data ?? []) as ContractSignature[];
 }
 
 export async function getTemplates(): Promise<ContractTemplate[]> {
-  try {
-    const { data, error } = await supabase
-      .from('contract_templates')
-      .select('*')
-      .eq('is_active', true);
-    if (!error && data && data.length > 0) return data as ContractTemplate[];
-  } catch {
-    /* fall through */
-  }
-  return FALLBACK_TEMPLATES;
+  if (isDemoMode()) return FALLBACK_TEMPLATES;
+  const { data, error } = await supabase
+    .from('contract_templates')
+    .select('*')
+    .eq('is_active', true);
+  if (error) throw new Error(`تعذّر جلب قوالب العقود: ${error.message}`);
+  return (data ?? []) as ContractTemplate[];
 }
 
 /* ------------------------------ mutations -------------------------------- */

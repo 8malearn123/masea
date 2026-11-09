@@ -32,7 +32,8 @@ import { dateAr, dateTimeAr } from '@/shared/lib/format';
 import { exportExcel } from '@/shared/lib/exportTable';
 import { usePermissions } from '@/hooks/usePermissions';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
-import { effectiveStatus, canMoveTo, quoteContractPath } from '@/shared/lib/quotesLedger';
+import { effectiveStatus, canMoveTo } from '@/shared/lib/quotesLedger';
+import { useConvertQuote } from '@/features/crm/hooks/useCrm';
 import type { PricingConfig } from '@/shared/lib/pricing';
 import {
   logPdf,
@@ -410,6 +411,7 @@ function QuoteDrawer({
 }) {
   const { can, fullName } = usePermissions();
   const navigate = useNavigate();
+  const convert = useConvertQuote();
   const qc = useQueryClient();
   const { data: events = [], isLoading: evLoading } = useQuoteEvents(x.id);
   const { data: promotions = [] } = usePromotions();
@@ -461,8 +463,13 @@ function QuoteDrawer({
       { onSuccess: (n) => onOpenOther(n.id) },
     );
   }
+  // التحويل عبر convert_quote_to_contract (عملية واحدة على الخادم: يُربط العرض ويُفحص
+  // الكوبون والصلاحية) — لا عقد منفصل بسعر يُعاد حسابه في المعالج
   function toContract() {
-    navigate(quoteContractPath(x, snap?.inputs.couponCode));
+    convert.mutate(
+      { quote: x, actor: fullName },
+      { onSuccess: (r) => navigate(`/contracts/${r.contract_id}`) },
+    );
   }
 
   const days = x.valid_until
@@ -527,7 +534,7 @@ function QuoteDrawer({
             </Button>
           )}
           {x.status === 'accepted' && !x.contract_id && can('contracts', 'create') && (
-            <Button size="sm" onClick={toContract}>
+            <Button size="sm" loading={convert.isPending} onClick={toContract}>
               <FileSignature size={14} /> تحويل إلى عقد
             </Button>
           )}

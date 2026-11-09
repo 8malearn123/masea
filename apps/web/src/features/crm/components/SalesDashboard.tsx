@@ -108,6 +108,11 @@ export function SalesDashboard() {
           <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-navy">
             <Target size={16} /> هدفي هذا الشهر
           </h2>
+          {target === null && (
+            <p className="mb-3 rounded-xl bg-navy-50 px-3 py-2 text-xs text-purple">
+              لم يُحدَّد لك هدف لهذا الشهر — يُسنده مديرك من «الأداء والأهداف».
+            </p>
+          )}
           <Gauge
             label="العقود"
             actual={target?.contracts_achieved ?? 0}
@@ -117,7 +122,7 @@ export function SalesDashboard() {
           />
           <div className="mt-4">
             <Gauge
-              label="التحصيل"
+              label="قيمة المبيعات"
               actual={target?.collection_achieved ?? 0}
               target={target?.collection_target ?? 0}
               pct={collectionPct}
