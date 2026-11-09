@@ -4,6 +4,7 @@
  * الطلب المخزّن ولا يفتح تقييم العاملة.
  */
 import { describe, expect, it } from 'vitest';
+import { freshDriver } from '@/test/demoDrivers';
 import { FALLBACK_WORKERS } from '@/lib/funnel';
 import { emptyDraft } from '@/lib/orderTypes';
 import {
@@ -51,18 +52,41 @@ const FULL_TRIP = ['warehouse_out', 'customer_arrived', 'service_end', 'warehous
 describe('«مُسند» يتطلب سائقًا', () => {
   it('إسناد سائق صالح يجعل الطلب «مُسند» باسمه', async () => {
     const o = freshOrder();
-    await assignDriver(o.id, 'd3');
+    const d = freshDriver('نجران');
+    await assignDriver(o.id, d);
     expect(stored(o)).toMatchObject({
       status: 'assigned',
-      driver_id: 'd3',
-      driver_name: 'تركي الحارثي',
+      driver_id: d,
+      driver_name: expect.stringContaining('سائق اختبار') as unknown as string,
     });
   });
 
-  it('حساب السائق التجريبي سائق صالح أيضًا', async () => {
+  it('حساب السائق التجريبي سائق في الأسطول: مشغول برحلاته فلا يُسند له طلب جديد', async () => {
     const o = freshOrder();
-    await assignDriver(o.id, DEMO_DRIVER_ID);
-    expect(stored(o)).toMatchObject({ status: 'assigned', driver_id: DEMO_DRIVER_ID });
+    const before = snapshot(o);
+    await rejects(assignDriver(o.id, DEMO_DRIVER_ID), 'غير متاح');
+    expect(stored(o)).toEqual(before);
+  });
+
+  it('سائق من فرع آخر مرفوض (نفس assign_order_driver)', async () => {
+    const o = freshOrder();
+    const before = snapshot(o);
+    await rejects(assignDriver(o.id, freshDriver('جازان')), 'من فرع آخر');
+    expect(stored(o)).toEqual(before);
+  });
+
+  it('السائق يصبح «في مهمة» بالإسناد ويعود «متاحًا» بعد آخر طلب نشط', async () => {
+    const d = freshDriver('نجران');
+    const a = freshOrder();
+    const b = freshOrder();
+    await assignDriver(a.id, d);
+    await rejects(assignDriver(b.id, d), 'غير متاح');
+    for (const scan of FULL_TRIP) await advanceTripStage(a.id, scan);
+    await assignDriver(b.id, d);
+    await setOrderStatus(b.id, 'cancelled');
+    const c = freshOrder();
+    await assignDriver(c.id, d);
+    expect(stored(c)).toMatchObject({ status: 'assigned', driver_id: d });
   });
 
   it('«مُسند» يدويًا بلا سائق مرفوض والطلب كما هو', async () => {
@@ -93,7 +117,7 @@ describe('«مُسند» يتطلب سائقًا', () => {
     expect(stored(cancelled)).toEqual(c0);
 
     const done = freshOrder();
-    await assignDriver(done.id, 'd1');
+    await assignDriver(done.id, freshDriver());
     for (const scan of FULL_TRIP) await advanceTripStage(done.id, scan);
     const d0 = snapshot(stored(done));
     await rejects(assignDriver(done.id, 'd2'), 'الطلب مكتمل');
@@ -114,7 +138,7 @@ describe('«مُسند» يتطلب سائقًا', () => {
 describe('تسلسل مسح الرحلة في الخدمة المشتركة', () => {
   async function assigned() {
     const o = freshOrder();
-    await assignDriver(o.id, 'd1');
+    await assignDriver(o.id, freshDriver());
     return stored(o);
   }
 
@@ -217,7 +241,7 @@ describe('الإجراءات المرفوضة لا تجعل الطلب مؤهل�
     await setOrderStatus(order.id, 'assigned').catch(() => undefined);
     expect(await closed()).toMatchObject({ status: 'not_completed', serviceStatus: 'paid' });
 
-    await assignDriver(order.id, 'd1');
+    await assignDriver(order.id, freshDriver());
     await advanceTripStage(order.id, 'warehouse_in').catch(() => undefined);
     await advanceTripStage(order.id, 'warehouse_out');
     await advanceTripStage(order.id, 'service_end').catch(() => undefined);

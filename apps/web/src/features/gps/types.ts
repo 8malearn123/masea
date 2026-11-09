@@ -6,18 +6,22 @@ export interface DriverLocation {
   status: DriverStatus;
   vehicle_no: string | null;
   branch: string | null;
-  lat: number;
-  lng: number;
-  updated_at: string;
+  /** آخر موقع مسجّل (من آخر مسح للسائق)؛ `null` = لم يُسجَّل موقع بعد */
+  lat: number | null;
+  lng: number | null;
+  updated_at: string | null;
 }
 
 export interface ScanEvent {
   id: string;
   scan_type: string;
   subject: string;
-  lat: number;
-  lng: number;
+  /** `null` = سُجّل المسح دون موقع (الجهاز رفض تحديد الموقع) */
+  lat: number | null;
+  lng: number | null;
   scanned_at: string;
+  /** فرع المسح (لنطاق مدير الفرع) */
+  branch?: string | null;
   /** مسح رحلة مرتبط بطلب: رقم الطلب ونتيجة تطبيق الخطوة (المرفوض يبقى في السجل). */
   request_no?: string;
   outcome?: 'accepted' | 'rejected';

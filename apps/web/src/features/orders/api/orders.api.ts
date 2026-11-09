@@ -1,9 +1,10 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { scopeToViewerBranch } from '@/lib/branchScope';
 import { tripScanResult } from '@/features/orders/lib/trip';
 import {
+  driverAssignError,
   isTerminalOrderStatus,
   orderTransitionError,
   tripScanError,
@@ -48,7 +49,7 @@ const FALLBACK_DRIVERS: Driver[] = [
     full_name: 'تركي الحارثي',
     phone: '0503334455',
     branch: 'شرورة',
-    status: 'available',
+    status: 'on_route',
     vehicle_no: 'GHI-9012',
     rating: 4.9,
   },
@@ -61,7 +62,43 @@ const FALLBACK_DRIVERS: Driver[] = [
     vehicle_no: 'JKL-3456',
     rating: 4.5,
   },
+  {
+    id: 'd5',
+    full_name: 'خالد اليامي',
+    phone: '0505556677',
+    branch: 'شرورة',
+    status: 'available',
+    vehicle_no: 'MNO-7890',
+    rating: 4.7,
+  },
 ];
+
+// حساب السائق التجريبي (ماجد الحربي — نجران) سائق حقيقي في الأسطول: لديه رحلات نشطة.
+FALLBACK_DRIVERS.push({
+  id: DEMO_DRIVER_ID,
+  full_name: 'ماجد الحربي',
+  phone: '0507778899',
+  branch: 'نجران',
+  status: 'on_route',
+  vehicle_no: 'PQR-2468',
+  rating: 4.7,
+});
+
+/** يسجّل سائقًا في مخزن العرض (الاختبارات وشاشات العرض بلا خادم). */
+export function addLocalDriver(driver: Driver): void {
+  FALLBACK_DRIVERS.push(driver);
+}
+
+/** يعود السائق «متاحًا» حين لا يبقى له طلب نشط — نفس `release_driver_if_idle`. */
+function demoReleaseDriverIfIdle(driverId: string | null): void {
+  if (!driverId) return;
+  const d = FALLBACK_DRIVERS.find((x) => x.id === driverId);
+  if (!d || d.status !== 'on_route') return;
+  const busy = FALLBACK_ORDERS.some(
+    (o) => o.driver_id === driverId && (o.status === 'assigned' || o.status === 'in_progress'),
+  );
+  if (!busy) d.status = 'available';
+}
 
 const FALLBACK_ORDERS: Order[] = [
   {
@@ -351,47 +388,42 @@ interface RawDriver {
 
 /* ------------------------------- queries --------------------------------- */
 export async function listOrders(filters: OrderFilters): Promise<Order[]> {
-  try {
-    const { data, error } = await supabase
-      .from('service_requests')
-      .select(
-        'id, request_no, customer_name, service_code, status, driver_id, total_amount, created_at, trip_stage, customer_phone, customer_address, dropoff_at, pickup_at, contract_id, branches(name), drivers(full_name), contracts(contract_no)',
-      )
-      .order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) {
-      const rows = (data as unknown as RawOrder[]).map(
-        ({ branches, drivers, contracts, ...rest }) => ({
-          ...rest,
-          contract_no: contracts?.contract_no ?? null,
-          branch: branches?.name ?? null,
-          driver_name: drivers?.full_name ?? null,
-        }),
-      );
-      return applyFilters(scopeForViewer(rows), filters);
-    }
-  } catch {
-    /* fall through */
-  }
-  return applyFilters(scopeForViewer(FALLBACK_ORDERS), filters);
+  if (isDemoMode()) return applyFilters(scopeForViewer(FALLBACK_ORDERS), filters);
+  // خادم حقيقي: قاعدة فارغة = لا طلبات (لا بيانات تجريبية)، والخطأ يظهر للمستخدم
+  const { data, error } = await supabase
+    .from('service_requests')
+    .select(
+      'id, request_no, customer_name, service_code, status, driver_id, total_amount, created_at, trip_stage, customer_phone, customer_address, dropoff_at, pickup_at, contract_id, branches(name), drivers(full_name), contracts(contract_no)',
+    )
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  const rows = ((data ?? []) as unknown as RawOrder[]).map(
+    ({ branches, drivers, contracts, ...rest }) => ({
+      ...rest,
+      contract_no: contracts?.contract_no ?? null,
+      branch: branches?.name ?? null,
+      driver_name: drivers?.full_name ?? null,
+    }),
+  );
+  return applyFilters(rows, filters);
 }
 
 export async function listDrivers(): Promise<Driver[]> {
-  try {
-    const { data, error } = await supabase
-      .from('drivers')
-      .select('id, full_name, phone, status, vehicle_no, rating, branches(name)')
-      .order('full_name', { ascending: true });
-    if (!error && data && data.length > 0) {
-      return (data as unknown as RawDriver[]).map(({ branches, rating, ...rest }) => ({
-        ...rest,
-        branch: branches?.name ?? null,
-        rating: rating ?? 0,
-      }));
-    }
-  } catch {
-    /* fall through */
-  }
-  return FALLBACK_DRIVERS;
+  if (isDemoMode())
+    return scopeToViewerBranch(
+      FALLBACK_DRIVERS.map((d) => ({ ...d })),
+      (d) => d.branch,
+    );
+  const { data, error } = await supabase
+    .from('drivers')
+    .select('id, full_name, phone, status, vehicle_no, rating, branches(name)')
+    .order('full_name', { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as RawDriver[]).map(({ branches, rating, ...rest }) => ({
+    ...rest,
+    branch: branches?.name ?? null,
+    rating: rating ?? 0,
+  }));
 }
 
 /* ------------------------------ mutations -------------------------------- */
@@ -407,15 +439,18 @@ export async function assignDriver(orderId: string, driverId: string): Promise<v
       );
     }
     const driver = FALLBACK_DRIVERS.find((d) => d.id === driverId);
-    // سائق صالح فقط: من قائمة السائقين أو حساب السائق التجريبي
-    if (!driver && driverId !== DEMO_DRIVER_ID) {
-      throw new OrderTransitionError('السائق غير موجود: اختر سائقًا من القائمة.');
-    }
+    if (!driver) throw new OrderTransitionError('السائق غير موجود: اختر سائقًا من القائمة.');
+    // نفس شروط الخادم: سائق متاح ومن فرع الطلب
+    const invalid = row ? driverAssignError(row, driver) : null;
+    if (invalid) throw new OrderTransitionError(invalid);
+    const previous = row?.driver_id ?? null;
     demoMutateOrder(orderId, {
       driver_id: driverId,
-      ...(driver ? { driver_name: driver.full_name } : {}),
+      driver_name: driver.full_name,
       status: 'assigned',
     });
+    driver.status = 'on_route';
+    if (previous && previous !== driverId) demoReleaseDriverIfIdle(previous);
     return;
   }
   const { error } = await supabase.rpc('assign_order_driver', {
@@ -434,6 +469,7 @@ export async function setOrderStatus(orderId: string, status: OrderStatus): Prom
     const invalid = orderTransitionError(row, status);
     if (invalid) throw new OrderTransitionError(invalid);
     demoMutateOrder(orderId, { status });
+    if (status === 'completed' || status === 'cancelled') demoReleaseDriverIfIdle(row.driver_id);
     return;
   }
   const { error } = await supabase.rpc('set_order_status', {
@@ -469,5 +505,6 @@ export async function advanceTripStage(
     if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
   }
   demoMutateOrder(orderId, { trip_stage: result.stage, status: result.status });
+  if (result.status === 'completed') demoReleaseDriverIfIdle(row?.driver_id ?? null);
   return result;
 }

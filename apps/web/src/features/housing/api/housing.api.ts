@@ -1,5 +1,7 @@
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { inViewerScope, scopeToViewerBranch } from '@/lib/branchScope';
+import { useAuth } from '@/store/auth';
 import { attendanceConfigSnapshot } from '@/features/hr/api/hr.api';
 import type {
   Dorm,
@@ -16,23 +18,23 @@ const DORMS: Dorm[] = [
     name: 'سكن نجران - أ',
     branch: 'نجران',
     capacity: 20,
-    occupied: 16,
-    supervisor: 'منى الغامدي',
+    occupied: 0,
+    supervisor: 'هيفاء القحطاني',
   },
   {
     id: 'h2',
     name: 'سكن نجران - ب',
     branch: 'نجران',
     capacity: 16,
-    occupied: 9,
-    supervisor: 'منى الغامدي',
+    occupied: 0,
+    supervisor: 'هيفاء القحطاني',
   },
   {
     id: 'h3',
     name: 'سكن جازان',
     branch: 'جازان',
     capacity: 18,
-    occupied: 18,
+    occupied: 0,
     supervisor: 'منى الغامدي',
   },
   {
@@ -40,7 +42,7 @@ const DORMS: Dorm[] = [
     name: 'سكن شرورة',
     branch: 'شرورة',
     capacity: 12,
-    occupied: 7,
+    occupied: 0,
     supervisor: 'راجيش كومار',
   },
   {
@@ -48,7 +50,7 @@ const DORMS: Dorm[] = [
     name: 'سكن حبونا',
     branch: 'حبونا',
     capacity: 10,
-    occupied: 4,
+    occupied: 0,
     supervisor: 'راجيش كومار',
   },
 ];
@@ -177,36 +179,93 @@ const DEMO_SCANS: HousingScan[] = [
   },
 ];
 
-/** Demo housing targets assigned to the supervisor (منى الغامدي). */
-const DEMO_TARGETS: HousingTarget[] = [
+/**
+ * مستهدفات السكن المُسندة لكل مشرفة (housing_targets: supervisor_id + branch_id).
+ * المحقَّق يُحسب من السكن نفسه (الإشغال والحضور) — لا أرقام ثابتة.
+ */
+interface TargetSeed {
+  id: string;
+  supervisor: string;
+  branch: string;
+  occupancy_target_pct: number;
+  attendance_target_pct: number;
+  notes: string | null;
+}
+const DEMO_TARGETS: TargetSeed[] = [
   {
-    id: 't-housing-1',
-    month: 6,
-    year: 2026,
+    id: 't-housing-jzn',
+    supervisor: 'منى الغامدي',
+    branch: 'جازان',
     occupancy_target_pct: 85,
     attendance_target_pct: 95,
-    occupancy_actual_pct: 71,
-    attendance_actual_pct: 88,
-    notes: 'رفع نسبة الإشغال في سكن نجران - ب والالتزام بحضور المساء.',
+    notes: 'رفع نسبة الإشغال في سكن جازان والالتزام بحضور المساء.',
+  },
+  {
+    id: 't-housing-njr',
+    supervisor: 'هيفاء القحطاني',
+    branch: 'نجران',
+    occupancy_target_pct: 80,
+    attendance_target_pct: 90,
+    notes: null,
   },
 ];
 
+const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+
+/** الإشغال = عدد المقيمات المسجّلات في السكن (لا رقم مخزّن يتقادم). */
+function withOccupancy(d: Dorm): Dorm {
+  return { ...d, occupied: RESIDENTS.filter((r) => r.dorm === d.name).length };
+}
+
+function targetOf(t: TargetSeed, now: Date): HousingTarget {
+  const dorms = DORMS.filter((d) => d.branch === t.branch).map(withOccupancy);
+  const capacity = dorms.reduce((a, d) => a + d.capacity, 0);
+  const occupied = dorms.reduce((a, d) => a + d.occupied, 0);
+  const residents = RESIDENTS.filter((r) => r.branch === t.branch);
+  // في خدمة لدى عميل = ملتزمة (ليست غيابًا)
+  const committed = residents.filter((r) => r.status === 'present' || r.status === 'on_service');
+  return {
+    id: t.id,
+    supervisor: t.supervisor,
+    branch: t.branch,
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+    occupancy_target_pct: t.occupancy_target_pct,
+    attendance_target_pct: t.attendance_target_pct,
+    occupancy_actual_pct: pct(occupied, capacity),
+    attendance_actual_pct: pct(committed.length, residents.length),
+    notes: t.notes,
+  };
+}
+
 /* ------------------------------- queries --------------------------------- */
 export async function listDorms(): Promise<Dorm[]> {
-  return DORMS;
+  return scopeToViewerBranch(DORMS, (d) => d.branch).map(withOccupancy);
 }
 
 export async function listResidents(): Promise<Resident[]> {
-  return RESIDENTS;
+  return scopeToViewerBranch(RESIDENTS, (r) => r.branch).map((r) => ({ ...r }));
 }
 
 export async function listHousingScans(workerId?: string): Promise<HousingScan[]> {
-  const rows = workerId ? DEMO_SCANS.filter((s) => s.worker_id === workerId) : DEMO_SCANS;
+  const branchOf = (s: HousingScan) => RESIDENTS.find((r) => r.id === s.worker_id)?.branch;
+  const scoped = scopeToViewerBranch(DEMO_SCANS, branchOf);
+  const rows = workerId ? scoped.filter((s) => s.worker_id === workerId) : scoped;
   return [...rows].sort((a, b) => b.scanned_at.localeCompare(a.scanned_at));
 }
 
+/**
+ * المشرفة ترى مستهدفاتها هي؛ الإدارة ترى مستهدفات المشرفات ضمن نطاق فرعها
+ * (نفس سياسة htarget_read).
+ */
 export async function listMyHousingTargets(): Promise<HousingTarget[]> {
-  return DEMO_TARGETS;
+  const profile = useAuth.getState().profile;
+  const now = new Date();
+  const rows =
+    profile?.role === 'housing_supervisor'
+      ? DEMO_TARGETS.filter((t) => t.supervisor === profile.full_name)
+      : scopeToViewerBranch(DEMO_TARGETS, (t) => t.branch);
+  return rows.map((t) => targetOf(t, now));
 }
 
 /**
@@ -244,6 +303,20 @@ export function upsertResidentFromWorker(w: {
 export function resolveWorkerByBarcode(code: string): Resident | null {
   const q = code.trim();
   return RESIDENTS.find((r) => r.barcode === q || r.iqama_no === q) ?? null;
+}
+
+export const OUT_OF_BRANCH = 'هذه العاملة من فرع آخر — خارج نطاق سكنك.';
+
+/** محطة المسح: العاملة ضمن نطاق فرع المستخدم فقط (نفس سياسة housing_scans). */
+export function resolveResidentForViewer(code: string): {
+  resident: Resident | null;
+  outOfScope: boolean;
+} {
+  const r = resolveWorkerByBarcode(code);
+  if (!r) return { resident: null, outOfScope: false };
+  return inViewerScope(r.branch)
+    ? { resident: r, outOfScope: false }
+    : { resident: null, outOfScope: true };
 }
 
 /* ------------------------------ mutations -------------------------------- */
@@ -285,6 +358,7 @@ export async function logHousingScan(
 ): Promise<Resident> {
   const worker = resolveWorkerByBarcode(code);
   if (!worker) throw new Error('لا توجد عاملة بهذا الباركود');
+  if (!inViewerScope(worker.branch)) throw new Error(OUT_OF_BRANCH);
 
   if (!isDemoId(worker.id)) {
     const { error } = await supabase.rpc('log_housing_scan', {

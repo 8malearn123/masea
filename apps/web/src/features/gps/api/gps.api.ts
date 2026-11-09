@@ -1,7 +1,8 @@
 import { supabase } from '@/shared/lib/supabase';
 import { useAuth } from '@/store/auth';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
-import { DEMO_DRIVER_ID, advanceTripStage } from '@/features/orders/api/orders.api';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch, viewerScope } from '@/lib/branchScope';
+import { DEMO_DRIVER_ID, advanceTripStage, listDrivers } from '@/features/orders/api/orders.api';
 import type { Order, OrderStatus } from '@/features/orders/types';
 import { resolveWorkerByBarcode } from '@/features/housing/api/housing.api';
 import { SCAN_TYPE_LABEL, type DriverLocation, type ScanEvent } from '@/features/gps/types';
@@ -63,6 +64,7 @@ const FALLBACK_LOCATIONS: DriverLocation[] = [
 const FALLBACK_SCANS: ScanEvent[] = [
   {
     id: 's1',
+    branch: 'نجران',
     scan_type: 'warehouse_out',
     subject: 'العاملة ماريا سانتوس',
     lat: 17.49,
@@ -71,6 +73,7 @@ const FALLBACK_SCANS: ScanEvent[] = [
   },
   {
     id: 's2',
+    branch: 'نجران',
     scan_type: 'customer_arrived',
     subject: 'العميل محمد الأحمدي',
     lat: 17.52,
@@ -79,6 +82,7 @@ const FALLBACK_SCANS: ScanEvent[] = [
   },
   {
     id: 's3',
+    branch: 'جازان',
     scan_type: 'service_end',
     subject: 'العميل سارة القحطاني',
     lat: 16.89,
@@ -87,6 +91,7 @@ const FALLBACK_SCANS: ScanEvent[] = [
   },
   {
     id: 's4',
+    branch: 'نجران',
     scan_type: 'warehouse_in',
     subject: 'العاملة سيتي نورهاليزا',
     lat: 17.49,
@@ -95,15 +100,91 @@ const FALLBACK_SCANS: ScanEvent[] = [
   },
 ];
 
+const isDriverViewer = () => useAuth.getState().profile?.role === 'driver';
+
+/** «اليوم» بالتوقيت المحلي — مؤشر «عمليات مسح اليوم» لا يعدّ الأيام السابقة. */
+export function isToday(iso: string, now: Date = new Date()): boolean {
+  const d = new Date(iso);
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+interface RawPosition {
+  driver_id: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  scanned_at: string;
+}
+
+/**
+ * مواقع السائقين: حالة السائق من جدول السائقين، والموقع = آخر مسح سجّله
+ * (`scans_log` يحمل driver_id والإحداثيات). السائق يرى موقعه فقط، ومدير الفرع
+ * سائقي فرعه فقط (RLS على الخادم، و`scopeToViewerBranch` في العرض).
+ */
 export async function listDriverLocations(): Promise<DriverLocation[]> {
-  // Live positions are fed by the driver app into scans_log; until that data
-  // (and a maps key) exist, show representative fallback positions.
-  // A driver only ever sees his own position — never the rest of the fleet.
   const profile = useAuth.getState().profile;
-  if (profile?.role === 'driver') {
-    return FALLBACK_LOCATIONS.filter((l) => l.id === profile.id);
+  const drivers = await listDrivers();
+  if (isDemoMode()) {
+    const rows = drivers.map((d) => {
+      const pos = FALLBACK_LOCATIONS.find((l) => l.id === d.id);
+      const mine =
+        d.id === DEMO_DRIVER_ID
+          ? MY_TRIP_SCANS.find((s) => s.lat !== null && s.lng !== null)
+          : undefined;
+      return {
+        id: d.id,
+        full_name: d.full_name,
+        status: d.status,
+        vehicle_no: d.vehicle_no,
+        branch: d.branch,
+        lat: mine?.lat ?? pos?.lat ?? null,
+        lng: mine?.lng ?? pos?.lng ?? null,
+        updated_at: mine?.scanned_at ?? pos?.updated_at ?? null,
+      };
+    });
+    return profile?.role === 'driver' ? rows.filter((l) => l.id === profile.id) : rows;
   }
-  return FALLBACK_LOCATIONS;
+  const { data, error } = await supabase
+    .from('scans_log')
+    .select('driver_id, latitude, longitude, scanned_at')
+    .not('driver_id', 'is', null)
+    .not('latitude', 'is', null)
+    .order('scanned_at', { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  const latest = new Map<string, RawPosition>();
+  for (const r of (data ?? []) as RawPosition[]) {
+    if (r.driver_id && !latest.has(r.driver_id)) latest.set(r.driver_id, r);
+  }
+  let rows: DriverLocation[] = drivers.map((d) => {
+    const p = latest.get(d.id);
+    return {
+      id: d.id,
+      full_name: d.full_name,
+      status: d.status,
+      vehicle_no: d.vehicle_no,
+      branch: d.branch,
+      lat: p?.latitude ?? null,
+      lng: p?.longitude ?? null,
+      updated_at: p?.scanned_at ?? null,
+    };
+  });
+  if (profile?.role === 'driver') {
+    const own = await myDriverId();
+    rows = rows.filter((l) => l.id === own);
+  }
+  return rows;
+}
+
+/** سجل السائق المرتبط بالحساب الحالي (drivers.user_id). */
+async function myDriverId(): Promise<string | null> {
+  const uid = useAuth.getState().profile?.id;
+  if (!uid) return null;
+  const { data } = await supabase.from('drivers').select('id').eq('user_id', uid).maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 /* ----------------------- driver trip scans (barcode) --------------------- */
@@ -140,9 +221,10 @@ export async function logTripScan(
     id,
     scan_type: scanType,
     subject: `العاملة ${worker.full_name}`,
-    lat: lat ?? 0,
-    lng: lng ?? 0,
+    lat,
+    lng,
     scanned_at: new Date().toISOString(),
+    branch: viewerScope().branch,
     ...(requestNo ? { request_no: requestNo } : {}),
   });
   return { id, worker_name: worker.full_name, scan_label: SCAN_TYPE_LABEL[scanType] ?? scanType };
@@ -192,31 +274,43 @@ export async function recordTripScan(input: {
 interface RawScan {
   id: string;
   scan_type: string;
+  driver_id: string | null;
   latitude: number | null;
   longitude: number | null;
   scanned_at: string;
   workers: { full_name: string | null } | null;
 }
 
+/**
+ * سجل الحركة: السائق يرى مسحاته فقط؛ الإدارة ترى مسح الأسطول ضمن نطاق فرعها.
+ * خادم حقيقي بلا مسح = سجل فارغ (لا بيانات تجريبية).
+ */
 export async function listRecentScans(): Promise<ScanEvent[]> {
-  try {
-    const { data, error } = await supabase
-      .from('scans_log')
-      .select('id, scan_type, latitude, longitude, scanned_at, workers(full_name)')
-      .order('scanned_at', { ascending: false })
-      .limit(20);
-    if (!error && data && data.length > 0) {
-      return (data as unknown as RawScan[]).map((r) => ({
-        id: r.id,
-        scan_type: r.scan_type,
-        subject: r.workers?.full_name ?? '—',
-        lat: r.latitude ?? 0,
-        lng: r.longitude ?? 0,
-        scanned_at: r.scanned_at,
-      }));
-    }
-  } catch {
-    /* fall through */
+  if (isDemoMode()) {
+    if (isDriverViewer()) return [...MY_TRIP_SCANS];
+    const rows = [...MY_TRIP_SCANS, ...FALLBACK_SCANS].sort((a, b) =>
+      b.scanned_at.localeCompare(a.scanned_at),
+    );
+    return scopeToViewerBranch(rows, (s) => s.branch);
   }
-  return FALLBACK_SCANS;
+  let q = supabase
+    .from('scans_log')
+    .select('id, scan_type, driver_id, latitude, longitude, scanned_at, workers(full_name)')
+    .order('scanned_at', { ascending: false })
+    .limit(50);
+  if (isDriverViewer()) {
+    const own = await myDriverId();
+    if (!own) return [];
+    q = q.eq('driver_id', own);
+  }
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as RawScan[]).map((r) => ({
+    id: r.id,
+    scan_type: r.scan_type,
+    subject: r.workers?.full_name ? `العاملة ${r.workers.full_name}` : '—',
+    lat: r.latitude,
+    lng: r.longitude,
+    scanned_at: r.scanned_at,
+  }));
 }

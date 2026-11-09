@@ -1,5 +1,6 @@
 import type { BadgeTone } from '@/shared/ui/Badge';
 import type {
+  Driver,
   DriverStatus,
   Order,
   OrderServiceCode,
@@ -75,6 +76,21 @@ export function orderTransitionError(
   }
   if (via === 'manual' && next === 'completed' && isTripUnfinished(order.trip_stage)) {
     return 'لا يمكن إكمال الطلب والرحلة لم تنتهِ: يكتمل بمسح إرجاع العاملة للسكن.';
+  }
+  return null;
+}
+
+/**
+ * هل يصلح هذا السائق لهذا الطلب؟ نفس شروط `assign_order_driver` (0080):
+ * السائق «متاح» ومن فرع الطلب (إن عُرف الفرعان). `null` = صالح.
+ */
+export function driverAssignError(
+  order: Pick<Order, 'branch'>,
+  driver: Pick<Driver, 'full_name' | 'status' | 'branch'>,
+): string | null {
+  if (driver.status !== 'available') return `السائق «${driver.full_name}» غير متاح حاليًا`;
+  if (order.branch && driver.branch && order.branch !== driver.branch) {
+    return `السائق «${driver.full_name}» من فرع آخر — اختر سائقًا من فرع الطلب`;
   }
   return null;
 }

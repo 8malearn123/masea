@@ -4,6 +4,7 @@
  * النص. التقييم القائم يبقى مقروءًا، ومنع التكرار باقٍ.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { freshDriver } from '@/test/demoDrivers';
 import { act, cleanup, render, renderHook, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -64,7 +65,7 @@ async function newRequest(workerId = 'w8') {
 const staffSets = (requestNo: string, status: OrderStatus) =>
   setOrderStatus(findDemoOrderByRequestNo(requestNo)!.id, status);
 /** «مُسند» يتم بإسناد سائق (لا يُختار يدويًا بلا سائق). */
-const staffAssigns = (requestNo: string, driverId = 'd1') =>
+const staffAssigns = (requestNo: string, driverId = freshDriver()) =>
   assignDriver(findDemoOrderByRequestNo(requestNo)!.id, driverId);
 
 /** مسار الموظفين الصالح من «مدفوع»: إسناد سائق ← قيد التنفيذ ← مكتمل. */
@@ -171,7 +172,7 @@ describe('أهلية التقييم في خدمة التقييمات', () => {
   it('مسار الرحلة الكامل (إسناد ثم المسح حتى الإرجاع للسكن) يجعل الحالة مكتملة', async () => {
     const { requestNo, workerId } = await newRequest('w9');
     const orderId = findDemoOrderByRequestNo(requestNo)!.id;
-    await assignDriver(orderId, 'd1');
+    await assignDriver(orderId, freshDriver());
     for (const scan of ['warehouse_out', 'customer_arrived', 'service_end', 'warehouse_in']) {
       await advanceTripStage(orderId, scan);
     }
@@ -237,7 +238,7 @@ describe('انتقالات مرفوضة لا تفتح التقييم', () => {
   it('رحلة بدأت ولم تنتهِ: لا إكمال يدوي قبل مسح الإرجاع', async () => {
     const { requestNo, workerId } = await newRequest('w5');
     const orderId = findDemoOrderByRequestNo(requestNo)!.id;
-    await assignDriver(orderId, 'd3');
+    await assignDriver(orderId, freshDriver());
     await advanceTripStage(orderId, 'warehouse_out');
     await advanceTripStage(orderId, 'customer_arrived');
     await expect(staffSets(requestNo, 'completed')).rejects.toThrow('الرحلة لم تنتهِ');

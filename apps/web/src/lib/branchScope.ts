@@ -40,3 +40,9 @@ export function scopeToViewerBranch<T>(
   const scope = viewerScope();
   return rows.filter((r) => inViewerBranch(branchOf(r), scope));
 }
+
+/** نفس قاعدة `scopeToViewerBranch` لسجل واحد (مع الـ backend: RLS هي المرجع). */
+export function inViewerScope(branch: string | null | undefined): boolean {
+  if (!isDemoMode() || !useAuth.getState().profile) return true;
+  return inViewerBranch(branch);
+}

@@ -59,7 +59,8 @@ export function useMarkAttendance() {
       );
       return { prev };
     },
-    onSuccess: () => toast.success('تم تسجيل الحضور'),
+    onSuccess: () => toast.success('تم تحديث حالة العاملة'),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['housing'] }),
     onError: (e, _v, ctx) => {
       // a refused change (e.g. «حاضرة» without a barcode scan) must not stay on screen
       if (ctx?.prev) qc.setQueryData(['housing', 'residents'], ctx.prev);

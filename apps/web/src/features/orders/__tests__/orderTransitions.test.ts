@@ -4,6 +4,7 @@
  * الإكمال أثناء رحلة لم تنتهِ، وعدم تعديل الطلب المخزّن عند الرفض.
  */
 import { describe, expect, it } from 'vitest';
+import { freshDriver } from '@/test/demoDrivers';
 import {
   advanceTripStage,
   assignDriver,
@@ -93,7 +94,7 @@ describe('القواعد المركزية (orderTransitionError)', () => {
 describe('خدمة الطلبات تطبّق القواعد ولا تعدّل الطلب عند الرفض', () => {
   it('مسار الموظف الصالح: مدفوع ← إسناد سائق ← قيد التنفيذ ← مكتمل', async () => {
     // o10 = طلب العرض REQ-2A7F41C9 (مدفوع)
-    await assignDriver('o10', 'd2');
+    await assignDriver('o10', freshDriver('نجران'));
     expect((await orderById('o10')).status).toBe('assigned');
     for (const s of ['in_progress', 'completed'] as const) {
       await setOrderStatus('o10', s);

@@ -64,6 +64,10 @@ export function useAssignDriver() {
       toast.error(e.message || 'تعذّر الإسناد');
     },
     onSuccess: () => toast.success('تم إسناد السائق'),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      void qc.invalidateQueries({ queryKey: orderKeys.drivers() });
+    },
   });
 }
 
@@ -115,7 +119,10 @@ export function useTripScan() {
       void qc.invalidateQueries({ queryKey: LIST_KEY });
       toast.error(e.message || 'تعذّر تطبيق المسح');
     },
-    onSettled: () => void qc.invalidateQueries({ queryKey: ['gps', 'trip-scans'] }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['gps'] });
+      void qc.invalidateQueries({ queryKey: orderKeys.drivers() });
+    },
   });
 }
 
@@ -137,5 +144,9 @@ export function useSetOrderStatus() {
       toast.error(e.message || 'تعذّر التحديث');
     },
     onSuccess: () => toast.success('تم تحديث حالة الطلب'),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      void qc.invalidateQueries({ queryKey: orderKeys.drivers() });
+    },
   });
 }

@@ -38,6 +38,9 @@ export interface HousingScan {
 /** A housing target assigned to a supervisor (admin-managed) + live progress. */
 export interface HousingTarget {
   id: string;
+  /** المشرفة المُسند إليها المستهدف وفرعها */
+  supervisor: string;
+  branch: string;
   month: number;
   year: number;
   occupancy_target_pct: number;

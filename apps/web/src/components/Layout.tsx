@@ -36,7 +36,7 @@ const subItemCls = (isActive: boolean) =>
 
 export default function Layout() {
   const { signOut } = useAuth();
-  const { fullName, meta, modules, branchLabel, can } = usePermissions();
+  const { fullName, meta, modules, branchLabel, can, role } = usePermissions();
   const mobilePreferred = Boolean(meta && !meta.webAccess);
   // Surface the housing supervisor's key actions as clear sidebar links
   // (not buried inside the housing tabs). Shown to anyone with housing access.
@@ -113,7 +113,7 @@ export default function Layout() {
             </NavLink>
             <NavLink to="/housing/targets" className={({ isActive }) => subItemCls(isActive)}>
               <Target size={16} strokeWidth={1.8} />
-              <span>مستهدفاتي</span>
+              <span>{role === 'housing_supervisor' ? 'مستهدفاتي' : 'مستهدفات السكن'}</span>
             </NavLink>
           </div>
         )}

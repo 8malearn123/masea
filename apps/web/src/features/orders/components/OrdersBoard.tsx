@@ -28,6 +28,7 @@ import {
 } from '@/features/orders/hooks/useOrders';
 import { DriverTrips } from '@/features/orders/components/DriverTrips';
 import {
+  driverAssignError,
   DRIVER_STATUS_LABEL,
   DRIVER_STATUS_TONE,
   nextOrderStatuses,
@@ -99,8 +100,9 @@ export default function OrdersBoard() {
 }
 
 function DispatchBoard() {
-  const { can } = usePermissions();
+  const { can, meta } = usePermissions();
   const editable = can('orders', 'edit');
+  const crossBranch = meta?.crossBranch ?? false;
   const [filters, setFilters] = useState<OrderFilters>({
     status: 'all',
     branch: 'all',
@@ -109,28 +111,40 @@ function DispatchBoard() {
   const [assignOrder, setAssignOrder] = useState<Order | null>(null);
 
   const { data: orders = [], isLoading, isError, refetch } = useOrders(filters);
-  const { data: drivers = [] } = useDrivers();
+  // المؤشرات وحِمل السائقين لكل طلبات الفرع المختار — لا تتبع زر الحالة ولا البحث
+  const { data: branchOrders = [] } = useOrders({
+    status: 'all',
+    branch: filters.branch,
+    search: '',
+  });
+  const { data: allDrivers = [] } = useDrivers();
+  const drivers = useMemo(
+    () =>
+      filters.branch === 'all' ? allDrivers : allDrivers.filter((d) => d.branch === filters.branch),
+    [allDrivers, filters.branch],
+  );
   const setStatus = useSetOrderStatus();
 
   const stats = useMemo(
     () => ({
-      total: orders.length,
-      pending: orders.filter((o) => o.status === 'new' || o.status === 'paid').length,
-      active: orders.filter((o) => o.status === 'assigned' || o.status === 'in_progress').length,
-      done: orders.filter((o) => o.status === 'completed').length,
+      total: branchOrders.length,
+      pending: branchOrders.filter((o) => o.status === 'new' || o.status === 'paid').length,
+      active: branchOrders.filter((o) => o.status === 'assigned' || o.status === 'in_progress')
+        .length,
+      done: branchOrders.filter((o) => o.status === 'completed').length,
     }),
-    [orders],
+    [branchOrders],
   );
 
   const driverLoad = useMemo(() => {
     const map = new Map<string, number>();
-    orders.forEach((o) => {
+    branchOrders.forEach((o) => {
       if (o.driver_id && (o.status === 'assigned' || o.status === 'in_progress')) {
         map.set(o.driver_id, (map.get(o.driver_id) ?? 0) + 1);
       }
     });
     return map;
-  }, [orders]);
+  }, [branchOrders]);
 
   function patch(p: Partial<OrderFilters>) {
     setFilters((f) => ({ ...f, ...p }));
@@ -285,11 +299,13 @@ function DispatchBoard() {
                   className="pr-9"
                 />
               </div>
-              <Select
-                value={filters.branch}
-                onChange={(e) => patch({ branch: e.target.value })}
-                options={BRANCH_OPTIONS}
-              />
+              {crossBranch && (
+                <Select
+                  value={filters.branch}
+                  onChange={(e) => patch({ branch: e.target.value })}
+                  options={BRANCH_OPTIONS}
+                />
+              )}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {STATUS_PILLS.map((p) => (
@@ -367,7 +383,7 @@ function DispatchBoard() {
 
       <AssignDriverModal
         order={assignOrder}
-        drivers={drivers}
+        drivers={allDrivers}
         onClose={() => setAssignOrder(null)}
       />
     </div>
@@ -406,7 +422,8 @@ function AssignDriverModal({
   onClose: () => void;
 }) {
   const assign = useAssignDriver();
-  const available = drivers.filter((d) => d.status === 'available');
+  // نفس شروط الخادم: سائق متاح ومن فرع الطلب
+  const available = order ? drivers.filter((d) => !driverAssignError(order, d)) : [];
 
   return (
     <Modal open={order !== null} onClose={onClose} title="إسناد سائق">
@@ -414,11 +431,11 @@ function AssignDriverModal({
         <div>
           <p className="mb-4 text-sm text-purple">
             الطلب <span className="num font-semibold text-navy">{order.request_no}</span> — اختر
-            سائقًا متاحًا.
+            سائقًا متاحًا من فرع {order.branch ?? 'الطلب'}.
           </p>
           {available.length === 0 ? (
             <p className="rounded-xl bg-navy-50 p-4 text-center text-sm text-purple">
-              لا يوجد سائقون متاحون حاليًا.
+              لا يوجد سائق متاح في فرع {order.branch ?? 'الطلب'} حاليًا.
             </p>
           ) : (
             <div className="space-y-2">

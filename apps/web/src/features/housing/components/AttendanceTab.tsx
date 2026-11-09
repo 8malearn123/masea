@@ -4,6 +4,7 @@ import { Button, Card, Input, Modal, Select, Table, type Column } from '@/shared
 import { BarcodeScanner } from '@/features/gps/components/BarcodeScanner';
 import { useAttendanceConfig } from '@/features/hr/hooks/useHr';
 import { BRANCHES_AR } from '@/lib/funnel';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   useLogHousingScan,
   useMarkAttendance,
@@ -27,6 +28,8 @@ export function AttendanceTab() {
   const [scanOpen, setScanOpen] = useState(false);
   const [branch, setBranch] = useState('all');
   const [search, setSearch] = useState('');
+  // مستخدم الفرع الواحد يرى فرعه فقط — لا حاجة لمرشّح الفروع
+  const crossBranch = usePermissions().meta?.crossBranch ?? false;
 
   const rows = useMemo(
     () =>
@@ -100,14 +103,16 @@ export function AttendanceTab() {
               className="pr-9"
             />
           </div>
-          <Select
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            options={[
-              { value: 'all', label: 'كل الفروع' },
-              ...BRANCHES_AR.map((b) => ({ value: b, label: b })),
-            ]}
-          />
+          {crossBranch && (
+            <Select
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              options={[
+                { value: 'all', label: 'كل الفروع' },
+                ...BRANCHES_AR.map((b) => ({ value: b, label: b })),
+              ]}
+            />
+          )}
         </div>
       </Card>
 
