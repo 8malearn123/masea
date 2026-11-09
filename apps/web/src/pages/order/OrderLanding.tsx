@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { BRAND } from '@masiat/shared';
+import { useSiteInfo } from '@/features/site/hooks/useSite';
+import { displayPhone, whatsappLink } from '@/features/site/lib/webLead';
 import { FlagCircle } from '@/shared/ui';
 import { sar } from '@/shared/lib/format';
 import { fallbackPrice } from '@/shared/lib/pricing';
@@ -90,8 +92,6 @@ function whyUs(guaranteeDays: number | null): { icon: LucideIcon; title: string;
   ];
 }
 
-const WA = 'https://wa.me/966920000000';
-
 /** حالة العاملة اليوم من جدول التوفّر (لا شارة «متاحة» ثابتة). */
 function AvailabilityPill({
   worker,
@@ -120,6 +120,8 @@ function priceFrom(code: string): number {
 }
 
 export default function OrderLanding() {
+  const { data: site } = useSiteInfo();
+  const company = site?.company;
   const { data: allServices = [] } = useServices();
   // only services the public order wizard has a flow for
   const services = allServices.filter((x) => isServiceCode(x.code));
@@ -481,14 +483,19 @@ export default function OrderLanding() {
               >
                 ابدأ التصفّح الآن <ChevronLeft size={18} />
               </Link>
-              <a
-                href={WA}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-8 py-3.5 text-base font-semibold text-white transition hover:bg-white/10"
-              >
-                واتساب
-              </a>
+              {company?.whatsapp && (
+                <a
+                  href={whatsappLink(
+                    company.whatsapp,
+                    'السلام عليكم، أرغب في الاستفسار عن خدماتكم.',
+                  )}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-8 py-3.5 text-base font-semibold text-white transition hover:bg-white/10"
+                >
+                  واتساب
+                </a>
+              )}
             </div>
           </div>
         </div>
@@ -536,17 +543,27 @@ export default function OrderLanding() {
           <div className="text-sm">
             <p className="mb-4 font-semibold">تواصل</p>
             <ul className="space-y-3 text-white/65">
-              <li className="flex items-center gap-2">
-                <Phone size={15} className="text-gold" /> <span className="num">٩٢٠ ٠٠٠ ٠٠٠</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Mail size={15} className="text-gold" /> info@masiatalsharq.sa
-              </li>
+              {/* بيانات التواصل الرسمية من «بيانات الشركة والموقع» — لا أرقام تجريبية */}
+              {company?.phone && (
+                <li className="flex items-center gap-2">
+                  <Phone size={15} className="text-gold" />{' '}
+                  <a href={`tel:${company.phone}`} className="num" dir="ltr">
+                    {displayPhone(company.phone)}
+                  </a>
+                </li>
+              )}
+              {company?.email && (
+                <li className="flex items-center gap-2">
+                  <Mail size={15} className="text-gold" />{' '}
+                  <a href={`mailto:${company.email}`} dir="ltr">
+                    {company.email}
+                  </a>
+                </li>
+              )}
               <li className="flex items-center gap-2">
                 <MapPin size={15} className="text-gold" /> {BRANCHES_AR.join(' · ')}
               </li>
             </ul>
-            <p className="mt-3 text-[11px] text-white/45">الهاتف والبريد بيانات تجريبية للعرض.</p>
           </div>
         </div>
         <div className="mx-auto mt-10 max-w-6xl border-t border-white/10 px-4 pt-6 text-center text-[11px] text-white/45">

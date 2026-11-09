@@ -673,18 +673,24 @@ export function captureLead(input: {
   service_code: Lead['service_code'];
   est_value: number;
   stage_code?: LeadStageCode;
-}): void {
+  /** فرع الطلب (مدينة الزائر) — يظهر في خط مبيعات ذلك الفرع */
+  branch?: string | null;
+  notes?: string | null;
+}): string {
+  const id = `lead-${++seq}`;
   DEMO_LEADS.unshift({
-    id: `lead-${++seq}`,
+    id,
+    ...(input.branch ? { branch: input.branch, city: input.branch } : {}),
     full_name: input.full_name,
     phone: input.phone,
     source_code: input.source_code,
     service_code: input.service_code,
     stage_code: input.stage_code ?? 'new',
     est_value: input.est_value,
-    notes: 'التُقط تلقائياً',
+    notes: input.notes ?? 'التُقط تلقائياً',
     customer_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
+  return id;
 }

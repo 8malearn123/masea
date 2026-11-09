@@ -8,6 +8,7 @@ import { Spinner } from '@/shared/ui';
 // Route-level code splitting (lazy + Suspense).
 const Login = lazy(() => import('@/pages/Login'));
 const OrderLanding = lazy(() => import('@/pages/order/OrderLanding'));
+const SiteLanding = lazy(() => import('@/features/site/components/SiteLanding'));
 const OrderWizard = lazy(() => import('@/pages/order/OrderWizard'));
 const OrderTracking = lazy(() => import('@/pages/order/OrderTracking'));
 const RequestSummary = lazy(() => import('@/features/requests/components/RequestSummary'));
@@ -96,9 +97,10 @@ export default function App() {
       <CustomerChat signedIn={Boolean(session)} />
       {!session ? (
         <Routes>
-          {/* Public customer funnel is the home page */}
-          <Route path="/" element={<OrderLanding />} />
-          <Route path="/order" element={<Navigate to="/" replace />} />
+          {/* صفحة الهبوط هي الرئيسية؛ كتالوج الطلب الإلكتروني على /order */}
+          <Route path="/" element={<SiteLanding />} />
+          <Route path="/site" element={<Navigate to="/" replace />} />
+          <Route path="/order" element={<OrderLanding />} />
           <Route path="/order/workers" element={<WorkerCatalog />} />
           <Route path="/order/workers/:id" element={<WorkerProfile />} />
           <Route path="/order/start" element={<OrderWizard />} />
@@ -110,6 +112,7 @@ export default function App() {
       ) : (
         <Routes>
           {/* Public customer funnel — also reachable while signed in */}
+          <Route path="/site" element={<SiteLanding />} />
           <Route path="/order" element={<OrderLanding />} />
           <Route path="/order/workers" element={<WorkerCatalog />} />
           <Route path="/order/workers/:id" element={<WorkerProfile />} />
