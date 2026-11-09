@@ -4,6 +4,7 @@ import { Badge, Card, Input, Select, Table, type Column } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { useDorms, useResidents } from '@/features/housing/hooks/useHousing';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   RESIDENT_STATUS_LABEL,
   RESIDENT_STATUS_TONE,
@@ -28,7 +29,9 @@ function Kpi({
 }
 
 function Overview() {
-  const { data: dorms = [] } = useDorms();
+  const { data: allDorms = [] } = useDorms();
+  const dorms = allDorms.filter((d) => d.is_active);
+  const crossBranch = usePermissions().meta?.crossBranch ?? false;
   const { data: residents = [], isLoading, isError, refetch } = useResidents();
   const [branch, setBranch] = useState('all');
   const [search, setSearch] = useState('');
@@ -77,14 +80,16 @@ function Overview() {
               className="pr-9"
             />
           </div>
-          <Select
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            options={[
-              { value: 'all', label: 'كل الفروع' },
-              ...BRANCHES_AR.map((b) => ({ value: b, label: b })),
-            ]}
-          />
+          {crossBranch && (
+            <Select
+              value={branch}
+              onChange={(e) => setBranch(e.target.value)}
+              options={[
+                { value: 'all', label: 'كل الفروع' },
+                ...BRANCHES_AR.map((b) => ({ value: b, label: b })),
+              ]}
+            />
+          )}
         </div>
       </Card>
 
@@ -93,20 +98,27 @@ function Overview() {
           <h2 className="flex items-center gap-2 text-sm font-bold text-navy">
             <BedDouble size={16} /> المساكن
           </h2>
+          {dormRows.length === 0 && (
+            <Card className="py-6 text-center text-sm text-purple">لا توجد مساكن في نطاقك.</Card>
+          )}
           {dormRows.map((d) => {
-            const r = d.capacity ? Math.round((d.occupied / d.capacity) * 100) : 0;
-            const full = d.occupied >= d.capacity;
+            const r = d.capacity ? Math.min(100, Math.round((d.occupied / d.capacity) * 100)) : 0;
+            const full = d.capacity !== null && d.occupied >= d.capacity;
             return (
               <Card key={d.id} className="py-4">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-bold text-navy">{d.name}</p>
-                  <Badge tone={full ? 'danger' : r >= 80 ? 'gold' : 'success'}>
-                    {full ? 'مكتمل' : `${r}٪`}
-                  </Badge>
+                  {d.capacity === null ? (
+                    <Badge tone="neutral">السعة غير محددة</Badge>
+                  ) : (
+                    <Badge tone={full ? 'danger' : r >= 80 ? 'gold' : 'success'}>
+                      {full ? 'مكتمل' : `${r}٪`}
+                    </Badge>
+                  )}
                 </div>
                 <p className="mt-1 flex items-center gap-1 text-[11px] text-purple">
                   <MapPin size={11} className="text-gold-600" /> {d.branch} · المشرفة:{' '}
-                  {d.supervisor}
+                  {d.supervisor || 'غير مُسندة'}
                 </p>
                 <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-navy-50">
                   <div
@@ -115,7 +127,7 @@ function Overview() {
                   />
                 </div>
                 <p className="num mt-1.5 text-xs text-purple">
-                  {d.occupied} / {d.capacity} سرير
+                  {d.occupied} / {d.capacity ?? '—'} سرير
                 </p>
               </Card>
             );
@@ -142,9 +154,10 @@ function Overview() {
 }
 
 export default function HousingBoard() {
-  const { data: dorms = [] } = useDorms();
+  const { data: allDorms = [] } = useDorms();
+  const dorms = allDorms.filter((d) => d.is_active);
 
-  const totalBeds = dorms.reduce((s, d) => s + d.capacity, 0);
+  const totalBeds = dorms.reduce((s, d) => s + (d.capacity ?? 0), 0);
   const occupied = dorms.reduce((s, d) => s + d.occupied, 0);
   const rate = totalBeds ? Math.round((occupied / totalBeds) * 100) : 0;
 

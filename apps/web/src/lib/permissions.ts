@@ -64,7 +64,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     call_center: 'full',
     // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
-    housing: 'full',
+    // full + manage: إدارة المساكن والمستهدفات (0081)
+    housing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     orders: 'full',
     rating: 'full',
     rbac: 'manage',
@@ -88,7 +89,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     call_center: 'full',
     // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
-    housing: 'full',
+    // full + manage: إدارة المساكن والمستهدفات (0081)
+    housing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     orders: 'full',
     rating: 'full',
     reports: 'full',
@@ -115,7 +117,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     pricing: 'view', // عرض + خصم محدود في مسار الصفقة
     rating: 'view',
     reports: 'view',
-    housing: 'view',
+    // view + manage: مدير الفرع يدير مساكن فرعه ومستهدفاتها (0081)
+    housing: ['view', 'manage'],
     customers: 'full', // عملاء فرعه فقط (RLS)
     sales_ops: ['view', 'edit', 'approve', 'export'],
     audit: 'view', // سجل تدقيق فرعه

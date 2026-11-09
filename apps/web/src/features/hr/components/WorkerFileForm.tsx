@@ -350,7 +350,13 @@ export function WorkerFileForm({
               onChange={(e) => set('dorm', e.target.value)}
               options={[
                 { value: '', label: 'بدون سكن' },
-                ...branchDorms.map((d) => ({ value: d.name, label: d.name })),
+                ...branchDorms.map((d) => ({
+                  value: d.name,
+                  label:
+                    d.capacity === null
+                      ? d.name
+                      : `${d.name} — ${d.occupied}/${d.capacity}${d.occupied >= d.capacity && d.name !== worker?.dorm ? ' (ممتلئ)' : ''}`,
+                })),
                 ...(w.dorm && !branchDorms.some((d) => d.name === w.dorm)
                   ? [{ value: w.dorm, label: w.dorm }]
                   : []),

@@ -9,7 +9,11 @@ import { supabase } from '@/shared/lib/supabase';
 import { isDemoMode } from '@/shared/lib/demoBackend';
 import { persistHouseWorker } from '@/features/hr/api/hr.api';
 import { createHrDocument } from '@/features/hr/api/documents.api';
-import { listDorms, upsertResidentFromWorker } from '@/features/housing/api/housing.api';
+import {
+  listDorms,
+  upsertResidentFromWorker,
+  workerDormError,
+} from '@/features/housing/api/housing.api';
 import { ageFrom, validatePhoto, workerErrors } from '@/features/hr/lib/workerValidation';
 import type { DocFile, DocumentDraft, HouseWorker } from '@/features/hr/types';
 
@@ -25,22 +29,15 @@ export interface PendingDoc {
 export interface DormOption {
   name: string;
   branch: string;
+  capacity: number | null;
+  occupied: number;
 }
 
+/** المساكن النشطة لاختيار سكن العاملة (الإشغال محسوب في الخادم — 0081). */
 export async function listDormOptions(): Promise<DormOption[]> {
-  if (!isDemoMode()) {
-    const { data, error } = await supabase
-      .from('housing_dorms')
-      .select('name, branches(city)')
-      .order('name');
-    if (error) throw new Error(`تعذّر تحميل السكنات: ${error.message}`);
-    return ((data ?? []) as Record<string, unknown>[]).map((d) => {
-      const b = d.branches as { city?: string } | { city?: string }[] | null;
-      const city = Array.isArray(b) ? b[0]?.city : b?.city;
-      return { name: String(d.name), branch: city ?? '' };
-    });
-  }
-  return (await listDorms()).map((d) => ({ name: d.name, branch: d.branch }));
+  return (await listDorms())
+    .filter((d) => d.is_active)
+    .map((d) => ({ name: d.name, branch: d.branch, capacity: d.capacity, occupied: d.occupied }));
 }
 
 function readAsDataUrl(blob: Blob): Promise<string> {
@@ -87,6 +84,11 @@ export async function saveWorkerFile(input: {
   const errs = workerErrors(w);
   const first = Object.values(errs)[0];
   if (first) throw new Error(first);
+  // مرآة guard_worker_dorm (0081): سكن نشط، من فرع العاملة، وغير ممتلئ
+  if (isDemoMode()) {
+    const dormErr = workerDormError(w.dorm, w.branch, w.barcode);
+    if (dormErr) throw new Error(dormErr);
+  }
   if (input.photo) w.photo_url = await uploadWorkerPhoto(input.photo);
 
   const saved = await persistHouseWorker(w, input.isNew);

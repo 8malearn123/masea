@@ -2,6 +2,7 @@ import { Suspense, useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   BarChart3,
+  BedDouble,
   CalendarCheck,
   ChevronDown,
   GitCommitHorizontal,
@@ -111,6 +112,12 @@ export default function Layout() {
               <BarChart3 size={16} strokeWidth={1.8} />
               <span>تقرير السكن</span>
             </NavLink>
+            {can('housing', 'manage') && (
+              <NavLink to="/housing/dorms" className={({ isActive }) => subItemCls(isActive)}>
+                <BedDouble size={16} strokeWidth={1.8} />
+                <span>إدارة المساكن</span>
+              </NavLink>
+            )}
             <NavLink to="/housing/targets" className={({ isActive }) => subItemCls(isActive)}>
               <Target size={16} strokeWidth={1.8} />
               <span>{role === 'housing_supervisor' ? 'مستهدفاتي' : 'مستهدفات السكن'}</span>

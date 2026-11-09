@@ -4,18 +4,43 @@ import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
 import {
   listDorms,
   listHousingScans,
+  listHousingSupervisors,
+  saveDorm,
   listMyHousingTargets,
   listResidents,
   logHousingScan,
   markAttendance,
 } from '@/features/housing/api/housing.api';
 import type { Resident, ResidentStatus, ScanDirection } from '@/features/housing/types';
+import type { DormInput } from '@/features/housing/lib/dormRules';
 
 export function useDorms() {
   return useQuery({
     queryKey: ['housing', 'dorms'],
     queryFn: listDorms,
     staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function useHousingSupervisors(enabled = true) {
+  return useQuery({
+    queryKey: ['housing', 'supervisors'],
+    queryFn: listHousingSupervisors,
+    staleTime: QUERY_DEFAULTS.staleTime,
+    enabled,
+  });
+}
+
+/** إضافة/تعديل/تعطيل سكن؛ يُعاد تحميل كل بيانات السكن وخيارات ملف العاملة. */
+export function useSaveDorm() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { input: DormInput; done: string }>({
+    mutationFn: ({ input }) => saveDorm(input),
+    onSuccess: (_r, { done }) => toast.success(done),
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ السكن'),
+    // يشمل خيارات السكن في ملف العاملة (['housing', 'dorm-options'])
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['housing'] }),
   });
 }
 

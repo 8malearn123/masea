@@ -1,16 +1,31 @@
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { inViewerScope, scopeToViewerBranch } from '@/lib/branchScope';
 import { useAuth } from '@/store/auth';
 import { attendanceConfigSnapshot } from '@/features/hr/api/hr.api';
+import { dormAssignError, dormChangeError, type DormInput } from '@/features/housing/lib/dormRules';
 import type {
   Dorm,
   HousingScan,
+  HousingSupervisor,
   HousingTarget,
   Resident,
   ResidentStatus,
   ScanDirection,
 } from '@/features/housing/types';
+
+/** مشرفات السكن في مخزن العرض (مستخدمون بدور «مشرفة السكن»). */
+const DEMO_SUPERVISORS: HousingSupervisor[] = [
+  { id: 'demo-housing_supervisor', full_name: 'منى الغامدي', branch: 'جازان' },
+  { id: 'sup-njr', full_name: 'هيفاء القحطاني', branch: 'نجران' },
+  { id: 'sup-srr', full_name: 'نوف الدوسري', branch: 'شرورة' },
+  { id: 'sup-hbn', full_name: 'أمل اليامي', branch: 'حبونا' },
+];
+
+const sup = (id: string) => ({
+  supervisor_id: id,
+  supervisor: DEMO_SUPERVISORS.find((x) => x.id === id)?.full_name ?? '',
+});
 
 const DORMS: Dorm[] = [
   {
@@ -19,7 +34,9 @@ const DORMS: Dorm[] = [
     branch: 'نجران',
     capacity: 20,
     occupied: 0,
-    supervisor: 'هيفاء القحطاني',
+    ...sup('sup-njr'),
+    is_active: true,
+    notes: null,
   },
   {
     id: 'h2',
@@ -27,7 +44,9 @@ const DORMS: Dorm[] = [
     branch: 'نجران',
     capacity: 16,
     occupied: 0,
-    supervisor: 'هيفاء القحطاني',
+    ...sup('sup-njr'),
+    is_active: true,
+    notes: null,
   },
   {
     id: 'h3',
@@ -35,7 +54,9 @@ const DORMS: Dorm[] = [
     branch: 'جازان',
     capacity: 18,
     occupied: 0,
-    supervisor: 'منى الغامدي',
+    ...sup('demo-housing_supervisor'),
+    is_active: true,
+    notes: null,
   },
   {
     id: 'h4',
@@ -43,7 +64,9 @@ const DORMS: Dorm[] = [
     branch: 'شرورة',
     capacity: 12,
     occupied: 0,
-    supervisor: 'راجيش كومار',
+    ...sup('sup-srr'),
+    is_active: true,
+    notes: null,
   },
   {
     id: 'h5',
@@ -51,7 +74,9 @@ const DORMS: Dorm[] = [
     branch: 'حبونا',
     capacity: 10,
     occupied: 0,
-    supervisor: 'راجيش كومار',
+    ...sup('sup-hbn'),
+    is_active: true,
+    notes: null,
   },
 ];
 
@@ -218,8 +243,8 @@ function withOccupancy(d: Dorm): Dorm {
 }
 
 function targetOf(t: TargetSeed, now: Date): HousingTarget {
-  const dorms = DORMS.filter((d) => d.branch === t.branch).map(withOccupancy);
-  const capacity = dorms.reduce((a, d) => a + d.capacity, 0);
+  const dorms = DORMS.filter((d) => d.branch === t.branch && d.is_active).map(withOccupancy);
+  const capacity = dorms.reduce((a, d) => a + (d.capacity ?? 0), 0);
   const occupied = dorms.reduce((a, d) => a + d.occupied, 0);
   const residents = RESIDENTS.filter((r) => r.branch === t.branch);
   // في خدمة لدى عميل = ملتزمة (ليست غيابًا)
@@ -239,8 +264,111 @@ function targetOf(t: TargetSeed, now: Date): HousingTarget {
 }
 
 /* ------------------------------- queries --------------------------------- */
+interface RawDorm {
+  id: string;
+  name: string;
+  branch: string | null;
+  capacity: number | null;
+  occupied: number;
+  supervisor_id: string | null;
+  supervisor: string | null;
+  is_active: boolean;
+  notes: string | null;
+}
+
+/** كل المساكن ضمن نطاق المستخدم (النشطة والمعطّلة) مع الإشغال المحسوب. */
 export async function listDorms(): Promise<Dorm[]> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.rpc('list_housing_dorms');
+    if (error) throw new Error(`تعذّر تحميل المساكن: ${error.message}`);
+    return ((data ?? []) as RawDorm[]).map((d) => ({
+      ...d,
+      branch: d.branch ?? '',
+      supervisor: d.supervisor ?? '',
+    }));
+  }
   return scopeToViewerBranch(DORMS, (d) => d.branch).map(withOccupancy);
+}
+
+/** المشرفات المتاحات للإسناد ضمن نطاق مدير السكن. */
+export async function listHousingSupervisors(): Promise<HousingSupervisor[]> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.rpc('list_housing_supervisors');
+    if (error) throw new Error(`تعذّر تحميل المشرفات: ${error.message}`);
+    return ((data ?? []) as { id: string; full_name: string | null; branch: string | null }[]).map(
+      (u) => ({ id: u.id, full_name: u.full_name ?? '—', branch: u.branch }),
+    );
+  }
+  return scopeToViewerBranch(DEMO_SUPERVISORS, (x) => x.branch);
+}
+
+/** إضافة/تعديل/تعطيل سكن (housing.manage — RLS + guard_housing_dorm). */
+export async function saveDorm(input: DormInput): Promise<void> {
+  const all = await listDorms();
+  const current = input.id ? (all.find((d) => d.id === input.id) ?? null) : null;
+  const invalid = dormChangeError(input, {
+    current,
+    others: isDemoMode() ? DORMS : all,
+    supervisors: await listHousingSupervisors(),
+  });
+  if (invalid) throw new Error(invalid);
+  const name = input.name.trim();
+  if (!isDemoMode()) {
+    const { data: b } = await supabase
+      .from('branches')
+      .select('id')
+      .eq('city', input.branch)
+      .maybeSingle();
+    const row = {
+      name,
+      branch_id: (b as { id: string } | null)?.id ?? null,
+      capacity: input.capacity,
+      supervisor_id: input.supervisor_id,
+      notes: input.notes?.trim() || null,
+      is_active: input.is_active,
+    };
+    const q = input.id
+      ? supabase.from('housing_dorms').update(row).eq('id', input.id).select('id')
+      : supabase.from('housing_dorms').insert(row).select('id');
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) throw new Error('لا تملك صلاحية إدارة هذا السكن');
+    return;
+  }
+  const sv = DEMO_SUPERVISORS.find((x) => x.id === input.supervisor_id);
+  const patch = {
+    name,
+    branch: input.branch,
+    capacity: input.capacity,
+    supervisor_id: input.supervisor_id,
+    supervisor: sv?.full_name ?? '',
+    notes: input.notes?.trim() || null,
+    is_active: input.is_active,
+  };
+  if (current) {
+    const row = DORMS.find((d) => d.id === current.id)!;
+    // السكن يُعرَف بالاسم في ملف العاملة: تغيير الاسم يتبعه المقيمات
+    if (row.name !== name) RESIDENTS.forEach((r) => r.dorm === row.name && (r.dorm = name));
+    Object.assign(row, patch);
+  } else {
+    DORMS.push({ id: `h-${Date.now().toString(36)}`, occupied: 0, ...patch });
+  }
+}
+
+/**
+ * مرآة `guard_worker_dorm` في مخزن العرض: هل يقبل السكن هذه العاملة؟
+ * `barcode` = العاملة نفسها (بقاؤها في سكنها الحالي ليس تسكينًا جديدًا).
+ */
+export function workerDormError(
+  dormName: string,
+  workerBranch: string,
+  barcode: string,
+): string | null {
+  if (!dormName) return null;
+  const resident = RESIDENTS.find((r) => r.barcode === barcode && barcode !== '');
+  if (resident?.dorm === dormName) return null;
+  const dorm = DORMS.find((d) => d.name === dormName);
+  return dormAssignError(dorm ? withOccupancy(dorm) : undefined, workerBranch);
 }
 
 export async function listResidents(): Promise<Resident[]> {

@@ -102,7 +102,7 @@ describe('السكن', () => {
     expect(mine[0]).toMatchObject({ supervisor: acc.name, branch: acc.branch });
     expect(mine[0]!.month).toBe(new Date().getMonth() + 1);
     const dorms = await listDorms();
-    const cap = dorms.reduce((a, d) => a + d.capacity, 0);
+    const cap = dorms.reduce((a, d) => a + (d.capacity ?? 0), 0);
     const occ = dorms.reduce((a, d) => a + d.occupied, 0);
     expect(mine[0]!.occupancy_actual_pct).toBe(Math.round((occ / cap) * 100));
   });

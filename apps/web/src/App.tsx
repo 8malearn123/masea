@@ -37,6 +37,7 @@ const HousingScanPage = lazy(() => import('@/features/housing/components/ScanPag
 const HousingReportPage = lazy(() => import('@/features/housing/components/ReportPage'));
 const HousingAttendancePage = lazy(() => import('@/features/housing/components/AttendancePage'));
 const HousingTargetsPage = lazy(() => import('@/features/housing/components/TargetsPage'));
+const HousingDormsPage = lazy(() => import('@/features/housing/components/DormsPage'));
 const LoyaltyBoard = lazy(() => import('@/features/loyalty/components/LoyaltyBoard'));
 const CampaignDetail = lazy(() => import('@/features/loyalty/components/CampaignDetail'));
 const RatingBoard = lazy(() => import('@/features/rating/components/RatingBoard'));
@@ -278,6 +279,14 @@ export default function App() {
               element={
                 <RequirePerm module="housing" action="edit">
                   <HousingAttendancePage />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="housing/dorms"
+              element={
+                <RequirePerm module="housing" action="manage">
+                  <HousingDormsPage />
                 </RequirePerm>
               }
             />
