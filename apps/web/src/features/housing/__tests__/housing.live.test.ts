@@ -73,10 +73,12 @@ import {
   findWorkerByCode,
   listDorms,
   listHousingScans,
+  listHousingTargets,
   listResidents,
   logHousingScan,
   markAttendance,
   saveDorm,
+  saveHousingTarget,
 } from '@/features/housing/api/housing.api';
 
 const RESIDENT = {
@@ -114,6 +116,22 @@ beforeEach(() => {
     list_housing_residents: [RESIDENT],
     find_worker_by_code: [{ ...RESIDENT }],
     log_housing_scan: { id: 'w1', full_name: 'ميرا سوسانتي', barcode: 'MAS-W-2037' },
+    list_housing_targets: [
+      {
+        id: 't1',
+        supervisor_id: 'u1',
+        supervisor: 'منى الغامدي',
+        branch: 'جازان',
+        month: 11,
+        year: 2026,
+        occupancy_target_pct: 85,
+        attendance_target_pct: 95,
+        occupancy_actual_pct: 11,
+        attendance_actual_pct: 80,
+        notes: null,
+        is_active: true,
+      },
+    ],
   };
 });
 
@@ -193,6 +211,31 @@ describe('السكن مع خادم حقيقي', () => {
     expect((await listHousingScans())[0]).toMatchObject({
       worker_name: 'ميرا سوسانتي',
       dorm: 'سكن جازان',
+    });
+  });
+
+  it('المستهدفات: المحقَّق من الخادم، والإسناد يكتب المشرفة والشهر', async () => {
+    const [t] = await listHousingTargets({ year: 2026, month: 11 });
+    expect(t).toMatchObject({ supervisor: 'منى الغامدي', occupancy_actual_pct: 11 });
+    expect(db.rpcs.find((r) => r.fn === 'list_housing_targets')?.params).toEqual({
+      p_year: 2026,
+      p_month: 11,
+    });
+    db.rpcData.list_housing_targets = [];
+    await saveHousingTarget({
+      id: null,
+      supervisor_id: 'u1',
+      month: 12,
+      year: 2026,
+      occupancy_target_pct: 80,
+      attendance_target_pct: 90,
+      notes: ' ',
+      is_active: true,
+    });
+    expect(db.writes.at(-1)).toMatchObject({
+      table: 'housing_targets',
+      op: 'insert',
+      payload: { supervisor_id: 'u1', month: 12, year: 2026, notes: null },
     });
   });
 });

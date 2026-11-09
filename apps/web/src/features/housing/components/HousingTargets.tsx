@@ -1,21 +1,7 @@
 import { Target } from 'lucide-react';
 import { Card, EmptyState } from '@/shared/ui';
 import { useMyHousingTargets } from '@/features/housing/hooks/useHousing';
-
-const MONTHS_AR = [
-  'يناير',
-  'فبراير',
-  'مارس',
-  'أبريل',
-  'مايو',
-  'يونيو',
-  'يوليو',
-  'أغسطس',
-  'سبتمبر',
-  'أكتوبر',
-  'نوفمبر',
-  'ديسمبر',
-];
+import { MONTHS_AR } from '@/features/housing/components/TargetsManager';
 
 function Gauge({ label, actual, target }: { label: string; actual: number; target: number }) {
   const pct = Math.min(100, target ? Math.round((actual / target) * 100) : 0);

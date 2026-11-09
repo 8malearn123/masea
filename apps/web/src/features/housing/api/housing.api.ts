@@ -5,6 +5,7 @@ import { inViewerScope, scopeToViewerBranch } from '@/lib/branchScope';
 import { useAuth } from '@/store/auth';
 import { attendanceConfigSnapshot } from '@/features/hr/api/hr.api';
 import { dormAssignError, dormChangeError, type DormInput } from '@/features/housing/lib/dormRules';
+import { targetChangeError, type HousingTargetInput } from '@/features/housing/lib/targetRules';
 import type {
   Dorm,
   HousingScan,
@@ -211,28 +212,35 @@ const DEMO_SCANS: HousingScan[] = [
  */
 interface TargetSeed {
   id: string;
-  supervisor: string;
-  branch: string;
+  supervisor_id: string;
+  month: number;
+  year: number;
   occupancy_target_pct: number;
   attendance_target_pct: number;
   notes: string | null;
+  is_active: boolean;
 }
+const NOW = new Date();
 const DEMO_TARGETS: TargetSeed[] = [
   {
     id: 't-housing-jzn',
-    supervisor: 'منى الغامدي',
-    branch: 'جازان',
+    supervisor_id: 'demo-housing_supervisor',
+    month: NOW.getMonth() + 1,
+    year: NOW.getFullYear(),
     occupancy_target_pct: 85,
     attendance_target_pct: 95,
     notes: 'رفع نسبة الإشغال في سكن جازان والالتزام بحضور المساء.',
+    is_active: true,
   },
   {
     id: 't-housing-njr',
-    supervisor: 'هيفاء القحطاني',
-    branch: 'نجران',
+    supervisor_id: 'sup-njr',
+    month: NOW.getMonth() + 1,
+    year: NOW.getFullYear(),
     occupancy_target_pct: 80,
     attendance_target_pct: 90,
     notes: null,
+    is_active: true,
   },
 ];
 
@@ -243,24 +251,36 @@ function withOccupancy(d: Dorm): Dorm {
   return { ...d, occupied: RESIDENTS.filter((r) => r.dorm === d.name).length };
 }
 
-function targetOf(t: TargetSeed, now: Date): HousingTarget {
-  const dorms = DORMS.filter((d) => d.branch === t.branch && d.is_active).map(withOccupancy);
+/** مرآة supervisor_dorms (0083): مساكن المشرفة، أو مساكن فرعها إن لم تُسند لها مساكن. */
+function supervisorDorms(supervisorId: string, branch: string): Dorm[] {
+  const active = DORMS.filter((d) => d.is_active);
+  const own = active.filter((d) => d.supervisor_id === supervisorId);
+  return (own.length ? own : active.filter((d) => d.branch === branch)).map(withOccupancy);
+}
+
+function targetOf(t: TargetSeed): HousingTarget {
+  const sv = DEMO_SUPERVISORS.find((x) => x.id === t.supervisor_id);
+  const branch = sv?.branch ?? '';
+  const dorms = supervisorDorms(t.supervisor_id, branch);
   const capacity = dorms.reduce((a, d) => a + (d.capacity ?? 0), 0);
   const occupied = dorms.reduce((a, d) => a + d.occupied, 0);
-  const residents = RESIDENTS.filter((r) => r.branch === t.branch);
-  // في خدمة لدى عميل = ملتزمة (ليست غيابًا)
+  const names = new Set(dorms.map((d) => d.name));
+  const residents = RESIDENTS.filter((r) => names.has(r.dorm));
+  // في خدمة لدى عميل = ملتزمة (ليست غيابًا)؛ العرض بلا سجل شهري = حالة اليوم
   const committed = residents.filter((r) => r.status === 'present' || r.status === 'on_service');
   return {
     id: t.id,
-    supervisor: t.supervisor,
-    branch: t.branch,
-    month: now.getMonth() + 1,
-    year: now.getFullYear(),
+    supervisor_id: t.supervisor_id,
+    supervisor: sv?.full_name ?? '—',
+    branch,
+    month: t.month,
+    year: t.year,
     occupancy_target_pct: t.occupancy_target_pct,
     attendance_target_pct: t.attendance_target_pct,
     occupancy_actual_pct: pct(occupied, capacity),
     attendance_actual_pct: pct(committed.length, residents.length),
     notes: t.notes,
+    is_active: t.is_active,
   };
 }
 
@@ -442,18 +462,91 @@ export async function listHousingScans(workerId?: string): Promise<HousingScan[]
   return [...rows].sort((a, b) => b.scanned_at.localeCompare(a.scanned_at));
 }
 
+interface RawTarget extends Omit<HousingTarget, 'supervisor' | 'branch'> {
+  supervisor: string | null;
+  branch: string | null;
+}
+
 /**
- * المشرفة ترى مستهدفاتها هي؛ الإدارة ترى مستهدفات المشرفات ضمن نطاق فرعها
- * (نفس سياسة htarget_read).
+ * مستهدفات الشهر (أو كلها) ضمن نطاق المستخدم مع المحقَّق المحسوب في الخادم
+ * (list_housing_targets، 0083). المشرفة ترى مستهدفاتها، والإدارة مستهدفات فرعها.
+ */
+export async function listHousingTargets(
+  period: { year: number; month: number } | null = null,
+): Promise<HousingTarget[]> {
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.rpc('list_housing_targets', {
+      p_year: period?.year ?? null,
+      p_month: period?.month ?? null,
+    });
+    if (error) throw new Error(`تعذّر تحميل المستهدفات: ${error.message}`);
+    return ((data ?? []) as RawTarget[]).map((t) => ({
+      ...t,
+      supervisor: t.supervisor ?? '—',
+      branch: t.branch ?? '',
+    }));
+  }
+  const profile = useAuth.getState().profile;
+  const rows = DEMO_TARGETS.filter(
+    (t) => !period || (t.year === period.year && t.month === period.month),
+  ).map(targetOf);
+  const visible = rows.filter((t) => t.supervisor_id === profile?.id || inViewerScope(t.branch));
+  return visible.sort((a, b) => b.year - a.year || b.month - a.month);
+}
+
+/**
+ * «مستهدفاتي»: المشرفة ترى مستهدفاتها النشطة؛ الإدارة ترى مستهدفات المشرفات ضمن
+ * نطاق فرعها (نفس سياسة htarget_read).
  */
 export async function listMyHousingTargets(): Promise<HousingTarget[]> {
   const profile = useAuth.getState().profile;
-  const now = new Date();
-  const rows =
-    profile?.role === 'housing_supervisor'
-      ? DEMO_TARGETS.filter((t) => t.supervisor === profile.full_name)
-      : scopeToViewerBranch(DEMO_TARGETS, (t) => t.branch);
-  return rows.map((t) => targetOf(t, now));
+  const rows = (await listHousingTargets()).filter((t) => t.is_active);
+  return profile?.role === 'housing_supervisor'
+    ? rows.filter((t) => t.supervisor_id === profile.id)
+    : rows;
+}
+
+/** إسناد/تعديل/تعطيل مستهدف (housing.manage — RLS + guard_housing_target). */
+export async function saveHousingTarget(input: HousingTargetInput): Promise<void> {
+  const existing = await listHousingTargets({ year: input.year, month: input.month });
+  const invalid = targetChangeError(input, existing);
+  if (invalid) throw new Error(invalid);
+  const row = {
+    occupancy_target_pct: input.occupancy_target_pct,
+    attendance_target_pct: input.attendance_target_pct,
+    notes: input.notes?.trim() || null,
+    is_active: input.is_active,
+  };
+  if (!isDemoMode()) {
+    const q = input.id
+      ? supabase.from('housing_targets').update(row).eq('id', input.id).select('id')
+      : supabase
+          .from('housing_targets')
+          .insert({
+            ...row,
+            supervisor_id: input.supervisor_id,
+            month: input.month,
+            year: input.year,
+          })
+          .select('id');
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) throw new Error('لا تملك صلاحية إدارة هذا المستهدف');
+    return;
+  }
+  const sv = DEMO_SUPERVISORS.find((x) => x.id === input.supervisor_id);
+  if (!sv) throw new Error('المستهدف يُسند لمستخدمة نشطة بدور «مشرفة السكن»');
+  if (!inViewerScope(sv.branch)) throw new Error('هذه المشرفة خارج نطاق فرعك');
+  const cur = input.id ? DEMO_TARGETS.find((t) => t.id === input.id) : undefined;
+  if (cur) Object.assign(cur, row);
+  else
+    DEMO_TARGETS.push({
+      id: `t-${Date.now().toString(36)}`,
+      supervisor_id: input.supervisor_id,
+      month: input.month,
+      year: input.year,
+      ...row,
+    });
 }
 
 /**

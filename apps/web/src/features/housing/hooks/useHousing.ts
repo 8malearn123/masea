@@ -5,7 +5,9 @@ import {
   listDorms,
   listHousingScans,
   listHousingSupervisors,
+  listHousingTargets,
   saveDorm,
+  saveHousingTarget,
   listMyHousingTargets,
   listResidents,
   logHousingScan,
@@ -13,6 +15,7 @@ import {
 } from '@/features/housing/api/housing.api';
 import type { Resident, ResidentStatus, ScanDirection } from '@/features/housing/types';
 import type { DormInput } from '@/features/housing/lib/dormRules';
+import type { HousingTargetInput } from '@/features/housing/lib/targetRules';
 
 export function useDorms() {
   return useQuery({
@@ -64,6 +67,26 @@ export function useMyHousingTargets() {
     queryKey: ['housing', 'targets'],
     queryFn: listMyHousingTargets,
     staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function useHousingTargets(period: { year: number; month: number }) {
+  return useQuery({
+    queryKey: ['housing', 'targets', 'period', period.year, period.month],
+    queryFn: () => listHousingTargets(period),
+    staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+/** إسناد/تعديل/تعطيل مستهدف مشرفة. */
+export function useSaveHousingTarget() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { input: HousingTargetInput; done: string }>({
+    mutationFn: ({ input }) => saveHousingTarget(input),
+    onSuccess: (_r, { done }) => toast.success(done),
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ المستهدف'),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['housing', 'targets'] }),
   });
 }
 

@@ -52,8 +52,10 @@ export interface HousingScan {
 export interface HousingTarget {
   id: string;
   /** المشرفة المُسند إليها المستهدف وفرعها */
+  supervisor_id: string;
   supervisor: string;
   branch: string;
+  is_active: boolean;
   month: number;
   year: number;
   occupancy_target_pct: number;
