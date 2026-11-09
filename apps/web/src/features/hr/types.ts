@@ -792,3 +792,63 @@ export interface NitaqatBand {
   tone: 'success' | 'gold' | 'danger' | 'navy';
   is_active: boolean;
 }
+
+/* -------------------------- worker payroll (0079) -------------------------- */
+export type WorkerAdjType = 'bonus' | 'allowance' | 'overtime' | 'penalty' | 'advance' | 'absence';
+export const WORKER_ADJ_LABEL: Record<WorkerAdjType, string> = {
+  bonus: 'مكافأة',
+  allowance: 'بدل إضافي',
+  overtime: 'عمل إضافي',
+  penalty: 'جزاء',
+  advance: 'سلفة',
+  absence: 'خصم غياب',
+};
+export const WORKER_ADJ_IS_ADDITION: Record<WorkerAdjType, boolean> = {
+  bonus: true,
+  allowance: true,
+  overtime: true,
+  penalty: false,
+  advance: false,
+  absence: false,
+};
+
+/** payroll_adjustments row for a worker — nothing counts before approval. */
+export interface WorkerAdjustment {
+  id: string;
+  worker_id: string;
+  worker_name: string;
+  branch: string;
+  type: WorkerAdjType;
+  amount: number;
+  reason: string;
+  period: string;
+  status: AdjustmentStatus;
+  /** proposed from housing absence, or raised by hand */
+  source: 'manual' | 'housing_absence';
+  days: number | null;
+  submitted_by: string;
+}
+
+/** worker_payslips row — frozen when the run is approved. */
+export interface WorkerPayslip {
+  worker_id: string;
+  worker_name: string;
+  nationality: string;
+  iqama_no: string;
+  passport_no: string;
+  branch: string;
+  payment_method: 'bank' | 'cash';
+  bank_name: string;
+  iban: string;
+  monthly_salary: number;
+  eligible_days: number;
+  base_pay: number;
+  additions: number;
+  absence_days: number;
+  absence_deduction: number;
+  penalty_deductions: number;
+  advance_deductions: number;
+  gross: number;
+  total_deductions: number;
+  net: number;
+}

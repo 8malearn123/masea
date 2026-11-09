@@ -10,9 +10,12 @@ import {
   postPayrollRun,
 } from '@/features/hr/api/hr.api';
 import { listDocCosts, postDocCost } from '@/features/hr/api/documents.api';
+import { payWorkerRun, postWorkerRun } from '@/features/hr/api/workerPayroll.api';
 import { DOC_COSTS_KEY, HR_DOCS_KEY } from '@/features/hr/hooks/useHrDocuments';
 import {
   buildDocCostEntry,
+  buildWorkerPaymentEntry,
+  buildWorkerPayrollEntry,
   buildEosPaymentEntry,
   buildEosProvisionEntry,
   buildEosSettlementEntry,
@@ -707,4 +710,37 @@ export function usePostDocCost() {
     },
     onError: (e) => toast.error(e.message || 'تعذّر الترحيل'),
   });
+}
+
+/* ---------------------- workers payroll run (0079) ---------------------- */
+function useWorkerLedger<V>(fn: (v: V) => Promise<void>, ok: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, V>({
+    mutationFn: fn,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: JOURNAL_KEY });
+      void qc.invalidateQueries({ queryKey: ['hr', 'worker-payroll'] });
+      toast.success(ok);
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر الترحيل'),
+  });
+}
+export function usePostWorkerRun() {
+  return useWorkerLedger(
+    (v: { period: string; runId: string }) =>
+      postWorkerRun(v.period, v.runId, (slips) =>
+        postPayrollEntry(buildWorkerPayrollEntry(slips, v.period)),
+      ),
+    'تم ترحيل قيد استحقاق رواتب العاملات (مقسّم على الفروع)',
+  );
+}
+export function usePayWorkerRun() {
+  return useWorkerLedger(
+    (v: { period: string; runId: string; paidOn: string; bankCode: string }) =>
+      payWorkerRun(v.period, v.runId, v.paidOn, v.bankCode, (slips) =>
+        postPayrollEntry(buildWorkerPaymentEntry(slips, v.period, v.paidOn, v.bankCode)),
+      ),
+    'تم تسجيل صرف رواتب العاملات',
+  );
 }

@@ -43,6 +43,7 @@ import { PayrollBoard } from '@/features/hr/components/PayrollBoard';
 import { AttendanceBoard } from '@/features/hr/components/AttendanceBoard';
 import { EosBoard } from '@/features/hr/components/EosBoard';
 import { PerformanceBoard } from '@/features/hr/components/PerformanceBoard';
+import { WorkerPayrollBoard } from '@/features/hr/components/WorkerPayrollBoard';
 import { HrReports } from '@/features/hr/components/HrReports';
 import { useHrLookups } from '@/features/hr/hooks/useHrLookups';
 import { WorkerFileForm } from '@/features/hr/components/WorkerFileForm';
@@ -137,7 +138,7 @@ export default function HrBoard() {
       )}
       {tab === 'attendance' && <AttendanceBoard employees={employees} />}
       {tab === 'leave' && <LeaveBoard employees={employees} />}
-      {tab === 'payroll' && <PayrollBoard employees={employees} />}
+      {tab === 'payroll' && <PayrollTabs employees={employees} />}
       {tab === 'eos' && <EosBoard employees={employees} />}
       {tab === 'documents' && <DocumentsRegister />}
       {tab === 'performance' && <PerformanceBoard employees={employees} />}
@@ -1073,5 +1074,32 @@ function WorkerDetailModal({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** «الرواتب»: staff run and workers run — the same cycle, separate runs (0079). */
+function PayrollTabs({ employees }: { employees: Employee[] }) {
+  const [view, setView] = useState<'staff' | 'workers'>('staff');
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex rounded-xl border border-navy-100 bg-white p-1">
+        {(
+          [
+            ['staff', 'رواتب الموظفين', Users],
+            ['workers', 'رواتب العاملات', HeartHandshake],
+          ] as const
+        ).map(([k, label, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setView(k)}
+            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition ${view === k ? 'bg-navy text-white' : 'text-purple hover:text-navy'}`}
+          >
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+      {view === 'staff' ? <PayrollBoard employees={employees} /> : <WorkerPayrollBoard />}
+    </div>
   );
 }

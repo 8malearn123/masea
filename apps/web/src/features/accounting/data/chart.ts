@@ -72,6 +72,14 @@ export const CHART: Account[] = [
     normal_balance: 'credit',
   },
   {
+    code: '5120',
+    name_ar: 'رواتب العمالة المنزلية',
+    type: 'expense',
+    parent_code: '5000',
+    is_postable: true,
+    normal_balance: 'debit',
+  },
+  {
     code: '5150',
     name_ar: 'مصروف مكافأة نهاية الخدمة',
     type: 'expense',
