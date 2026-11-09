@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, CameraOff, LogIn, LogOut, ScanLine, UserRound } from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
 import { dateAr } from '@/shared/lib/format';
-import { resolveWorkerByBarcode } from '@/features/housing/api/housing.api';
+import { findWorkerByCode, OUT_OF_BRANCH } from '@/features/housing/api/housing.api';
 import { useHousingScans, useLogHousingScan } from '@/features/housing/hooks/useHousing';
 import {
   RESIDENT_STATUS_LABEL,
@@ -111,13 +111,21 @@ export function ScanStation() {
   const [manual, setManual] = useState('');
   const [worker, setWorker] = useState<Resident | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [outOfScope, setOutOfScope] = useState(false);
 
   const supportsCamera = Boolean(BarcodeDetectorCtor && navigator.mediaDevices?.getUserMedia);
 
-  function lookup(code: string) {
-    const w = resolveWorkerByBarcode(code);
+  async function lookup(code: string) {
+    let found: Awaited<ReturnType<typeof findWorkerByCode>>;
+    try {
+      found = await findWorkerByCode(code);
+    } catch {
+      found = { resident: null, outOfScope: false };
+    }
+    const { resident: w, outOfScope: other } = found;
     setWorker(w);
-    setNotFound(!w);
+    setOutOfScope(other);
+    setNotFound(!w && !other);
     if (w) stopCamera();
   }
 
@@ -157,7 +165,7 @@ export function ScanStation() {
         const codes = await detector.detect(videoRef.current);
         const raw = codes[0]?.rawValue;
         if (raw) {
-          lookup(raw);
+          void lookup(raw);
           return;
         }
       } catch {
@@ -215,7 +223,7 @@ export function ScanStation() {
           className="mt-4 flex gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (manual.trim()) lookup(manual);
+            if (manual.trim()) void lookup(manual);
           }}
         >
           <Input
@@ -230,6 +238,7 @@ export function ScanStation() {
         {notFound && (
           <p className="mt-2 text-xs text-red-600">لا توجد عاملة بهذا الباركود أو رقم الإقامة.</p>
         )}
+        {outOfScope && <p className="mt-2 text-xs text-red-600">{OUT_OF_BRANCH}</p>}
       </Card>
 
       {worker ? (

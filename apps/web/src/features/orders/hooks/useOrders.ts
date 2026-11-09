@@ -6,12 +6,15 @@ import { orderKeys } from '@/features/orders/api/keys';
 import {
   advanceTripStage,
   assignDriver,
+  listDriverAccounts,
   listDrivers,
   listOrders,
+  saveDriver,
   setOrderStatus,
 } from '@/features/orders/api/orders.api';
 import { recordTripScan } from '@/features/gps/api/gps.api';
 import type { Driver, Order, OrderFilters, OrderStatus } from '@/features/orders/types';
+import type { DriverInput } from '@/features/orders/lib/driverRules';
 
 const LIST_KEY = ['orders', 'list'] as const;
 
@@ -32,6 +35,30 @@ export function useDrivers() {
     queryKey: orderKeys.drivers(),
     queryFn: listDrivers,
     staleTime: QUERY_DEFAULTS.staleTime,
+  });
+}
+
+export function useDriverAccounts(enabled = true) {
+  return useQuery({
+    queryKey: [...orderKeys.drivers(), 'accounts'],
+    queryFn: listDriverAccounts,
+    staleTime: QUERY_DEFAULTS.staleTime,
+    enabled,
+  });
+}
+
+/** إضافة/تعديل/تعطيل سائق؛ يُعاد تحميل السائقين والطلبات (اسم السائق) والتتبّع. */
+export function useSaveDriver() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { input: DriverInput; done: string }>({
+    mutationFn: ({ input }) => saveDriver(input),
+    onSuccess: (_r, { done }) => toast.success(done),
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ السائق'),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: orderKeys.all });
+      void qc.invalidateQueries({ queryKey: ['gps'] });
+    },
   });
 }
 
@@ -64,6 +91,10 @@ export function useAssignDriver() {
       toast.error(e.message || 'تعذّر الإسناد');
     },
     onSuccess: () => toast.success('تم إسناد السائق'),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      void qc.invalidateQueries({ queryKey: orderKeys.drivers() });
+    },
   });
 }
 
@@ -115,7 +146,10 @@ export function useTripScan() {
       void qc.invalidateQueries({ queryKey: LIST_KEY });
       toast.error(e.message || 'تعذّر تطبيق المسح');
     },
-    onSettled: () => void qc.invalidateQueries({ queryKey: ['gps', 'trip-scans'] }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ['gps'] });
+      void qc.invalidateQueries({ queryKey: orderKeys.drivers() });
+    },
   });
 }
 
@@ -137,5 +171,9 @@ export function useSetOrderStatus() {
       toast.error(e.message || 'تعذّر التحديث');
     },
     onSuccess: () => toast.success('تم تحديث حالة الطلب'),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      void qc.invalidateQueries({ queryKey: orderKeys.drivers() });
+    },
   });
 }

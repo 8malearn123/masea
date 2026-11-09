@@ -1,21 +1,7 @@
 import { Target } from 'lucide-react';
 import { Card, EmptyState } from '@/shared/ui';
 import { useMyHousingTargets } from '@/features/housing/hooks/useHousing';
-
-const MONTHS_AR = [
-  'يناير',
-  'فبراير',
-  'مارس',
-  'أبريل',
-  'مايو',
-  'يونيو',
-  'يوليو',
-  'أغسطس',
-  'سبتمبر',
-  'أكتوبر',
-  'نوفمبر',
-  'ديسمبر',
-];
+import { MONTHS_AR } from '@/features/housing/components/TargetsManager';
 
 function Gauge({ label, actual, target }: { label: string; actual: number; target: number }) {
   const pct = Math.min(100, target ? Math.round((actual / target) * 100) : 0);
@@ -62,6 +48,9 @@ export function HousingTargets() {
           <h2 className="mb-4 flex items-center gap-2 text-sm font-bold text-navy">
             <Target size={16} /> مستهدفات {MONTHS_AR[t.month - 1]}{' '}
             <span className="num">{t.year}</span>
+            <span className="ms-auto text-xs font-normal text-purple">
+              {t.supervisor} · سكن {t.branch}
+            </span>
           </h2>
           <div className="space-y-4">
             <Gauge

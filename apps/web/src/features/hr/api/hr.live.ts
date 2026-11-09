@@ -863,6 +863,7 @@ export async function liveGetPayrollRun(
     .from('payroll_runs')
     .select('*')
     .eq('period', period)
+    .eq('kind', 'staff') // the workers run of the same month is separate (0079)
     .is('branch_id', null)
     .maybeSingle();
   fail(error, 'تحميل المسير');

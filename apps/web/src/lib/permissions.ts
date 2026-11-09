@@ -64,8 +64,10 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     call_center: 'full',
     // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
-    housing: 'full',
-    orders: 'full',
+    // full + manage: إدارة المساكن والمستهدفات (0081)
+    housing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
+    // full + manage: إدارة السائقين (0084)
+    orders: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     rating: 'full',
     rbac: 'manage',
     reports: 'full',
@@ -88,8 +90,10 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     call_center: 'full',
     // full + manage: الإدارة تعدّل إعدادات الولاء والفئات والباقات (0054)
     loyalty: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
-    housing: 'full',
-    orders: 'full',
+    // full + manage: إدارة المساكن والمستهدفات (0081)
+    housing: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
+    // full + manage: إدارة السائقين (0084)
+    orders: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     rating: 'full',
     reports: 'full',
     targets: 'full',
@@ -104,7 +108,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     // الرأس التشغيلي لفرعه فقط — يملك العمليات، لا المال ولا النظام.
     contracts: 'full', // إنشاء + اعتماد (فرعه)
     leads: 'full',
-    orders: 'full',
+    // full + manage: إدارة السائقين (0084)
+    orders: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     targets: 'full',
     loyalty: 'edit',
     call_center: 'edit',
@@ -115,7 +120,8 @@ const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
     pricing: 'view', // عرض + خصم محدود في مسار الصفقة
     rating: 'view',
     reports: 'view',
-    housing: 'view',
+    // view + manage: مدير الفرع يدير مساكن فرعه ومستهدفاتها (0081)
+    housing: ['view', 'manage'],
     customers: 'full', // عملاء فرعه فقط (RLS)
     sales_ops: ['view', 'edit', 'approve', 'export'],
     audit: 'view', // سجل تدقيق فرعه

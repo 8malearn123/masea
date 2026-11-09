@@ -4,6 +4,7 @@ import { dateAr } from '@/shared/lib/format';
 import { DRIVER_STATUS_LABEL, DRIVER_STATUS_TONE } from '@/features/orders/lib/orderStatus';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useDriverLocations, useRecentScans } from '@/features/gps/hooks/useGps';
+import { isToday } from '@/features/gps/api/gps.api';
 import { SCAN_TYPE_LABEL, type ScanEvent } from '@/features/gps/types';
 
 function mapsUrl(lat: number, lng: number): string {
@@ -17,6 +18,8 @@ export default function GpsTracking() {
   const { data: scans = [], isError, refetch } = useRecentScans();
 
   const onRoute = drivers.filter((d) => d.status === 'on_route').length;
+  // السائق: كل مسحاته؛ الإدارة: مسح اليوم فقط
+  const scanCount = isDriver ? scans.length : scans.filter((s) => isToday(s.scanned_at)).length;
 
   const columns: Column<ScanEvent>[] = [
     { key: 'scan_type', header: 'الحدث', cell: (s) => SCAN_TYPE_LABEL[s.scan_type] ?? s.scan_type },
@@ -24,11 +27,14 @@ export default function GpsTracking() {
     {
       key: 'coords',
       header: 'الموقع',
-      cell: (s) => (
-        <span className="num text-xs text-purple">
-          {s.lat.toFixed(3)}, {s.lng.toFixed(3)}
-        </span>
-      ),
+      cell: (s) =>
+        s.lat !== null && s.lng !== null ? (
+          <span className="num text-xs text-purple">
+            {s.lat.toFixed(3)}, {s.lng.toFixed(3)}
+          </span>
+        ) : (
+          <span className="text-xs text-purple/60">بدون موقع</span>
+        ),
     },
     {
       key: 'scanned_at',
@@ -38,16 +44,17 @@ export default function GpsTracking() {
     {
       key: 'open',
       header: '',
-      cell: (s) => (
-        <a
-          href={mapsUrl(s.lat, s.lng)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-navy hover:underline"
-        >
-          <ExternalLink size={13} /> الخريطة
-        </a>
-      ),
+      cell: (s) =>
+        s.lat !== null && s.lng !== null ? (
+          <a
+            href={mapsUrl(s.lat, s.lng)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-navy hover:underline"
+          >
+            <ExternalLink size={13} /> الخريطة
+          </a>
+        ) : null,
     },
   ];
 
@@ -81,7 +88,7 @@ export default function GpsTracking() {
         </Card>
         <Card className="py-4">
           <p className="text-xs text-purple">{isDriver ? 'عمليات مسحي' : 'عمليات مسح اليوم'}</p>
-          <p className="num mt-1 text-2xl font-bold text-teal">{scans.length}</p>
+          <p className="num mt-1 text-2xl font-bold text-teal">{scanCount}</p>
         </Card>
         {!isDriver && (
           <Card className="py-4">
@@ -103,6 +110,8 @@ export default function GpsTracking() {
             <Card>
               <Skeleton className="h-40 w-full" />
             </Card>
+          ) : drivers.length === 0 ? (
+            <Card className="py-8 text-center text-sm text-purple">لا يوجد سائقون في نطاقك.</Card>
           ) : (
             <div className="space-y-3">
               {drivers.map((d) => (
@@ -113,22 +122,26 @@ export default function GpsTracking() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-navy">{d.full_name}</p>
                     <p className="num text-[11px] text-purple">
-                      {d.vehicle_no ?? '—'} · {d.lat.toFixed(3)}, {d.lng.toFixed(3)} ·{' '}
-                      {dateAr(d.updated_at)}
+                      {d.vehicle_no ?? '—'} · {d.branch ?? '—'} ·{' '}
+                      {d.lat !== null && d.lng !== null && d.updated_at
+                        ? `${d.lat.toFixed(3)}, ${d.lng.toFixed(3)} · ${dateAr(d.updated_at)}`
+                        : 'لم يُسجَّل موقع بعد'}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <Badge tone={DRIVER_STATUS_TONE[d.status]}>
                       {DRIVER_STATUS_LABEL[d.status]}
                     </Badge>
-                    <a
-                      href={mapsUrl(d.lat, d.lng)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[11px] text-navy hover:underline"
-                    >
-                      <MapPin size={11} /> فتح في الخرائط
-                    </a>
+                    {d.lat !== null && d.lng !== null && (
+                      <a
+                        href={mapsUrl(d.lat, d.lng)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] text-navy hover:underline"
+                      >
+                        <MapPin size={11} /> فتح في الخرائط
+                      </a>
+                    )}
                   </div>
                 </Card>
               ))}
@@ -139,7 +152,7 @@ export default function GpsTracking() {
         {/* movement log */}
         <div>
           <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-            <MapPin size={16} /> سجل الحركة
+            <MapPin size={16} /> {isDriver ? 'سجل حركتي' : 'سجل الحركة'}
           </h2>
           <Table
             columns={columns}

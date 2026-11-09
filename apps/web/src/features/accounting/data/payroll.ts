@@ -5,6 +5,8 @@ import {
   type PayrollRun,
 } from '@/features/hr/types';
 import { employerGosiFor } from '@/features/hr/api/hr.api';
+import { branchSplit } from '@/features/hr/lib/workerPayrollEngine';
+import type { WorkerPayslip } from '@/features/hr/types';
 import type { JournalEntry, JournalLine } from '@/features/accounting/types';
 
 /**
@@ -268,5 +270,94 @@ export function buildDocCostEntry(
         description: 'سداد رسوم حكومية',
       },
     ],
+  };
+}
+
+/**
+ * Workers run accrual (mirror of post_worker_payroll, 0079) — every amount is
+ * charged to the worker's branch: DR 5120 / CR 1160 advances / CR 2170
+ * penalties / CR 2130 net payable, one set of lines per branch.
+ */
+export function buildWorkerPayrollEntry(slips: WorkerPayslip[], period: string): JournalEntry {
+  const lines: JournalLine[] = [];
+  branchSplit(slips).forEach((b) => {
+    lines.push({
+      account_code: '5120',
+      debit: b.earnings,
+      credit: 0,
+      branch: b.branch || null,
+      description: 'رواتب العمالة المنزلية',
+    });
+    if (b.advances > 0)
+      lines.push({
+        account_code: '1160',
+        debit: 0,
+        credit: b.advances,
+        branch: b.branch || null,
+        description: 'استرداد سلف العاملات',
+      });
+    if (b.penalties > 0)
+      lines.push({
+        account_code: '2170',
+        debit: 0,
+        credit: b.penalties,
+        branch: b.branch || null,
+        description: 'جزاءات مقتطعة (لصالح العمال)',
+      });
+    lines.push({
+      account_code: '2130',
+      debit: 0,
+      credit: b.net,
+      branch: b.branch || null,
+      description: 'رواتب عاملات مستحقة الدفع',
+    });
+  });
+  return {
+    id: `je-wpayroll-${period}`,
+    entry_no: 6100 + monthIndex(period),
+    entry_date: monthEnd(period),
+    branch: null,
+    description: `قيد استحقاق رواتب العاملات ${period}`,
+    reference: `PAYROLL-W-${period}`,
+    source_type: 'payroll',
+    status: 'posted',
+    lines,
+  };
+}
+
+/** Workers run payment (mirror of pay_worker_payroll): DR 2130 / CR bank per branch. */
+export function buildWorkerPaymentEntry(
+  slips: WorkerPayslip[],
+  period: string,
+  paidOn: string,
+  bankCode: string,
+): JournalEntry {
+  const lines: JournalLine[] = [];
+  branchSplit(slips).forEach((b) => {
+    lines.push({
+      account_code: '2130',
+      debit: b.net,
+      credit: 0,
+      branch: b.branch || null,
+      description: 'إطفاء رواتب العاملات المستحقة',
+    });
+    lines.push({
+      account_code: bankCode,
+      debit: 0,
+      credit: b.net,
+      branch: b.branch || null,
+      description: 'تحويل رواتب العاملات (حماية الأجور)',
+    });
+  });
+  return {
+    id: `je-wpayroll-pay-${period}`,
+    entry_no: 6150 + monthIndex(period),
+    entry_date: paidOn,
+    branch: null,
+    description: `صرف رواتب العاملات ${period}`,
+    reference: `PAYROLL-W-PAY-${period}`,
+    source_type: 'payroll',
+    status: 'posted',
+    lines,
   };
 }

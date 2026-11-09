@@ -23,7 +23,8 @@ export function CodeScanner({
   placeholder = 'أدخل الرمز يدوياً',
   notFoundText = 'رمز غير معروف.',
 }: {
-  onCode: (code: string) => boolean;
+  /** true = مقبول، false = غير معروف (notFoundText)، نص = رسالة رفض محددة */
+  onCode: (code: string) => boolean | string | Promise<boolean | string>;
   placeholder?: string;
   notFoundText?: string;
 }) {
@@ -32,16 +33,25 @@ export function CodeScanner({
   const [cameraOn, setCameraOn] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [manual, setManual] = useState('');
-  const [notFound, setNotFound] = useState(false);
+  const [notFound, setNotFound] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const supportsCamera = Boolean(BarcodeDetectorCtor && navigator.mediaDevices?.getUserMedia);
 
-  function lookup(code: string) {
-    if (onCode(code.trim())) {
-      stopCamera();
-      setNotFound(false);
-    } else {
-      setNotFound(true);
+  async function lookup(code: string) {
+    setBusy(true);
+    try {
+      const res = await onCode(code.trim());
+      if (res === true) {
+        stopCamera();
+        setNotFound(null);
+      } else {
+        setNotFound(typeof res === 'string' ? res : notFoundText);
+      }
+    } catch (e) {
+      setNotFound(e instanceof Error ? e.message : notFoundText);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -80,7 +90,7 @@ export function CodeScanner({
         const codes = await detector.detect(videoRef.current);
         const raw = codes[0]?.rawValue;
         if (raw) {
-          lookup(raw);
+          void lookup(raw);
           return;
         }
       } catch {
@@ -133,7 +143,7 @@ export function CodeScanner({
         className="mt-4 flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (manual.trim()) lookup(manual);
+          if (manual.trim() && !busy) void lookup(manual);
         }}
       >
         <Input
@@ -141,11 +151,11 @@ export function CodeScanner({
           onChange={(e) => setManual(e.target.value)}
           placeholder={placeholder}
         />
-        <Button type="submit" variant="outline">
+        <Button type="submit" variant="outline" loading={busy}>
           بحث
         </Button>
       </form>
-      {notFound && <p className="mt-2 text-xs text-red-600">{notFoundText}</p>}
+      {notFound && <p className="mt-2 text-xs text-red-600">{notFound}</p>}
     </div>
   );
 }

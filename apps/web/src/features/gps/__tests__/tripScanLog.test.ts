@@ -4,6 +4,7 @@
  * والمسحات المقبولة لطلب ما تطابق مرحلة رحلته تمامًا.
  */
 import { describe, expect, it } from 'vitest';
+import { freshDriver } from '@/test/demoDrivers';
 import { listMyTripScans, recordTripScan } from '@/features/gps/api/gps.api';
 import {
   addLocalOrder,
@@ -27,7 +28,7 @@ async function assignedOrder(): Promise<Order> {
     total_amount: 345,
   });
   const order = findDemoOrderByRequestNo(request_no)!;
-  await assignDriver(order.id, 'd2');
+  await assignDriver(order.id, freshDriver('جازان'));
   return findDemoOrderByRequestNo(request_no)!;
 }
 

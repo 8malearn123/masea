@@ -6,9 +6,22 @@ export interface Dorm {
   id: string;
   name: string;
   branch: string;
-  capacity: number;
+  /** عدد الأسرّة؛ `null` = لم تُحدَّد السعة بعد (لا يُفرض حد) */
+  capacity: number | null;
+  /** محسوب دائمًا من العاملات المسكّنات */
   occupied: number;
+  supervisor_id: string | null;
+  /** اسم المشرفة ('' = بلا مشرفة) */
   supervisor: string;
+  is_active: boolean;
+  notes: string | null;
+}
+
+/** مشرفة سكن يمكن إسنادها (مستخدم نشط بدور «مشرفة السكن»). */
+export interface HousingSupervisor {
+  id: string;
+  full_name: string;
+  branch: string | null;
 }
 
 export interface Resident {
@@ -38,6 +51,11 @@ export interface HousingScan {
 /** A housing target assigned to a supervisor (admin-managed) + live progress. */
 export interface HousingTarget {
   id: string;
+  /** المشرفة المُسند إليها المستهدف وفرعها */
+  supervisor_id: string;
+  supervisor: string;
+  branch: string;
+  is_active: boolean;
   month: number;
   year: number;
   occupancy_target_pct: number;
