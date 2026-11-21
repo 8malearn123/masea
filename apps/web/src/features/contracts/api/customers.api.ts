@@ -7,6 +7,9 @@ export interface CustomerLite {
   full_name: string;
   phone: string | null;
   city: string | null;
+  /** للعقد: رقم الهوية والعنوان (اختياريان — قد لا يكونان مسجّلين). */
+  national_id?: string | null;
+  address?: string | null;
 }
 
 const FALLBACK: CustomerLite[] = [
@@ -18,7 +21,10 @@ const FALLBACK: CustomerLite[] = [
 
 export async function searchCustomers(q: string): Promise<CustomerLite[]> {
   try {
-    let query = supabase.from('customers').select('id, full_name, phone, city').limit(20);
+    let query = supabase
+      .from('customers')
+      .select('id, full_name, phone, city, national_id, address')
+      .limit(20);
     if (q.trim()) query = query.ilike('full_name', `%${q.trim()}%`);
     const { data, error } = await query;
     if (!error && data && data.length > 0) return data as CustomerLite[];

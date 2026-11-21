@@ -8,6 +8,7 @@ import {
   FileText,
   Plus,
   RefreshCw,
+  ScrollText,
   Search,
   Wallet,
 } from 'lucide-react';
@@ -202,11 +203,19 @@ function EnhancedContractsList() {
             </p>
           </div>
         </div>
-        {can('contracts', 'create') && (
-          <Link to="/contracts/new" className="btn-primary">
-            <Plus size={16} /> عقد جديد
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/contracts/templates/rental"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
+          >
+            <ScrollText size={16} /> قالب عقد التأجير
           </Link>
-        )}
+          {can('contracts', 'create') && (
+            <Link to="/contracts/new" className="btn-primary">
+              <Plus size={16} /> عقد جديد
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* تنبيهات انتهاء العقود — بعد نجاح الجلب فقط (لا «لا تنبيهات» عند الخطأ) */}

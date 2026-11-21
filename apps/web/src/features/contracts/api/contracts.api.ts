@@ -611,7 +611,9 @@ export async function getTemplates(): Promise<ContractTemplate[]> {
       .from('contract_templates')
       .select('*')
       .eq('is_active', true);
-    if (!error && data && data.length > 0) return data as ContractTemplate[];
+    // القوالب المنظَّمة (0085 — doc) لها مسارها الخاص (rentalContract.api)
+    const legacy = (data ?? []).filter((t: { doc?: unknown }) => !t.doc);
+    if (!error && legacy.length > 0) return legacy as ContractTemplate[];
   } catch {
     /* fall through */
   }
