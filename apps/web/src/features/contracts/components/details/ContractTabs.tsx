@@ -15,6 +15,8 @@ import {
 } from '@/shared/ui';
 import { sar, dateAr, dateTimeAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
+import { supabase } from '@/shared/lib/supabase';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { contractKeys } from '@/features/contracts/api/keys';
 import { getCompanyProfile, loadRentalDocument } from '@/features/contracts/api/rentalContract.api';
 import {
@@ -34,6 +36,23 @@ import type {
 import type { ReactNode } from 'react';
 
 const NA = 'غير متوفر';
+
+/** أسماء المستخدمين المسؤولين عن خطوات العقد (user_profiles) — لا شيء في الوضع التجريبي. */
+export function useUserNames(ids: (string | null | undefined)[]) {
+  const list = [...new Set(ids.filter((x): x is string => Boolean(x)))].sort();
+  return useQuery({
+    queryKey: ['contracts', 'user-names', list],
+    enabled: list.length > 0 && !isDemoMode(),
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', list);
+      if (error) throw new Error(error.message);
+      return new Map((data ?? []).map((r) => [r.id as string, r.full_name as string]));
+    },
+  });
+}
 
 function Field({ label, value }: { label: string; value: ReactNode }) {
   const empty = value === null || value === undefined || value === '';
