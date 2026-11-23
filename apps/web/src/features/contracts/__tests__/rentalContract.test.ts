@@ -1,6 +1,6 @@
 /**
  * «عقد تأجير خدمات عمالية» — القالب الإلكتروني المطابق لعقد ماسية الشرق الأصلي.
- * يحرس: النص الحرفي (بصمة + مقتطفات)، الترتيب والترقيم، تطابق بذرة 0085 مع
+ * يحرس: النص الحرفي (بصمة + مقتطفات)، الترتيب والترقيم، تطابق بذرة 0087 مع
  * الملف، العرض الكامل لكل البنود، وثبات البنود مهما تغيّرت الباقة/المدة/الجنسية.
  */
 import { readFileSync } from 'node:fs';
@@ -140,9 +140,9 @@ describe('القالب — النص الحرفي للأصل', () => {
     expect(checks.length).toBeGreaterThanOrEqual(7);
   });
 
-  it('بذرة migration 0085 هي نفس ملف القالب حرفياً وبنفس البصمة', () => {
+  it('بذرة migration 0087 هي نفس ملف القالب حرفياً وبنفس البصمة', () => {
     const sql = readFileSync(
-      resolve(__dirname, '../../../../../../supabase/migrations/0085_rental_contract_template.sql'),
+      resolve(__dirname, '../../../../../../supabase/migrations/0087_rental_contract_template.sql'),
       'utf8',
     );
     const seeded = /\$tpl\$([\s\S]*?)\$tpl\$/.exec(sql)?.[1] ?? '';

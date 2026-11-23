@@ -15,7 +15,7 @@ import type {
 import type { ContractListItem, ContractServiceCode } from '@/features/contracts/types';
 
 /**
- * قالب «عقد تأجير خدمات عمالية» وبياناته — فوق جداول العقود القائمة (0085):
+ * قالب «عقد تأجير خدمات عمالية» وبياناته — فوق جداول العقود القائمة (0087):
  * contract_templates (doc + version + status) · company_tax_profile (الطرف الأول)
  * · contracts.doc_fields (لقطة بيانات الأطراف) · payments (المدفوعات).
  */
@@ -97,7 +97,7 @@ export const companyProfileSchema = z.object({
 
 /* ------------------------------ demo stores ------------------------------- */
 /**
- * وضع العرض بلا Supabase: نفس بذرة 0085 (القالب بانتظار الاعتماد + بيانات
+ * وضع العرض بلا Supabase: نفس بذرة 0087 (القالب بانتظار الاعتماد + بيانات
  * الطرف الأول من العقد الأصلي) في الذاكرة.
  */
 const DEMO_TEMPLATES: RentalTemplateRow[] = RENTAL_TEMPLATE_SERVICES.map((s) => ({

@@ -7,7 +7,7 @@ import type { RentalTemplateDoc } from './template';
  */
 export const COMPLIANCE_REPORT = report;
 
-/** بصمة النص القانوني للنسخة 1 المطابقة للأصل (مطابقة لـ migration 0085). */
+/** بصمة النص القانوني للنسخة 1 المطابقة للأصل (مطابقة لـ migration 0087). */
 export const V1_FINGERPRINT = '2c17375e788419775a8cca949f6d139fcb110c216bad981b899c9739446c1243';
 
 /** ترتيب الأقسام في الأصل. */

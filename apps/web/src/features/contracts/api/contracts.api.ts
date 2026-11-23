@@ -605,7 +605,7 @@ export async function getTemplates(): Promise<ContractTemplate[]> {
     .select('*')
     .eq('is_active', true);
   if (error) throw new Error(`تعذّر جلب قوالب العقود: ${error.message}`);
-  // القوالب المنظَّمة (0085 — doc) لها مسارها الخاص (rentalContract.api)
+  // القوالب المنظَّمة (0087 — doc) لها مسارها الخاص (rentalContract.api)
   return (data ?? []).filter((t: { doc?: unknown }) => !t.doc) as ContractTemplate[];
 }
 

@@ -1,4 +1,4 @@
--- Tests for 0085: «عقد تأجير خدمات عمالية» — versioned, locked, approved before use.
+-- Tests for 0087: «عقد تأجير خدمات عمالية» — versioned, locked, approved before use.
 \set ON_ERROR_STOP 1
 set client_min_messages = warning;
 

@@ -1,7 +1,7 @@
--- Rollback for 0085_rental_contract_template.sql.
+-- Rollback for 0087_rental_contract_template.sql.
 -- Removes the structured rental template, its guards/approval, the contract pin,
 -- the first-party reader/editor, the worker-doc reader and the proposed policy row.
--- Contracts keep their rows; only the 0085 columns are dropped.
+-- Contracts keep their rows; only the 0087 columns are dropped.
 drop trigger if exists trg_contracts_pin_template on contracts;
 drop function if exists contracts_pin_template();
 drop trigger if exists trg_contract_templates_guard on contract_templates;

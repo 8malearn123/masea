@@ -50,7 +50,7 @@ import type { CompanyProfile } from '@/features/contracts/lib/rentalContract/fie
 /**
  * «مراجعة قالب عقد التأجير»: معاينة كاملة للعقد الإلكتروني + تقرير المطابقة مع
  * الأصل + بيانات الطرف الأول + الاعتماد الرسمي (contracts.approve). لا يُصدر
- * عقد على القالب قبل اعتماده (يفرضه الـ backend — 0085).
+ * عقد على القالب قبل اعتماده (يفرضه الـ backend — 0087).
  */
 export default function RentalTemplateReview() {
   const { data: rows = [], isLoading, isError, refetch } = useRentalTemplates();
@@ -81,7 +81,7 @@ export default function RentalTemplateReview() {
       <EmptyState
         icon={ScrollText}
         title="لا يوجد قالب لعقد التأجير"
-        description="طبّق migration 0085 لإضافة قالب «عقد تأجير خدمات عمالية»."
+        description="طبّق migration 0087 لإضافة قالب «عقد تأجير خدمات عمالية»."
       />
     );
 
