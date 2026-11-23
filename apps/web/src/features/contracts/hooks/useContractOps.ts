@@ -2,6 +2,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { contractKeys } from '@/features/contracts/api/keys';
 import {
+  completeReplacement,
+  getReplacementQuota,
+  listReplacements,
+  replacementStep,
+  requestReplacement,
+  scheduleReplacement,
+  type Replacement,
+  type ReplacementAction,
+  type ReplacementCompleteInput,
+  type ReplacementRequestInput,
+  type ReplacementScheduleInput,
   listLookups,
   listOpsEvents,
   listPayouts,
@@ -47,6 +58,8 @@ export const opsKeys = {
   refunds: (contractId?: string) => ['contract-ops', 'refunds', contractId ?? 'all'] as const,
   payouts: (refundId: string) => ['contract-ops', 'payouts', refundId] as const,
   events: (contractId: string) => ['contract-ops', 'events', contractId] as const,
+  replacements: (contractId: string) => ['contract-ops', 'replacements', contractId] as const,
+  quota: (contractId: string) => ['contract-ops', 'quota', contractId] as const,
   preview: (contractId: string, date: string, fees: SettlementFee[]) =>
     ['contract-ops', 'preview', contractId, date, fees] as const,
 };
@@ -227,5 +240,67 @@ export function useRecordPayout() {
     ({ r, input }: { r: Pick<Refund, 'id' | 'contract_id'>; input: PayoutInput }) =>
       recordPayout(r, input),
     'سُجّل الصرف وقيده المحاسبي',
+  );
+}
+
+export function useReplacements(contractId: string) {
+  return useQuery({
+    queryKey: opsKeys.replacements(contractId),
+    queryFn: () => listReplacements(contractId),
+  });
+}
+export function useReplacementQuota(contractId: string) {
+  return useQuery({
+    queryKey: opsKeys.quota(contractId),
+    queryFn: () => getReplacementQuota(contractId),
+  });
+}
+export function useRequestReplacement() {
+  return useOpsMutation(
+    (v: ReplacementRequestInput) => requestReplacement(v),
+    'سُجّل طلب الاستبدال',
+  );
+}
+const REPLACEMENT_DONE: Record<ReplacementAction, string> = {
+  approve_exception: 'اعتُمد الاستثناء',
+  reject: 'رُفض طلب الاستبدال',
+  cancel: 'أُلغي طلب الاستبدال',
+};
+export function useReplacementStep() {
+  return useOpsMutation(
+    ({
+      r,
+      action,
+      note,
+    }: {
+      r: Pick<Replacement, 'id' | 'contract_id'>;
+      action: ReplacementAction;
+      note?: string;
+    }) => replacementStep(r, action, note),
+    (v) => REPLACEMENT_DONE[v.action],
+  );
+}
+export function useScheduleReplacement() {
+  return useOpsMutation(
+    ({
+      r,
+      input,
+    }: {
+      r: Pick<Replacement, 'id' | 'contract_id'>;
+      input: ReplacementScheduleInput;
+    }) => scheduleReplacement(r, input),
+    'جُدول الاستبدال وحُجزت البديلة',
+  );
+}
+export function useCompleteReplacement() {
+  return useOpsMutation(
+    ({
+      r,
+      input,
+    }: {
+      r: Pick<Replacement, 'id' | 'contract_id'>;
+      input: ReplacementCompleteInput;
+    }) => completeReplacement(r, input),
+    'نُفّذ الاستبدال — العاملة السابقة بانتظار تأكيد الجاهزية',
   );
 }

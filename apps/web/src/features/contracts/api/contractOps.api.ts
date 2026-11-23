@@ -10,10 +10,12 @@ import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
 import { useAuth } from '@/store/auth';
 import {
   demoCancelBySettlement,
+  demoMutateContract,
   getContract,
   getHistory,
 } from '@/features/contracts/api/contracts.api';
 import { listRentalTemplates } from '@/features/contracts/api/rentalContract.api';
+import { configValue, listConfig } from '@/features/settings/api/settings.api';
 import {
   computeSettlement,
   type SettlementFee,
@@ -210,6 +212,8 @@ export const OPS_ACTION_LABEL: Record<string, string> = {
   details: 'تحديث بيانات الاسترداد',
   queue: 'إرسال للصرف',
   payout: 'صرف',
+  approve_exception: 'اعتماد الاستثناء',
+  complete: 'تنفيذ',
 };
 
 /* ------------------------------ demo stores ------------------------------- */
@@ -329,6 +333,7 @@ let seq = 0;
 
 /** Tests + demo reset. */
 export function resetContractOpsDemo(): void {
+  resetReplacementsDemo();
   lookups = LOOKUP_SEED.map((l) => ({ ...l }));
   terms = TERM_SEED.map((t) => ({ ...t }));
   settlements = [];
@@ -514,12 +519,14 @@ export async function previewSettlement(
     });
   }
   const c = (await getContract(contractId)) ?? fail('العقد غير موجود');
+  const cfg = await listConfig();
   return computeSettlement({
     contract: c,
     delivered: await demoDelivered(c),
     effectiveDate,
     fees,
     terms: await demoTermsFor(c),
+    countReturnDay: configValue(cfg, 'settlement_count_return_day', 1) === 1,
   });
 }
 
@@ -1032,4 +1039,360 @@ export function demoLogOp(
   note?: string | null,
 ): void {
   log(contractId, entity, entityId, action, from, to, note);
+}
+
+/* ------------------------------ replacements ------------------------------ */
+
+export type ReplacementStatus =
+  | 'requested'
+  | 'pending_exception'
+  | 'eligible'
+  | 'scheduled'
+  | 'completed'
+  | 'rejected'
+  | 'cancelled';
+export type ExceptionBasis = 'contract_clause' | 'regulatory' | 'management';
+
+export interface Replacement {
+  id: string;
+  replacement_no: string;
+  contract_id: string;
+  seq: number;
+  old_worker_profile_id: string;
+  new_worker_profile_id: string | null;
+  reason_code: string;
+  reason_note: string | null;
+  requested_at: string;
+  old_pickup_date: string | null;
+  new_delivery_date: string | null;
+  old_received_at: string | null;
+  new_delivered_at: string | null;
+  counts_toward_limit: boolean;
+  is_exception: boolean;
+  exception_basis: ExceptionBasis | null;
+  exception_note: string | null;
+  pickup_driver_id: string | null;
+  delivery_driver_id: string | null;
+  return_id: string | null;
+  status: ReplacementStatus;
+  created_by: string | null;
+  created_at: string;
+  /** demo/display only */
+  old_worker_name?: string | null;
+  new_worker_name?: string | null;
+}
+
+export const REPLACEMENT_STATUS_LABEL: Record<ReplacementStatus, string> = {
+  requested: 'مطلوب',
+  pending_exception: 'بانتظار اعتماد الاستثناء',
+  eligible: 'مؤهل — اختر البديلة',
+  scheduled: 'مجدول للاستلام والتسليم',
+  completed: 'منفّذ',
+  rejected: 'مرفوض',
+  cancelled: 'ملغى',
+};
+export const EXCEPTION_BASIS_LABEL: Record<ExceptionBasis, string> = {
+  contract_clause: 'بند تعاقدي',
+  regulatory: 'متطلب نظامي',
+  management: 'قرار الإدارة',
+};
+
+export interface ReplacementQuota {
+  active: boolean;
+  max: number | null;
+  used: number;
+  remaining: number | null;
+  total_done: number;
+}
+
+let replacements: Replacement[] = [];
+/** Demo policy (mirror of app_config replacement_policy_active / replacement_max_proposed). */
+const demoPolicy: Record<string, { active: boolean; max: number }> = {};
+
+export function resetReplacementsDemo(): void {
+  replacements = [];
+  for (const k of Object.keys(demoPolicy)) delete demoPolicy[k];
+}
+/** Demo: pin the policy the contract was signed with (0091 trigger mirror). */
+export function demoPinReplacementPolicy(
+  contractId: string,
+  policy: { active: boolean; max: number },
+): void {
+  demoPolicy[contractId] = policy;
+}
+
+export async function listReplacements(contractId: string): Promise<Replacement[]> {
+  if (!live(contractId))
+    return replacements.filter((r) => r.contract_id === contractId).map((r) => ({ ...r }));
+  const { data, error } = await supabase
+    .from('contract_replacements')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('seq', { ascending: false });
+  if (error) throw new Error(`تعذّر جلب الاستبدالات: ${error.message}`);
+  return (data ?? []) as Replacement[];
+}
+
+export async function getReplacementQuota(contractId: string): Promise<ReplacementQuota> {
+  if (live(contractId))
+    return rpc<ReplacementQuota>('replacement_quota', { p_contract: contractId });
+  // demo: the policy is pinned the first time the contract is looked at (≈ signing)
+  if (!demoPolicy[contractId]) {
+    const cfg = await listConfig();
+    demoPolicy[contractId] = {
+      active: configValue(cfg, 'replacement_policy_active', 0) === 1,
+      max: configValue(cfg, 'replacement_max_proposed', 2),
+    };
+  }
+  const policy = demoPolicy[contractId];
+  const done = replacements.filter((r) => r.contract_id === contractId && r.status === 'completed');
+  const used = done.filter((r) => r.counts_toward_limit).length;
+  return {
+    active: policy.active,
+    max: policy.max,
+    used,
+    remaining: policy.active ? Math.max(policy.max - used, 0) : null,
+    total_done: done.length,
+  };
+}
+
+export const replacementRequestSchema = z
+  .object({
+    contractId: z.string().min(1),
+    reasonCode: z.string().min(1, { message: 'اختر سبب الاستبدال' }),
+    reasonNote: z.string().optional(),
+    requestedAt: z.string().min(1, { message: 'حدّد تاريخ الطلب' }),
+    exceptionBasis: z.enum(['contract_clause', 'regulatory', 'management']).nullable(),
+    exceptionNote: z.string().optional(),
+  })
+  .refine((d) => !d.exceptionBasis || Boolean(d.exceptionNote?.trim()), {
+    message: 'اذكر أساس الاستثناء (البند أو النظام أو قرار الإدارة)',
+    path: ['exceptionNote'],
+  });
+export type ReplacementRequestInput = z.infer<typeof replacementRequestSchema>;
+
+export async function requestReplacement(input: ReplacementRequestInput): Promise<Replacement> {
+  const p = replacementRequestSchema.parse(input);
+  if (live(p.contractId)) {
+    return rpc<Replacement>('request_worker_replacement', {
+      p_contract: p.contractId,
+      p_reason_code: p.reasonCode,
+      p_reason_note: p.reasonNote ?? null,
+      p_requested: p.requestedAt,
+      p_responsible: null,
+      p_exception_basis: p.exceptionBasis,
+      p_exception_note: p.exceptionNote ?? null,
+    });
+  }
+  const c = (await getContract(p.contractId)) ?? fail('العقد غير موجود');
+  if (c.status !== 'active') fail('الاستبدال لعقد نشط سُلِّمت فيه العاملة');
+  if (!c.worker_profile_id && !c.worker_name) fail('لا توجد عاملة مرتبطة بهذا العقد');
+  if (
+    settlements.some((s) => s.contract_id === c.id && !['rejected', 'cancelled'].includes(s.status))
+  ) {
+    fail('يوجد إلغاء/تسوية قائمة لهذا العقد — لا استبدال');
+  }
+  if (
+    replacements.some(
+      (r) =>
+        r.contract_id === c.id &&
+        ['requested', 'pending_exception', 'eligible', 'scheduled'].includes(r.status),
+    )
+  ) {
+    fail('يوجد طلب استبدال قائم لهذا العقد');
+  }
+  const contractual = lookups.some(
+    (l) => l.kind === 'replacement_reason' && l.code === p.reasonCode && l.flag,
+  );
+  const q = await getReplacementQuota(c.id);
+  let status: ReplacementStatus;
+  if (contractual) status = 'eligible';
+  else if (p.exceptionBasis) status = 'pending_exception';
+  else if (q.active && (q.remaining ?? 0) <= 0)
+    fail(`استُنفد حد الاستبدالات الاعتيادية لهذا العقد (${q.max}) — يلزم استثناء معتمد`);
+  else status = 'eligible';
+  const row: Replacement = {
+    id: `rp-${Date.now()}-${replacements.length}`,
+    replacement_no: nextNo('RP'),
+    contract_id: c.id,
+    seq: replacements.filter((r) => r.contract_id === c.id).length + 1,
+    old_worker_profile_id: c.worker_profile_id ?? `demo-worker-${c.id}`,
+    new_worker_profile_id: null,
+    reason_code: p.reasonCode,
+    reason_note: p.reasonNote?.trim() || null,
+    requested_at: p.requestedAt,
+    old_pickup_date: null,
+    new_delivery_date: null,
+    old_received_at: null,
+    new_delivered_at: null,
+    counts_toward_limit: !contractual && !p.exceptionBasis,
+    is_exception: contractual || Boolean(p.exceptionBasis),
+    exception_basis: contractual ? 'contract_clause' : p.exceptionBasis,
+    exception_note: contractual
+      ? 'البند الثاني/4 — التزام الطرف الأول بتوفير البديل'
+      : (p.exceptionNote?.trim() ?? null),
+    pickup_driver_id: null,
+    delivery_driver_id: null,
+    return_id: null,
+    status,
+    created_by: me().id,
+    created_at: nowIso(),
+    old_worker_name: c.worker_name,
+    new_worker_name: null,
+  };
+  replacements.unshift(row);
+  log(c.id, 'replacement', row.id, 'request', null, status, row.reason_note);
+  return { ...row };
+}
+
+export type ReplacementAction = 'approve_exception' | 'reject' | 'cancel';
+
+export async function replacementStep(
+  r: Pick<Replacement, 'id' | 'contract_id'>,
+  action: ReplacementAction,
+  note?: string,
+): Promise<void> {
+  if (live(r.contract_id)) {
+    await rpc('replacement_step', { p_id: r.id, p_action: action, p_note: note ?? null });
+    return;
+  }
+  const row = replacements.find((x) => x.id === r.id) ?? fail('طلب الاستبدال غير موجود');
+  const from = row.status;
+  let to: ReplacementStatus;
+  if (action === 'approve_exception') {
+    if (from !== 'pending_exception') fail('الطلب ليس بانتظار اعتماد استثناء');
+    if (row.created_by === me().id)
+      fail('لا يعتمد مقدّم الطلب استثناءه (أربع أعين) — سجّل دخولك بحساب آخر');
+    row.counts_toward_limit = false;
+    to = 'eligible';
+  } else if (action === 'reject') {
+    if (!['requested', 'pending_exception', 'eligible'].includes(from))
+      fail('لا يُرفض الطلب في حالته الحالية');
+    if (!note?.trim()) fail('اكتب سبب الرفض');
+    to = 'rejected';
+  } else {
+    if (!['requested', 'pending_exception', 'eligible', 'scheduled'].includes(from))
+      fail('لا يُلغى بعد التنفيذ');
+    to = 'cancelled';
+  }
+  row.status = to;
+  log(row.contract_id, 'replacement', row.id, action, from, to, note);
+}
+
+export const replacementScheduleSchema = z.object({
+  newWorkerId: z.string().min(1, { message: 'اختر العاملة البديلة' }),
+  newWorkerName: z.string().nullable().optional(),
+  pickupDate: z.string().min(1, { message: 'حدّد موعد استلام العاملة الحالية' }),
+  deliveryDate: z.string().min(1, { message: 'حدّد موعد تسليم البديلة' }),
+  pickupDriverId: z.string().nullable().optional(),
+  deliveryDriverId: z.string().nullable().optional(),
+});
+export type ReplacementScheduleInput = z.infer<typeof replacementScheduleSchema>;
+
+export async function scheduleReplacement(
+  r: Pick<Replacement, 'id' | 'contract_id'>,
+  input: ReplacementScheduleInput,
+): Promise<void> {
+  const p = replacementScheduleSchema.parse(input);
+  if (live(r.contract_id)) {
+    await rpc('schedule_worker_replacement', {
+      p_id: r.id,
+      p_new_worker: p.newWorkerId,
+      p_pickup: p.pickupDate,
+      p_delivery: p.deliveryDate,
+      p_pickup_driver: p.pickupDriverId ?? null,
+      p_delivery_driver: p.deliveryDriverId ?? null,
+    });
+    return;
+  }
+  const row = replacements.find((x) => x.id === r.id) ?? fail('طلب الاستبدال غير موجود');
+  if (!['eligible', 'scheduled'].includes(row.status)) fail('الطلب غير مؤهل للجدولة بعد');
+  if (p.newWorkerId === row.old_worker_profile_id) fail('اختر عاملة غير العاملة الحالية');
+  Object.assign(row, {
+    new_worker_profile_id: p.newWorkerId,
+    new_worker_name: p.newWorkerName ?? null,
+    old_pickup_date: p.pickupDate,
+    new_delivery_date: p.deliveryDate,
+    pickup_driver_id: p.pickupDriverId ?? null,
+    delivery_driver_id: p.deliveryDriverId ?? null,
+  });
+  const from = row.status;
+  row.status = 'scheduled';
+  log(
+    row.contract_id,
+    'replacement',
+    row.id,
+    'schedule',
+    from,
+    'scheduled',
+    p.newWorkerName ?? null,
+  );
+}
+
+export const replacementCompleteSchema = z.object({
+  oldReceived: z.string().min(1, { message: 'حدّد تاريخ استلام العاملة السابقة' }),
+  newDelivered: z.string().min(1, { message: 'حدّد تاريخ تسليم البديلة' }),
+  condition: z.string().min(1, { message: 'حدّد حالة العاملة السابقة عند الاستلام' }),
+  note: z.string().optional(),
+});
+export type ReplacementCompleteInput = z.infer<typeof replacementCompleteSchema>;
+
+export async function completeReplacement(
+  r: Pick<Replacement, 'id' | 'contract_id'>,
+  input: ReplacementCompleteInput,
+): Promise<void> {
+  const p = replacementCompleteSchema.parse(input);
+  if (live(r.contract_id)) {
+    await rpc('complete_worker_replacement', {
+      p_id: r.id,
+      p_old_received: p.oldReceived,
+      p_new_delivered: p.newDelivered,
+      p_condition: p.condition,
+      p_note: p.note ?? null,
+    });
+    return;
+  }
+  const row = replacements.find((x) => x.id === r.id) ?? fail('طلب الاستبدال غير موجود');
+  if (row.status !== 'scheduled') fail('نفّذ الاستبدال بعد اختيار البديلة وجدولته');
+  if (p.oldReceived > today() || p.newDelivered > today())
+    fail('التواريخ الفعلية لا تكون في المستقبل');
+  const ret: WorkerReturn = {
+    id: `wr-${Date.now()}-${returns.length}`,
+    return_no: nextNo('WR'),
+    contract_id: row.contract_id,
+    worker_profile_id: row.old_worker_profile_id,
+    requested_date: row.old_pickup_date ?? p.oldReceived,
+    actual_date: p.oldReceived,
+    reason_code: 'replacement',
+    reason_note: row.reason_note,
+    condition_code: p.condition,
+    condition_note: p.note?.trim() || null,
+    responsible_employee_id: null,
+    driver_id: row.pickup_driver_id,
+    notes: null,
+    replacement_id: row.id,
+    status: 'received',
+    created_at: nowIso(),
+  };
+  returns.unshift(ret);
+  Object.assign(row, {
+    old_received_at: p.oldReceived,
+    new_delivered_at: p.newDelivered,
+    return_id: ret.id,
+    status: 'completed',
+  });
+  demoMutateContract(row.contract_id, {
+    worker_profile_id: row.new_worker_profile_id,
+    worker_name: row.new_worker_name ?? null,
+  });
+  log(row.contract_id, 'replacement', row.id, 'complete', 'scheduled', 'completed', p.note);
+  log(
+    row.contract_id,
+    'return',
+    ret.id,
+    'receive',
+    null,
+    'received',
+    `ضمن الاستبدال ${row.replacement_no}`,
+  );
 }
