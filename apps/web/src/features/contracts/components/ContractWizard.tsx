@@ -3,21 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getQuoteRecord } from '@/shared/lib/quotesLedger';
 import { convertQuoteToContract } from '@/features/crm/api/crm.api';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  ArrowRight,
-  CalendarRange,
-  Check,
-  CircleAlert,
-  FileText,
-  UserPlus,
-  UserRound,
-} from 'lucide-react';
+import { ArrowRight, CalendarRange, Check, CircleAlert, FileText, UserPlus } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
 import { BRANCHES_AR, type WorkerProfile } from '@/lib/funnel';
 import { usePrice } from '@/hooks/usePricing';
-import { useWorkerProfiles } from '@/hooks/useWorkerProfiles';
 import { useContractTemplates, useCreateContract } from '@/features/contracts/hooks/useContracts';
 import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import { PromotionPicker } from '@/features/pricing/components/PromotionPicker';
@@ -65,6 +56,12 @@ import { isRentalService } from '@/features/contracts/api/rentalContract.api';
 import { bookHourly, getHourlyConfig, listBusySlots } from '@/features/hourly/api/hourly.api';
 import { conflictFor, hoursBetween, validateHours } from '@/features/hourly/lib/hourly';
 import { useAuth } from '@/store/auth';
+import { WorkerPicker } from '@/features/contracts/components/WorkerPicker';
+import { configValue, listConfig } from '@/features/settings/api/settings.api';
+import {
+  createDriverTask,
+  type WorkerCandidate,
+} from '@/features/contracts/api/workersDrivers.api';
 
 interface Draft {
   service: WizardServiceCode | '';
@@ -90,6 +87,8 @@ interface Draft {
   /** التأجير بالساعة: وقت الوصول والانصراف في يوم الحجز (start_date). */
   startTime: string;
   endTime: string;
+  /** موعد التسليم المتوقع (مهمة توصيل بانتظار إسناد سائق) */
+  deliveryAt: string;
 }
 
 const EMPTY: Draft = {
@@ -113,7 +112,25 @@ const EMPTY: Draft = {
   employeeMobile: '',
   startTime: '09:00',
   endTime: '13:00',
+  deliveryAt: '',
 };
+
+/** بطاقة المرشّحة ← شكل ملف العاملة المستخدم في المعالج (البيانات الإضافية من ملفها). */
+function toProfile(w: WorkerCandidate): WorkerProfile {
+  return {
+    id: w.id,
+    full_name: w.full_name,
+    nationality: w.nationality,
+    profession: w.profession,
+    age: null,
+    experience_years: 0,
+    languages: [],
+    monthly_salary: 0,
+    status: w.status,
+    photo_url: null,
+    bio_ar: null,
+  };
+}
 
 /** مسودة المعالج تُحفظ محلياً لكل مستخدم حتى لا تضيع البيانات عند التنقل. */
 const DRAFT_KEY = (uid: string) => `masea.contractWizard.draft.${uid}`;
@@ -161,7 +178,6 @@ export default function ContractWizard() {
   const { data: rules = [] } = usePricingRules();
   const { data: templates = [] } = useContractTemplates();
   const { data: origins } = useServiceOrigins();
-  const { data: workers = [] } = useWorkerProfiles();
 
   const [d, setD] = useState<Draft>(() => {
     const s = params.get('service');
@@ -254,26 +270,6 @@ export default function ContractWizard() {
     queryFn: () => listBusySlots(d.start_date),
     enabled: isHourly && Boolean(d.start_date),
   });
-  // التأجير: العاملات المتاحات فقط، وبالساعة: غير المحجوزات في الوقت المختار
-  const workerChoices = isRental
-    ? workers.filter(
-        (w) =>
-          w.status === 'available' &&
-          (!isHourly ||
-            !hourlyCfg ||
-            !d.start_date ||
-            !conflictFor(
-              busy,
-              {
-                worker_profile_id: w.id,
-                booking_date: d.start_date,
-                start_time: d.startTime,
-                end_time: d.endTime,
-              },
-              hourlyCfg,
-            )),
-      )
-    : workers;
   // الخطوات الخمس: العاملة ضمن «تفاصيل الخدمة»
   const stepKeys = ['service', 'details', 'customer', 'pricing', 'review'];
   const current = stepKeys[step] ?? 'service';
@@ -458,6 +454,25 @@ export default function ContractWizard() {
   }
 
   const [booking, setBooking] = useState(false);
+  /** مهمة التوصيل المتوقعة للعقد (بلا سائق بعد) — فشلها لا يُفشل إنشاء العقد. */
+  async function scheduleDelivery(contractId: string) {
+    const at =
+      d.deliveryAt || (d.start_date ? `${d.start_date}T${isHourly ? d.startTime : '09:00'}` : '');
+    if (!isRental || !at) return;
+    const minutes = configValue(await listConfig(), 'driver_task_default_minutes', 60);
+    const start = new Date(at);
+    await createDriverTask({
+      contractId,
+      kind: 'delivery',
+      startsAt: start.toISOString(),
+      endsAt: new Date(start.getTime() + minutes * 60_000).toISOString(),
+      driverId: null,
+      address: d.customerAddress.trim() || d.customer?.address || undefined,
+      workerId: d.worker?.id ?? null,
+    }).catch((e: unknown) =>
+      toast.error(`أُنشئ العقد دون مهمة التوصيل: ${e instanceof Error ? e.message : ''}`),
+    );
+  }
   /** التأجير بالساعة: الحجز القائم (book_hourly) ينشئ الحجز والطلب والعقد على القالب الموحّد. */
   async function saveHourly() {
     if (!d.customer || !d.worker || !rentalDocFields) return;
@@ -488,6 +503,7 @@ export default function ContractWizard() {
         ...rentalDocFields,
         worker: rentalDocFields.worker ? { ...rentalDocFields.worker, ...(doc ?? {}) } : null,
       });
+      await scheduleDelivery(b.contract_id);
       clearDraft(uid);
       void qc.invalidateQueries({ queryKey: ['contracts'] });
       void qc.invalidateQueries({ queryKey: ['hourly'] });
@@ -581,6 +597,7 @@ export default function ContractWizard() {
               void qc.invalidateQueries({ queryKey: ['crm'] });
             });
         }
+        await scheduleDelivery(created.id);
         clearDraft(uid);
         toast.success(
           musaned
@@ -848,6 +865,19 @@ export default function ContractWizard() {
                   className="num"
                   onChange={(e) => set({ employeeMobile: e.target.value })}
                 />
+                <Input
+                  label="موعد التسليم المتوقع"
+                  type="datetime-local"
+                  value={
+                    d.deliveryAt ||
+                    (d.start_date ? `${d.start_date}T${isHourly ? d.startTime : '09:00'}` : '')
+                  }
+                  onChange={(e) => set({ deliveryAt: e.target.value })}
+                />
+                <p className="self-end text-[11px] text-purple sm:col-span-2">
+                  تُنشأ مهمة «توصيل العاملة» بانتظار إسناد سائق، ويُسند السائق من تبويب «التوصيل
+                  والاستلام».
+                </p>
               </div>
             )}
             {musaned && (
@@ -869,49 +899,38 @@ export default function ContractWizard() {
 
         {current === 'details' && needsWorker && (
           <div className="mt-5 border-t border-navy-50 pt-4">
-            <p className="mb-3 text-sm text-purple">
-              {isHourly
-                ? 'العاملات المتاحات وغير المحجوزات في التاريخ والوقت أعلاه فقط.'
-                : 'اختر العاملة — ستُعبّأ جنسيتها ومهنتها في العقد تلقائيًا.'}
+            <p className="mb-3 text-sm font-bold text-navy">
+              العاملة{' '}
+              <span className="text-xs font-normal text-purple">
+                {isHourly
+                  ? '— غير المحجوزات في التاريخ والوقت أعلاه'
+                  : '— توفّرها محسوب لفترة العقد؛ تُعبّأ جنسيتها ومهنتها في العقد تلقائياً'}
+              </span>
             </p>
-            {workerChoices.length === 0 && (
-              <p className="rounded-xl border border-dashed border-navy-100 p-6 text-center text-sm text-purple">
-                لا توجد عاملات متاحات حالياً — كل العاملات محجوزات.
-              </p>
-            )}
-            <div className="grid gap-3 sm:grid-cols-2">
-              {workerChoices.map((w) => (
-                <button
-                  key={w.id}
-                  type="button"
-                  onClick={() => pickWorker(w)}
-                  className={`flex items-center gap-3 rounded-xl border p-3.5 text-right transition ${d.worker?.id === w.id ? 'border-navy bg-navy-50' : 'border-navy-100 hover:border-navy'}`}
-                >
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-navy-50 text-navy">
-                    <UserRound size={20} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-bold text-navy">
-                      {w.full_name}
-                    </span>
-                    <span className="block text-xs text-purple">
-                      {w.nationality} · {w.profession} · {w.age} سنة
-                    </span>
-                    <span className="num block text-xs text-gold-600">
-                      {w.monthly_salary} ر.س / شهر · {w.experience_years} سنوات خبرة
-                    </span>
-                    {w.languages.length > 0 && (
-                      <span className="block text-[11px] text-purple">
-                        اللغات: {w.languages.join('، ')}
-                      </span>
-                    )}
-                    {w.bio_ar && (
-                      <span className="block truncate text-[11px] text-purple/80">{w.bio_ar}</span>
-                    )}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <WorkerPicker
+              service={d.service}
+              start={d.start_date}
+              end={endDate}
+              value={d.worker?.id ?? null}
+              onPick={(w) => pickWorker(toProfile(w))}
+              exclude={
+                isHourly && hourlyCfg
+                  ? (w) =>
+                      conflictFor(
+                        busy,
+                        {
+                          worker_profile_id: w.id,
+                          booking_date: d.start_date,
+                          start_time: d.startTime,
+                          end_time: d.endTime,
+                        },
+                        hourlyCfg,
+                      )
+                        ? 'محجوزة بالساعة في هذا الوقت'
+                        : null
+                  : undefined
+              }
+            />
           </div>
         )}
 

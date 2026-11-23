@@ -183,7 +183,7 @@ export interface RefundPayout {
 export interface OpsEvent {
   id: string;
   contract_id: string;
-  entity: 'settlement' | 'return' | 'refund' | 'replacement' | 'trial';
+  entity: 'settlement' | 'return' | 'refund' | 'replacement' | 'trial' | 'driver_task';
   entity_id: string;
   action: string;
   from_status: string | null;
@@ -213,6 +213,11 @@ export const OPS_ACTION_LABEL: Record<string, string> = {
   queue: 'إرسال للصرف',
   payout: 'صرف',
   approve_exception: 'اعتماد الاستثناء',
+  driver_create: 'إنشاء مهمة سائق',
+  driver_assign: 'إسناد السائق',
+  driver_start: 'السائق في الطريق',
+  driver_done: 'تنفيذ المهمة',
+  driver_cancel: 'إلغاء المهمة',
   complete: 'تنفيذ',
 };
 

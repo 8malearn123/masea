@@ -28,6 +28,7 @@ import {
 } from '@/features/orders/lib/orderStatus';
 import { TRIP_LEGS, TRIP_STEPS, nextStep, stageIndex } from '@/features/orders/lib/trip';
 import { TripScanModal } from '@/features/orders/components/TripScanModal';
+import { DriverContractTasks } from '@/features/orders/components/DriverContractTasks';
 import type { Order, OrderStatus } from '@/features/orders/types';
 
 const SERVICE_ICON: Record<string, LucideIcon> = {
@@ -99,6 +100,8 @@ export function DriverTrips() {
           </p>
         </div>
       </div>
+
+      <DriverContractTasks />
 
       <div className="mb-5 grid grid-cols-3 gap-3">
         <Kpi icon={Loader} label="رحلات نشطة" value={stats.active} bg="bg-gold-100 text-gold-600" />
