@@ -28,6 +28,11 @@ import {
   type ContractTerm,
 } from '@/features/contracts/schemas/contract.schema';
 import { transitionBlocker } from '@/features/contracts/lib/contractState';
+import {
+  conflictMessage,
+  isLiveStatus,
+  workerConflict,
+} from '@/features/contracts/lib/workerAllocation';
 import type {
   Contract,
   ContractClause,
@@ -85,6 +90,7 @@ function mk(o: {
     template_id: null,
     customer_id: o.customer_id ?? `cust-${o.id}`,
     worker_id: null,
+    worker_profile_id: null,
     branch_id: o.branch,
     created_by: null,
     start_date: o.start_date,
@@ -488,6 +494,7 @@ function applyFilters(rows: ContractListItem[], f: ContractFilters): ContractLis
 
 interface RawRow extends Contract {
   customers: { full_name: string | null } | null;
+  worker_profiles?: { full_name: string | null } | null;
   branches: { city: string | null } | null;
   /** orders linked to the contract (service_requests.contract_id) */
   service_requests?: { request_no: string }[] | null;
@@ -526,7 +533,9 @@ export async function listContracts(filters: ContractFilters): Promise<ContractL
   }
   const { data, error } = await supabase
     .from('contracts')
-    .select('*, customers(full_name), branches(city), service_requests(request_no)')
+    .select(
+      '*, customers(full_name), branches(city), service_requests(request_no), worker_profiles(full_name)',
+    )
     .not('contract_no', 'is', null)
     .order('created_at', { ascending: false });
   if (error) throw new Error(`تعذّر جلب العقود: ${error.message}`);
@@ -534,13 +543,20 @@ export async function listContracts(filters: ContractFilters): Promise<ContractL
 }
 
 /** صف قاعدة البيانات (مع جدولَي العميل والفرع) → عنصر القائمة. */
-function fromRaw({ customers, branches, service_requests, ...rest }: RawRow): ContractListItem {
+function fromRaw({
+  customers,
+  branches,
+  service_requests,
+  worker_profiles,
+  ...rest
+}: RawRow): ContractListItem {
   return {
     ...rest,
+    worker_profile_id: rest.worker_profile_id ?? null,
     terms_accepted_at: rest.terms_accepted_at ?? null,
     source_request_no: service_requests?.[0]?.request_no ?? null,
     customer_name: customers?.full_name ?? null,
-    worker_name: null,
+    worker_name: worker_profiles?.full_name ?? null,
     branch_name: branches?.city ?? null,
   };
 }
@@ -553,7 +569,9 @@ export async function getContract(id: string): Promise<ContractListItem | null> 
   }
   const { data, error } = await supabase
     .from('contracts')
-    .select('*, customers(full_name), branches(city), service_requests(request_no)')
+    .select(
+      '*, customers(full_name), branches(city), service_requests(request_no), worker_profiles(full_name)',
+    )
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(`تعذّر جلب العقد: ${error.message}`);
@@ -710,6 +728,7 @@ async function localDraft(
     template_id: input.template_id ?? null,
     customer_id: input.customer_id,
     worker_id: input.worker_id ?? null,
+    worker_profile_id: input.worker_profile_id ?? null,
     branch_id: input.branch,
     created_by: null,
     start_date: term.start_date,
@@ -777,6 +796,7 @@ export function contractFromAcceptedTerms(input: {
     template_id: null,
     customer_id: `cust-${id}`,
     worker_id: null,
+    worker_profile_id: null,
     branch_id: input.branch,
     created_by: null,
     start_date: input.start_date,
@@ -859,6 +879,7 @@ export function addDemoHourlyContract(input: {
     template_id: null,
     customer_id: `cust-${id}`,
     worker_id: null,
+    worker_profile_id: null,
     branch_id: input.branch,
     created_by: null,
     start_date: input.date,
@@ -933,6 +954,7 @@ export async function createContractFromQuote(
     template_id: null,
     customer_id: q.customer_id ?? `cust-${id}`,
     worker_id: null,
+    worker_profile_id: null,
     branch_id: branch,
     created_by: null,
     start_date: start,
@@ -988,16 +1010,31 @@ export async function createDraft(input: CreateContractInput): Promise<ContractL
   const term = parseTerm(input.start_date, input.end_date);
   if (isDemoMode()) return localDraft(input, term);
 
-  const { clauses = [], customer_name, worker_name, ...rest } = input;
+  const { clauses = [], customer_name, worker_name, worker_profile_id, ...rest } = input;
   const templateId = rest.template_id && !isDemoId(rest.template_id) ? rest.template_id : null;
   const { data, error } = await supabase.rpc('create_contract_draft', {
     p_input: { ...rest, ...term, template_id: templateId },
     p_clauses: clauses,
   });
   if (error) throw new Error(`تعذّر حفظ العقد: ${rpcError(error.message).message}`);
-  const row = data as Contract | null;
+  let row = data as Contract | null;
   if (!row?.id) throw new Error('تعذّر حفظ العقد: لم يُرجِع الخادم المسودة');
-  return { ...row, customer_name: customer_name ?? null, worker_name: worker_name ?? null };
+  // ربط العقد بسجل العاملة (0089) — يُرفض إن كانت محجوزة في الفترة نفسها
+  if (worker_profile_id && !isDemoId(worker_profile_id)) {
+    const linked = await supabase.rpc('set_contract_worker', {
+      p_contract_id: row.id,
+      p_profile: worker_profile_id,
+    });
+    if (linked.error)
+      throw new Error(`حُفظت المسودة دون العاملة: ${rpcError(linked.error.message).message}`);
+    row = (linked.data as Contract | null) ?? row;
+  }
+  return {
+    ...row,
+    worker_profile_id: row.worker_profile_id ?? worker_profile_id ?? null,
+    customer_name: customer_name ?? null,
+    worker_name: worker_name ?? null,
+  };
 }
 
 /**
@@ -1200,7 +1237,9 @@ async function listChildren(parentIds: string[]): Promise<ContractListItem[]> {
   }
   const { data, error } = await supabase
     .from('contracts')
-    .select('*, customers(full_name), branches(city), service_requests(request_no)')
+    .select(
+      '*, customers(full_name), branches(city), service_requests(request_no), worker_profiles(full_name)',
+    )
     .in('parent_contract_id', parentIds);
   if (error) throw new Error(`تعذّر جلب إصدارات العقد: ${error.message}`);
   return ((data ?? []) as RawRow[]).map(fromRaw);
@@ -1214,6 +1253,11 @@ export async function transitionContract(id: string, toStatus: ContractStatus): 
       const origin = DEFAULT_SERVICE_ORIGIN[c.service_code ?? 'monthly_rental'] ?? 'internal';
       const blocked = transitionBlocker(c, toStatus, origin);
       if (blocked) throw new Error(blocked);
+      // 0089: العاملة لا تُحجز على عقدين حيّين متداخلين
+      if (!isLiveStatus(c.status) && isLiveStatus(toStatus)) {
+        const hit = workerConflict(FALLBACK, c.worker_profile_id, c.start_date, c.end_date, c.id);
+        if (hit) throw new Error(conflictMessage(c.worker_name, hit));
+      }
       if (toStatus === 'signed' && (FALLBACK_SIGNATURES[id]?.length ?? 0) < 2) {
         throw new Error('لا يمكن تأكيد التوقيع قبل توقيع الطرفين');
       }

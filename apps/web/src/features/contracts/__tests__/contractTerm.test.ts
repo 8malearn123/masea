@@ -168,6 +168,7 @@ describe('طباعة العقد', () => {
     template_id: null,
     customer_id: 'cust-1',
     worker_id: null,
+    worker_profile_id: null,
     branch_id: 'نجران',
     created_by: null,
     start_date: '2026-10-01',

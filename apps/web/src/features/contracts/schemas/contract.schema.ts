@@ -89,6 +89,8 @@ export const contractSchema = z.object({
   template_id: z.string().uuid().nullable(),
   customer_id: z.string().uuid(),
   worker_id: z.string().uuid().nullable(),
+  /** العاملة المخصّصة (worker_profiles — 0089). تتغيّر بعد المسودة بالاستبدال فقط. */
+  worker_profile_id: z.string().nullable().default(null),
   branch_id: z.string().uuid().nullable(),
   created_by: z.string().uuid().nullable(),
   start_date: z.string().nullable(),
@@ -200,6 +202,7 @@ export const createContractInputSchema = z
     customer_id: z.string().min(1, { message: 'اختر العميل' }),
     customer_name: z.string().nullable().optional(),
     worker_id: z.string().nullable().optional(),
+    worker_profile_id: z.string().nullable().optional(),
     worker_name: z.string().nullable().optional(),
     branch: z.string().min(1, { message: 'اختر الفرع' }),
     start_date: z.string().min(1, { message: 'حدّد تاريخ البداية' }),

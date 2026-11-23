@@ -8,6 +8,12 @@ import DataTable from '@/components/DataTable';
 
 const statusColor: Record<ContractStatus, string> = {
   draft: 'bg-navy-50 text-navy',
+  pending_approval: 'bg-navy-50 text-navy',
+  approved: 'bg-navy-50 text-navy',
+  awaiting_signature: 'bg-navy-50 text-navy',
+  signed: 'bg-teal-100 text-teal',
+  musaned_created: 'bg-navy-50 text-navy',
+  musaned_signed: 'bg-teal-100 text-teal',
   active: 'bg-teal-100 text-teal',
   completed: 'bg-purple-100 text-purple',
   cancelled: 'bg-red-100 text-red-700',
@@ -38,16 +44,36 @@ export default function Contracts() {
         isLoading={isLoading}
         rows={data ?? []}
         columns={[
-          { key: 'contract_number', header: 'رقم', render: (r) => <span className="num">#{r.contract_number}</span> },
+          {
+            key: 'contract_number',
+            header: 'رقم',
+            render: (r) => <span className="num">#{r.contract_number}</span>,
+          },
           { key: 'customer', header: 'العميل', render: (r) => r.customers?.full_name ?? '—' },
-          { key: 'service_type', header: 'الخدمة', render: (r) => serviceTypeLabel[r.service_type] },
+          {
+            key: 'service_type',
+            header: 'الخدمة',
+            render: (r) => serviceTypeLabel[r.service_type],
+          },
           { key: 'start_date', header: 'البداية', render: (r) => dateAr(r.start_date) },
-          { key: 'total_amount', header: 'الإجمالي', render: (r) => <span className="num">{sar(r.total_amount)}</span> },
-          { key: 'amount_paid', header: 'المدفوع', render: (r) => <span className="num">{sar(r.amount_paid)}</span> },
+          {
+            key: 'total_amount',
+            header: 'الإجمالي',
+            render: (r) => <span className="num">{sar(r.total_amount)}</span>,
+          },
+          {
+            key: 'amount_paid',
+            header: 'المدفوع',
+            render: (r) => <span className="num">{sar(r.amount_paid)}</span>,
+          },
           {
             key: 'status',
             header: 'الحالة',
-            render: (r) => <span className={`badge ${statusColor[r.status]}`}>{contractStatusLabel[r.status]}</span>,
+            render: (r) => (
+              <span className={`badge ${statusColor[r.status]}`}>
+                {contractStatusLabel[r.status]}
+              </span>
+            ),
           },
         ]}
       />

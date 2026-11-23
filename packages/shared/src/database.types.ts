@@ -9,7 +9,9 @@ export type CustomerSegment = 'bronze' | 'silver' | 'gold';
 export type DriverStatus = 'available' | 'on_route' | 'off_duty';
 export type ServiceType =
   | 'monthly' | 'daily' | 'hourly_8' | 'hourly_5' | 'direct' | 'cleaning' | 'kafala';
-export type ContractStatus = 'draft' | 'active' | 'completed' | 'cancelled';
+export type ContractStatus =
+  | 'draft' | 'pending_approval' | 'approved' | 'awaiting_signature' | 'signed'
+  | 'musaned_created' | 'musaned_signed' | 'active' | 'completed' | 'cancelled';
 export type PaymentMethod = 'cash' | 'mada' | 'apple_pay' | 'tamara' | 'transfer';
 export type ScanType = 'warehouse_out' | 'customer_arrived' | 'service_end' | 'warehouse_in';
 export type PenaltyType = 'late_return' | 'false_report' | 'other';
