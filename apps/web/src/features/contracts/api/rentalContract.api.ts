@@ -97,17 +97,19 @@ export const companyProfileSchema = z.object({
 
 /* ------------------------------ demo stores ------------------------------- */
 /**
- * وضع العرض بلا Supabase: نفس بذرة 0087 (القالب بانتظار الاعتماد + بيانات
- * الطرف الأول من العقد الأصلي) في الذاكرة.
+ * وضع العرض بلا Supabase: نفس بذرة 0087 + بيانات الطرف الأول من العقد الأصلي.
+ * القالب معتمد في العرض (قرار الإدارة — docs/plans/contracts-unification-plan.md)؛
+ * مع قاعدة البيانات يُعتمد من «مراجعة القالب» باسم المعتمِد.
  */
+const DEMO_APPROVED_AT = '2026-11-23T00:00:00Z';
 const DEMO_TEMPLATES: RentalTemplateRow[] = RENTAL_TEMPLATE_SERVICES.map((s) => ({
   id: `demo-rtpl-${s}-v1`,
   service_code: s,
   name: 'عقد تأجير خدمات عمالية — النسخة 1',
   version: 1,
-  status: 'pending_review',
+  status: 'approved',
   content_sha256: null,
-  approved_at: null,
+  approved_at: DEMO_APPROVED_AT,
   doc: RENTAL_TEMPLATE_V1,
 }));
 
@@ -126,10 +128,10 @@ let DEMO_COMPANY: CompanyProfile = {
 const DEMO_DOC_FIELDS: Record<string, DocFields> = {};
 
 /** للاختبارات فقط: يعيد مخزن العرض لبذرته. */
-export function resetRentalDemoStore(): void {
+export function resetRentalDemoStore(status: 'approved' | 'pending_review' = 'approved'): void {
   for (const t of DEMO_TEMPLATES) {
-    t.status = 'pending_review';
-    t.approved_at = null;
+    t.status = status;
+    t.approved_at = status === 'approved' ? DEMO_APPROVED_AT : null;
   }
   for (const k of Object.keys(DEMO_DOC_FIELDS)) delete DEMO_DOC_FIELDS[k];
 }
@@ -167,15 +169,33 @@ export async function listRentalTemplates(): Promise<RentalTemplateRow[]> {
   });
 }
 
-/** القالب المعتمد الساري لخدمة (أعلى نسخة معتمدة)، أو null. */
+/** خدمات التأجير التي تصدر على قالب «عقد تأجير خدمات عمالية» الموحّد (0094). */
+export const RENTAL_SERVICES: readonly ContractServiceCode[] = [
+  'monthly_rental',
+  'daily_rental',
+  'hourly_rental',
+];
+export function isRentalService(s: ContractServiceCode | '' | null | undefined): boolean {
+  return Boolean(s) && RENTAL_SERVICES.includes(s as ContractServiceCode);
+}
+
+/**
+ * القالب المعتمد الساري لخدمة تأجير (أعلى نسخة معتمدة)، أو null. النص واحد لكل
+ * التأجير — يُفضَّل صف الخدمة نفسها ثم أي صف معتمد من القالب (مرآة 0094).
+ */
 export function approvedTemplateFor(
   rows: RentalTemplateRow[],
   service: ContractServiceCode | '' | null,
 ): RentalTemplateRow | null {
+  if (!isRentalService(service)) return null;
   return (
     rows
-      .filter((r) => r.service_code === service && r.status === 'approved')
-      .sort((a, b) => b.version - a.version)[0] ?? null
+      .filter((r) => r.status === 'approved')
+      .sort(
+        (a, b) =>
+          Number(b.service_code === service) - Number(a.service_code === service) ||
+          b.version - a.version,
+      )[0] ?? null
   );
 }
 

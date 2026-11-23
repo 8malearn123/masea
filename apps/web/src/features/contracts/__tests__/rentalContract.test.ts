@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import templateJson from '@/features/contracts/lib/rentalContract/template.v1.json';
 import {
   RENTAL_TEMPLATE_V1,
@@ -229,6 +229,7 @@ describe('المستند المطبوع', () => {
 });
 
 describe('الاعتماد والربط (الوضع التجريبي)', () => {
+  beforeEach(() => resetRentalDemoStore('pending_review'));
   afterEach(() => resetRentalDemoStore());
 
   it('القالب بانتظار الاعتماد ولا يُستخدم قبل اعتماده', async () => {
@@ -239,6 +240,11 @@ describe('الاعتماد والربط (الوضع التجريبي)', () => {
     const after = await listRentalTemplates();
     expect(approvedTemplateFor(after, 'daily_rental')?.version).toBe(1);
     expect(approvedTemplateFor(after, 'monthly_rental')?.version).toBe(1);
+    // 0094: التأجير بالساعة على نفس القالب الموحّد (لا نسخة ثالثة)
+    expect(approvedTemplateFor(after, 'hourly_rental')?.doc).toBe(
+      approvedTemplateFor(after, 'daily_rental')?.doc,
+    );
+    expect(approvedTemplateFor(after, 'recruitment')).toBeNull();
   });
 
   it('عقد صادر على القالب يُحمَّل ببيانات الأطراف المثبّتة؛ القديم يبقى بقالبه', async () => {

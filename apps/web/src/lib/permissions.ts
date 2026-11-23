@@ -28,8 +28,7 @@ export type ModuleCode =
   | 'customers' // CRM العملاء (0061)
   | 'sales_ops' // المبيعات الفعلية (0061)
   | 'audit' // سجل التدقيق (0061)
-  | 'hourly' // التأجير بالساعة (0065)
-  | 'it_admin'; // البريد المؤسسي وإدارة الحسابات (0093)
+  | 'hourly'; // التأجير بالساعة (0065)
 
 export type ActionCode = 'view' | 'create' | 'edit' | 'delete' | 'approve' | 'export' | 'manage';
 
@@ -54,8 +53,6 @@ function expand(grant: Grant): ActionCode[] {
 /** The matrix from section 2 — identical to the SQL seed. */
 const GRANTS: Record<RoleCode, Partial<Record<ModuleCode, Grant>>> = {
   admin: {
-    // البريد المؤسسي: الشركة تملك الإدارة النهائية (0093)
-    it_admin: ['view', 'create', 'edit', 'delete', 'approve', 'export', 'manage'],
     contracts: 'full',
     leads: 'full',
     gps: 'full',
@@ -260,7 +257,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     label: 'المالية والتقارير',
     modules: ['payments', 'accounting', 'targets', 'reports'],
   },
-  { key: 'system', label: 'النظام', modules: ['settings', 'rbac', 'audit', 'it_admin'] },
+  { key: 'system', label: 'النظام', modules: ['settings', 'rbac', 'audit'] },
 ];
 
 /** Sidebar source — filtered by `view` permission at render time. */
@@ -285,5 +282,4 @@ export const MODULES: ModuleNav[] = [
   { module: 'settings', label: 'الإعدادات', to: '/settings' },
   { module: 'rbac', label: 'الحسابات والصلاحيات', to: '/rbac' },
   { module: 'audit', label: 'سجل التدقيق', to: '/audit' },
-  { module: 'it_admin', label: 'البريد المؤسسي', to: '/it-admin' },
 ];
