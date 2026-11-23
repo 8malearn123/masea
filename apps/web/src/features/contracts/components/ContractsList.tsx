@@ -12,6 +12,7 @@ import {
   Search,
   Wallet,
   FlaskConical,
+  Gauge,
 } from 'lucide-react';
 import { Badge, Card, Input, Select, Table, type Column } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
@@ -210,6 +211,12 @@ function EnhancedContractsList() {
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
             <ScrollText size={16} /> قالب عقد التأجير
+          </Link>
+          <Link
+            to="/contracts/operations"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
+          >
+            <Gauge size={16} /> لوحة المتابعة
           </Link>
           <Link
             to="/contracts/trials"
