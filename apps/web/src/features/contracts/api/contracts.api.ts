@@ -27,7 +27,7 @@ import {
   contractTermSchema,
   type ContractTerm,
 } from '@/features/contracts/schemas/contract.schema';
-import { transitionBlocker } from '@/features/contracts/lib/contractState';
+import { requiresSettlement, transitionBlocker } from '@/features/contracts/lib/contractState';
 import {
   conflictMessage,
   isLiveStatus,
@@ -146,6 +146,14 @@ function termStart(endOffset: number, unit: PeriodUnit, n: number): string {
     if (computeEndDate(start, unit, n) === end) return start;
   }
   return naive;
+}
+
+/** Demo mirror of the settlement executing the cancellation (0090 `settle_contract_settlement`). */
+export function demoCancelBySettlement(id: string): void {
+  const c = FALLBACK.find((x) => x.id === id);
+  if (!c || c.status === 'cancelled' || c.status === 'completed') return;
+  pushDemoHistory(c, 'cancelled');
+  c.status = 'cancelled';
 }
 
 /** Demo-only: mutate a fallback contract in place so offline writes are visible. */
@@ -1253,6 +1261,10 @@ export async function transitionContract(id: string, toStatus: ContractStatus): 
       const origin = DEFAULT_SERVICE_ORIGIN[c.service_code ?? 'monthly_rental'] ?? 'internal';
       const blocked = transitionBlocker(c, toStatus, origin);
       if (blocked) throw new Error(blocked);
+      // 0090: الموقّع أو المدفوع يُلغى عبر «إلغاء العقد وتسويته» فقط
+      if (toStatus === 'cancelled' && requiresSettlement(c)) {
+        throw new Error('إلغاء عقد موقّع أو مدفوع يتم عبر «إلغاء العقد وتسويته» فقط');
+      }
       // 0089: العاملة لا تُحجز على عقدين حيّين متداخلين
       if (!isLiveStatus(c.status) && isLiveStatus(toStatus)) {
         const hit = workerConflict(FALLBACK, c.worker_profile_id, c.start_date, c.end_date, c.id);

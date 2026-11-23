@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Building2,
   CalendarHeart,
+  FileSignature,
   HeartHandshake,
   Home,
   KanbanSquare,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
 import { CompanyProfileSettings } from '@/features/site/components/CompanyProfileSettings';
+import { ContractOpsSettings } from '@/features/contracts/components/ContractOpsSettings';
 import {
   useConfig,
   useRefList,
@@ -25,7 +27,7 @@ import {
   type RefKind,
 } from '@/features/settings/api/settings.api';
 
-type Tab = RefKind | 'config' | 'company';
+type Tab = RefKind | 'config' | 'company' | 'contract_ops';
 
 const TABS: { key: Tab; label: string; icon: typeof Tag }[] = [
   { key: 'sources', label: 'مصادر العملاء', icon: Tag },
@@ -34,6 +36,7 @@ const TABS: { key: Tab; label: string; icon: typeof Tag }[] = [
   { key: 'occasion_types', label: 'أنواع المناسبات', icon: CalendarHeart },
   { key: 'care_needs', label: 'احتياجات الرعاية', icon: HeartHandshake },
   { key: 'config', label: 'قيم النظام', icon: SlidersHorizontal },
+  { key: 'contract_ops', label: 'عمليات العقود', icon: FileSignature },
   { key: 'company', label: 'بيانات الشركة والموقع', icon: Building2 },
 ];
 
@@ -99,6 +102,8 @@ export default function SettingsBoard() {
         <ConfigSection />
       ) : tab === 'company' ? (
         <CompanyProfileSettings />
+      ) : tab === 'contract_ops' ? (
+        <ContractOpsSettings />
       ) : (
         <RefSection
           key={tab}

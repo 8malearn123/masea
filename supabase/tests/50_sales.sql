@@ -86,7 +86,10 @@ end $$;
 select pg_temp.logout();
 
 -- ---------- cancellation keeps the row, flips the status ----------
+-- (0090: a signed contract is cancelled only by its settlement — simulate that path)
+select set_config('masea.settling', 'on', false);
 update contracts set status = 'cancelled' where id = 'd0000000-0000-0000-0000-0000000000a2';
+select set_config('masea.settling', 'off', false);
 select pg_temp.check((select status from sales where contract_id = 'd0000000-0000-0000-0000-0000000000a2') = 'cancelled'
                      and (select cancelled_at from sales where contract_id = 'd0000000-0000-0000-0000-0000000000a2') is not null,
   'cancelled contract → cancelled sale (kept)');
