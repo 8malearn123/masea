@@ -218,6 +218,8 @@ export const createContractInputSchema = z
     promotion_id: z.string().nullable().optional(),
     /** Coupon code — required by the backend when the promotion is a coupon. */
     promotion_code: z.string().nullable().optional(),
+    /** باقة مختارة (0096) — السعر والمدة منها في calc_price */
+    package_id: z.string().nullable().optional(),
     clauses: z.array(z.string()).default([]),
     // Optional at creation for musaned contracts — can be filled once issued on مساند.
     musaned_contract_no: z.string().optional(),

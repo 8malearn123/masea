@@ -26,6 +26,8 @@ import {
 import {
   addAccount,
   addBankAccount,
+  updateBankAccount,
+  type BankAccountInput,
   addCatalogItem,
   addFixedAsset,
   addManualEntry,
@@ -410,11 +412,25 @@ export function useBankAccounts() {
   });
 }
 
+export function useUpdateBankAccount() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, { id: string; input: BankAccountInput }>({
+    mutationFn: ({ id, input }) => updateBankAccount(id, input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BANKS_KEY });
+      void qc.invalidateQueries({ queryKey: ['contracts'] });
+      toast.success('حُفظت بيانات الحساب البنكي');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر الحفظ'),
+  });
+}
+
 export function useAddBankAccount() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<BankAccount, Error, NewBankAccountInput>({
-    mutationFn: async (i) => addBankAccount(i),
+    mutationFn: (i) => addBankAccount(i),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: BANKS_KEY });
       void qc.invalidateQueries({ queryKey: CHART_KEY });

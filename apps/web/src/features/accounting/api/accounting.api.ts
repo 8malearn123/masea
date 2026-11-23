@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { supabase } from '@/shared/lib/supabase';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { CHART } from '@/features/accounting/data/chart';
 import {
@@ -871,7 +873,9 @@ export function convertPoToBill(id: string): Bill {
   return bill;
 }
 
-/* ============================== banks — Phase 5 ========================== */
+/* ============================== banks — Phase 5 / 0096 ==================== */
+const COMPANY = 'شركة ماسية الشرق للاستقدام';
+// أمثلة الوضع التجريبي فقط — الحسابات الفعلية يُدخلها الإداري من شاشة البنوك
 const BANK_ACCOUNTS: BankAccount[] = [
   {
     id: 'bank-1',
@@ -880,6 +884,10 @@ const BANK_ACCOUNTS: BankAccount[] = [
     bank: 'نقدية',
     iban: null,
     is_active: true,
+    holder_name: COMPANY,
+    account_no: null,
+    currency: 'SAR',
+    branch: null,
   },
   {
     id: 'bank-2',
@@ -888,6 +896,10 @@ const BANK_ACCOUNTS: BankAccount[] = [
     bank: 'مصرف الراجحي',
     iban: 'SA0380000000608010167519',
     is_active: true,
+    holder_name: COMPANY,
+    account_no: '608010167519',
+    currency: 'SAR',
+    branch: null,
   },
   {
     id: 'bank-3',
@@ -896,41 +908,110 @@ const BANK_ACCOUNTS: BankAccount[] = [
     bank: 'البنك الأهلي',
     iban: 'SA4420000001234567891234',
     is_active: true,
+    holder_name: COMPANY,
+    account_no: '01234567891234',
+    currency: 'SAR',
+    branch: null,
   },
 ];
 let bankCodeSeq = 1113;
 
-export async function listBankAccounts(): Promise<BankAccount[]> {
-  return BANK_ACCOUNTS.map((b) => ({ ...b }));
+const IBAN_RE = /^SA\d{22}$/;
+const normIban = (v: string) => v.replace(/\s+/g, '').toUpperCase();
+
+export const bankAccountSchema = z.object({
+  name: z.string().trim().min(3, { message: 'اسم الحساب مطلوب' }),
+  bank: z.string().trim().min(2, { message: 'اسم البنك مطلوب' }),
+  holder_name: z.string().trim().max(120).optional(),
+  iban: z
+    .string()
+    .transform(normIban)
+    .refine((v) => v === '' || IBAN_RE.test(v), { message: 'الآيبان غير صحيح — SA ثم 22 رقماً' }),
+  account_no: z.string().trim().max(40).optional(),
+  currency: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z]{3}$/, { message: 'رمز العملة ثلاثة أحرف (SAR)' })
+    .default('SAR'),
+  branch: z.string().nullable(),
+  is_active: z.boolean().default(true),
+});
+export type BankAccountInput = z.input<typeof bankAccountSchema>;
+
+interface BankRow {
+  id: string;
+  name: string;
+  account_code: string;
+  bank: string | null;
+  iban: string | null;
+  is_active: boolean;
+  holder_name: string | null;
+  account_no: string | null;
+  currency: string | null;
+  branches: { city: string | null } | null;
 }
 
-export type NewBankAccountInput = {
-  name: string;
-  bank: string;
-  iban: string;
-  opening_balance: number;
-  branch: string | null;
-};
+export async function listBankAccounts(): Promise<BankAccount[]> {
+  if (isDemoMode()) return BANK_ACCOUNTS.map((b) => ({ ...b }));
+  const { data, error } = await supabase
+    .from('bank_accounts')
+    .select(
+      'id, name, account_code, bank, iban, is_active, holder_name, account_no, currency, branches(city)',
+    )
+    .order('account_code');
+  if (error) throw new Error(`تعذّر تحميل الحسابات البنكية: ${error.message}`);
+  return ((data ?? []) as unknown as BankRow[]).map(({ branches, ...b }) => ({
+    ...b,
+    bank: b.bank ?? '',
+    currency: b.currency ?? 'SAR',
+    branch: branches?.city ?? null,
+  }));
+}
+
+export type NewBankAccountInput = BankAccountInput & { opening_balance: number };
 
 /** Add a bank account → new chart leaf under النقدية والبنوك (1110) + optional opening balance. */
-export function addBankAccount(input: NewBankAccountInput): BankAccount {
-  if (!input.name.trim()) throw new Error('اسم الحساب مطلوب');
+export async function addBankAccount(input: NewBankAccountInput): Promise<BankAccount> {
+  const v = bankAccountSchema.parse(input);
+  if (!isDemoMode()) {
+    const { data, error } = await supabase.rpc('upsert_bank_account', {
+      p_id: null,
+      p_name: v.name,
+      p_bank: v.bank,
+      p_holder: v.holder_name || null,
+      p_iban: v.iban || null,
+      p_account_no: v.account_no || null,
+      p_currency: v.currency,
+      p_branch: v.branch,
+      p_account_code: null,
+      p_is_active: v.is_active,
+    });
+    if (error) throw new Error(error.message);
+    const acc = (await listBankAccounts()).find((b) => b.id === (data as string));
+    if (!acc) throw new Error('أُضيف الحساب لكن تعذّر تحميله');
+    return acc;
+  }
   bankCodeSeq += 1;
   const code = String(bankCodeSeq);
   addAccount({
     code,
-    name_ar: input.name.trim(),
+    name_ar: v.name,
     type: 'asset',
     parent_code: '1110',
     normal_balance: 'debit',
   });
   const acc: BankAccount = {
     id: `bank-${code}`,
-    name: input.name.trim(),
+    name: v.name,
     account_code: code,
-    bank: input.bank.trim(),
-    iban: input.iban.trim() || null,
-    is_active: true,
+    bank: v.bank,
+    iban: v.iban || null,
+    is_active: v.is_active,
+    holder_name: v.holder_name || null,
+    account_no: v.account_no || null,
+    currency: v.currency,
+    branch: v.branch,
   };
   BANK_ACCOUNTS.push(acc);
   if (input.opening_balance > 0) {
@@ -939,8 +1020,8 @@ export function addBankAccount(input: NewBankAccountInput): BankAccount {
       id: `je-bankopen-${code}`,
       entry_no: extraSeq,
       entry_date: '2026-01-01',
-      branch: input.branch,
-      description: `رصيد افتتاحي - ${input.name.trim()}`,
+      branch: v.branch,
+      description: `رصيد افتتاحي - ${v.name}`,
       reference: `BANKOPEN-${code}`,
       source_type: 'manual',
       status: 'posted',
@@ -955,7 +1036,42 @@ export function addBankAccount(input: NewBankAccountInput): BankAccount {
       ],
     });
   }
-  return acc;
+  return { ...acc };
+}
+
+/** تعديل بيانات حساب بنكي أو تعطيله (لا حذف — قيوده تبقى). */
+export async function updateBankAccount(id: string, input: BankAccountInput): Promise<void> {
+  const v = bankAccountSchema.parse(input);
+  if (!isDemoMode()) {
+    const cur = (await listBankAccounts()).find((b) => b.id === id);
+    if (!cur) throw new Error('الحساب غير موجود');
+    const { error } = await supabase.rpc('upsert_bank_account', {
+      p_id: id,
+      p_name: v.name,
+      p_bank: v.bank,
+      p_holder: v.holder_name || null,
+      p_iban: v.iban || null,
+      p_account_no: v.account_no || null,
+      p_currency: v.currency,
+      p_branch: v.branch,
+      p_account_code: cur.account_code,
+      p_is_active: v.is_active,
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  const acc = BANK_ACCOUNTS.find((b) => b.id === id);
+  if (!acc) throw new Error('الحساب غير موجود');
+  Object.assign(acc, {
+    name: v.name,
+    bank: v.bank,
+    iban: v.iban || null,
+    holder_name: v.holder_name || null,
+    account_no: v.account_no || null,
+    currency: v.currency,
+    branch: v.branch,
+    is_active: v.is_active,
+  });
 }
 
 /** Transfer between two cash/bank accounts (DR to / CR from) — mirror of post_bank_transfer. */

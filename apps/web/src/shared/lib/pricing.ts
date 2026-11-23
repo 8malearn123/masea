@@ -10,6 +10,8 @@ export interface PriceArgs {
   quantity: number;
   /** branch of the order — a branch-specific rule wins over the general one (0065) */
   branch?: string | null | undefined;
+  /** باقة مختارة (pricing_rules.package_name) — سعرها للوحدة × مدتها الثابتة (0096) */
+  package_id?: string | null | undefined;
 }
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -248,6 +250,9 @@ export interface FloorRule {
   profession: string | null;
   min_price: number | null;
   is_active: boolean;
+  id?: string;
+  package_name?: string | null;
+  duration_count?: number | null;
 }
 
 /**
@@ -255,10 +260,15 @@ export interface FloorRule {
  * `min_price × quantity` — the same rule selection calc_price uses.
  */
 export function ruleFloor(rules: FloorRule[], service: string, args: PriceArgs): number {
+  if (args.package_id) {
+    const pkg = rules.find((r) => r.id === args.package_id && r.is_active && !!r.package_name);
+    return round2((pkg?.min_price ?? 0) * Math.max(pkg?.duration_count ?? 1, 1));
+  }
   const match = rules
     .filter(
       (r) =>
         r.is_active &&
+        !r.package_name &&
         r.service_code === service &&
         (r.nationality == null || r.nationality === args.nationality) &&
         (r.profession == null || r.profession === args.profession),

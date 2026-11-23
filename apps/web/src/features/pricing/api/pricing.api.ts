@@ -60,6 +60,22 @@ const FALLBACK: PricingRule[] = [
   rule('hourly_rental', null, 'تنظيف', 'hour', 40, 36),
   rule('hourly_rental', null, 'طبخ', 'hour', 50, 45),
   rule('hourly_rental', null, 'رعاية', 'hour', 55, 50),
+  // باقات (0096) — قواعد مسمّاة بمدة ثابتة، تُختار صراحةً في العقد
+  {
+    ...rule('monthly_rental', 'الفلبين', null, 'month', 2350, 2200),
+    package_name: 'باقة ستة أشهر',
+    duration_count: 6,
+  },
+  {
+    ...rule('monthly_rental', 'الفلبين', null, 'month', 2200, 2100),
+    package_name: 'باقة سنة',
+    duration_count: 12,
+  },
+  {
+    ...rule('daily_rental', null, 'تنظيف', 'day', 160, 150),
+    package_name: 'باقة أسبوع',
+    duration_count: 7,
+  },
   {
     ...rule('hourly_rental', null, 'تنظيف', 'hour', 38, 34),
     branch_id: 'نجران',
@@ -74,7 +90,7 @@ export async function listAllPricingRules(): Promise<PricingRule[]> {
     const { data, error } = await supabase
       .from('pricing_rules')
       .select(
-        'id, service_code, nationality, profession, duration_unit, base_price, min_price, is_active, updated_at, branch_id, branches(city)',
+        'id, service_code, nationality, profession, duration_unit, base_price, min_price, is_active, updated_at, branch_id, package_name, duration_count, branches(city)',
       );
     // خادم حقيقي: لا قواعد = لا أسعار (تظهر رسالة «لا توجد قاعدة سعر»)، لا أسعار تجريبية
     if (error) throw new Error(`تعذّر تحميل قواعد الأسعار: ${error.message}`);
@@ -177,10 +193,24 @@ export interface NewRuleInput {
   min_price: number | null;
   /** branch name for a branch-specific price; null = all branches */
   branch?: string | null;
+  /** باقة مسمّاة بمدة ثابتة (0096) — اتركهما فارغين لقاعدة سعر عادية */
+  package_name?: string | null;
+  duration_count?: number | null;
 }
 
 export async function createPricingRule(input: NewRuleInput, actor: string): Promise<PricingRule> {
   validateRule(input.base_price, input.min_price);
+  const pkgName = input.package_name?.trim() || null;
+  if (pkgName) {
+    if (pkgName.length < 2) throw new Error('اسم الباقة قصير');
+    const n = input.duration_count ?? 0;
+    if (!Number.isInteger(n) || n < 1 || n > 120) throw new Error('مدة الباقة بين 1 و120');
+  }
+  input = {
+    ...input,
+    package_name: pkgName,
+    duration_count: pkgName ? (input.duration_count ?? null) : null,
+  };
   const existing = await listAllPricingRules();
   const dup = existing.find(
     (r) =>
@@ -189,7 +219,8 @@ export async function createPricingRule(input: NewRuleInput, actor: string): Pro
       (r.nationality ?? null) === (input.nationality ?? null) &&
       (r.profession ?? null) === (input.profession ?? null) &&
       (r.duration_unit ?? null) === (input.duration_unit ?? null) &&
-      (r.branch_id ?? null) === (input.branch ?? null),
+      (r.branch_id ?? null) === (input.branch ?? null) &&
+      (r.package_name ?? null) === (input.package_name ?? null),
   );
   if (dup)
     throw new Error('توجد قاعدة نشطة لنفس الخدمة والجنسية/المهنة والفرع — عدّلها بدل التكرار');

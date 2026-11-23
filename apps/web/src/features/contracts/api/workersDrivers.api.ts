@@ -159,9 +159,7 @@ export async function workerHistory(workerId: string): Promise<WorkerHistoryRow[
 }
 
 /** هوية العاملة للعقد (الجواز/الإقامة/الجوال) — contract_worker_doc (0087). */
-export async function workerDoc(
-  workerId: string,
-): Promise<{
+export async function workerDoc(workerId: string): Promise<{
   passport_no?: string | null;
   iqama_no?: string | null;
   phone?: string | null;

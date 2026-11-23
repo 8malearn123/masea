@@ -1,31 +1,18 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, FileDown, Plus, ScrollText, UserRound, Users, Wallet } from 'lucide-react';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  ErrorState,
-  Input,
-  Modal,
-  Select,
-  Skeleton,
-  useToast,
-} from '@/shared/ui';
-import { sar, dateAr, dateTimeAr } from '@/shared/lib/format';
+import { useQuery } from '@tanstack/react-query';
+import { Building2, FileDown, ScrollText, UserRound, Users } from 'lucide-react';
+import { Badge, Button, Card, ErrorState, Skeleton, useToast } from '@/shared/ui';
+import { sar, dateTimeAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoMode } from '@/shared/lib/demoBackend';
 import { contractKeys } from '@/features/contracts/api/keys';
 import { getCompanyProfile, loadRentalDocument } from '@/features/contracts/api/rentalContract.api';
 import {
-  listContractPayments,
-  PAYMENT_METHOD_LABEL,
-  paymentInputSchema,
-  recordContractPayment,
-  type PaymentMethod,
-} from '@/features/contracts/api/contractPayments.api';
+  InstallmentsCard,
+  PaymentsCard,
+  RecordPaymentModal,
+} from '@/features/contracts/components/details/FinancePanels';
 import { contractDocumentHtml } from '@/features/contracts/lib/contractDocument';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
 import type {
@@ -263,98 +250,11 @@ export function ClausesTab({
 
 /* ------------------------------- المالية --------------------------------- */
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-export function RecordPaymentModal({
-  contract,
-  onClose,
-}: {
-  contract: ContractListItem;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const remaining = Math.round((contract.total_amount - contract.amount_paid) * 100) / 100;
-  const [amount, setAmount] = useState(remaining);
-  const [method, setMethod] = useState<PaymentMethod>('transfer');
-  const [ref, setRef] = useState('');
-  const [paidOn, setPaidOn] = useState(today());
-  const parsed = paymentInputSchema.safeParse({
-    amount,
-    method,
-    reference_no: ref,
-    paid_on: paidOn,
-  });
-  const err = !parsed.success
-    ? (parsed.error.issues[0]?.message ?? null)
-    : amount > remaining
-      ? `المبلغ يتجاوز المتبقي (${sar(remaining)})`
-      : null;
-  const save = useMutation({
-    mutationFn: () =>
-      recordContractPayment(contract.id, { amount, method, reference_no: ref, paid_on: paidOn }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: contractKeys.all });
-      toast.success('سُجّلت الدفعة — حُدّث المدفوع والقيد المحاسبي');
-      onClose();
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-  return (
-    <Modal open onClose={onClose} title="تسجيل دفعة">
-      <div className="space-y-3">
-        <p className="text-sm text-purple">
-          المتبقي على العقد: <span className="num font-bold text-navy">{sar(remaining)}</span> ر.س
-        </p>
-        <Input
-          label="المبلغ"
-          type="number"
-          min={0}
-          max={remaining}
-          suffix="ر.س"
-          value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))}
-        />
-        <Select
-          label="طريقة الدفع"
-          value={method}
-          onChange={(e) => setMethod(e.target.value as PaymentMethod)}
-          options={(Object.keys(PAYMENT_METHOD_LABEL) as PaymentMethod[]).map((m) => ({
-            value: m,
-            label: PAYMENT_METHOD_LABEL[m],
-          }))}
-        />
-        <Input label="رقم المرجع (اختياري)" value={ref} onChange={(e) => setRef(e.target.value)} />
-        <Input
-          label="تاريخ الدفعة"
-          type="date"
-          max={today()}
-          value={paidOn}
-          onChange={(e) => setPaidOn(e.target.value)}
-        />
-        {err && <p className="text-[11px] text-gold-600">{err}</p>}
-        <Button
-          className="w-full"
-          disabled={Boolean(err)}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          تسجيل الدفعة
-        </Button>
-      </div>
-    </Modal>
-  );
-}
+export { RecordPaymentModal } from '@/features/contracts/components/details/FinancePanels';
 
 export function FinanceTab({ contract }: { contract: ContractListItem }) {
   const { can } = usePermissions();
   const [paying, setPaying] = useState(false);
-  const payQ = useQuery({
-    queryKey: [...contractKeys.detail(contract.id), 'payments', contract.amount_paid],
-    queryFn: () => listContractPayments(contract.id),
-  });
   const remaining = Math.round((contract.total_amount - contract.amount_paid) * 100) / 100;
   const canPay =
     can('payments', 'create') && remaining > 0 && !['draft', 'cancelled'].includes(contract.status);
@@ -400,42 +300,8 @@ export function FinanceTab({ contract }: { contract: ContractListItem }) {
           />
         </dl>
       </Card>
-      <Card>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-sm font-bold text-navy">
-            <Wallet size={16} /> الدفعات
-          </h3>
-          {canPay && (
-            <Button size="sm" onClick={() => setPaying(true)}>
-              <Plus size={14} /> تسجيل دفعة
-            </Button>
-          )}
-        </div>
-        {payQ.isLoading ? (
-          <Skeleton className="h-20 w-full" />
-        ) : payQ.isError ? (
-          <ErrorState onRetry={() => void payQ.refetch()} />
-        ) : (payQ.data ?? []).length === 0 ? (
-          <EmptyState
-            icon={Wallet}
-            title="لا دفعات مسجّلة"
-            {...(contract.amount_paid > 0
-              ? { description: 'المدفوع مسجّل من مصدر سابق (لا تفاصيل دفعات).' }
-              : {})}
-          />
-        ) : (
-          <ul className="divide-y divide-navy-50 text-sm">
-            {(payQ.data ?? []).map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span className="num">{dateAr(p.paid_at)}</span>
-                <span>{p.method ? PAYMENT_METHOD_LABEL[p.method] : NA}</span>
-                <span className="num text-purple">{p.reference_no ?? '—'}</span>
-                <span className="num font-bold">{sar(p.amount)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+      <InstallmentsCard contract={contract} />
+      <PaymentsCard contract={contract} onRecord={canPay ? () => setPaying(true) : null} />
       {paying && <RecordPaymentModal contract={contract} onClose={() => setPaying(false)} />}
     </div>
   );
