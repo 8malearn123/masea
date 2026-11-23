@@ -65,8 +65,11 @@ describe('واجهة تجديد العقد', () => {
     // صفحة النسخة الجديدة: «الإصدار 2 — تجديد العقد MAS-2026-00009»
     const parentLinks = await screen.findAllByRole('link', { name: 'MAS-2026-00009' });
     expect(parentLinks[0]).toHaveAttribute('href', '/contracts/00009');
-    expect(screen.getByText(/تجديد العقد/, { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText(/تجديد العقد/, { selector: 'span' })).toBeInTheDocument();
+    // سجل النسخ في تبويب «العمليات»
+    fireEvent.click(screen.getByRole('tab', { name: 'العمليات' }));
     expect(await screen.findByText('سجل النسخ')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'نظرة عامة' }));
     // مدة نسخة التجديد مطابقة للأصل — لا بطاقة تعديل للمدة
     expect(screen.queryByText('تعديل مدة العقد')).not.toBeInTheDocument();
   });

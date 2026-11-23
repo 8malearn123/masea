@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ToastProvider } from '@/shared/ui';
@@ -44,7 +44,9 @@ describe('contract created from accepted terms', () => {
     expect(await screen.findByText(/موافقة إلكترونية على الشروط ·/)).toBeInTheDocument();
     expect(screen.getByText('REQ-1A2B3C4D')).toBeInTheDocument();
     expect(screen.getByText('تاريخ موافقة العميل')).toBeInTheDocument();
-    expect(screen.getByText('الشروط التي وافق عليها العميل')).toBeInTheDocument();
+    // البنود في تبويبها
+    fireEvent.click(screen.getByRole('tab', { name: 'بنود العقد' }));
+    expect(await screen.findByText('الشروط التي وافق عليها العميل')).toBeInTheDocument();
     expect(await screen.findByText('المهمة: تنظيف لمدة 3 أيام.')).toBeInTheDocument();
     // signed → the next step is activating it, as any signed contract
     expect(screen.getAllByText('موقّع').length).toBeGreaterThan(0);
