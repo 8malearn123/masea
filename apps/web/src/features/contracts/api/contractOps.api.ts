@@ -1121,14 +1121,15 @@ export function demoPinReplacementPolicy(
   demoPolicy[contractId] = policy;
 }
 
-export async function listReplacements(contractId: string): Promise<Replacement[]> {
-  if (!live(contractId))
-    return replacements.filter((r) => r.contract_id === contractId).map((r) => ({ ...r }));
-  const { data, error } = await supabase
-    .from('contract_replacements')
-    .select('*')
-    .eq('contract_id', contractId)
-    .order('seq', { ascending: false });
+export async function listReplacements(contractId?: string): Promise<Replacement[]> {
+  if (isDemoMode() || (contractId && isDemoId(contractId))) {
+    return replacements
+      .filter((r) => !contractId || r.contract_id === contractId)
+      .map((r) => ({ ...r }));
+  }
+  let q = supabase.from('contract_replacements').select('*').order('seq', { ascending: false });
+  if (contractId) q = q.eq('contract_id', contractId);
+  const { data, error } = await q;
   if (error) throw new Error(`تعذّر جلب الاستبدالات: ${error.message}`);
   return (data ?? []) as Replacement[];
 }

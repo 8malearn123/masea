@@ -22,6 +22,9 @@ const MyAttendance = lazy(() => import('@/features/hr/components/MyAttendance'))
 const ContractsList = lazy(() => import('@/features/contracts/components/ContractsList'));
 const ContractWizard = lazy(() => import('@/features/contracts/components/ContractWizard'));
 const ContractDetails = lazy(() => import('@/features/contracts/components/ContractDetails'));
+const ContractOpsDashboard = lazy(
+  () => import('@/features/contracts/components/ContractOpsDashboard'),
+);
 const TrialsBoard = lazy(() => import('@/features/contracts/components/TrialsBoard'));
 const TrialAcceptPage = lazy(() => import('@/features/contracts/components/TrialAcceptPage'));
 const RentalTemplateReview = lazy(
@@ -146,6 +149,14 @@ export default function App() {
               element={
                 <RequirePerm module="contracts" action="create">
                   <ContractWizard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="contracts/operations"
+              element={
+                <RequirePerm module="contracts">
+                  <ContractOpsDashboard />
                 </RequirePerm>
               }
             />
