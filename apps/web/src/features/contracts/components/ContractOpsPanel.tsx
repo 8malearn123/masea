@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { History, PackageCheck, RotateCcw, Scale, TriangleAlert, Truck, Undo2 } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  History,
+  PackageCheck,
+  RotateCcw,
+  Scale,
+  TriangleAlert,
+  Truck,
+  Undo2,
+} from 'lucide-react';
 import {
   Badge,
   Button,
@@ -20,6 +29,7 @@ import {
   useLookups,
   useOpsEvents,
   useRefunds,
+  useReplacements,
   useRequestReturn,
   useReturns,
   useReturnStep,
@@ -36,6 +46,10 @@ import {
 import { requiresSettlement } from '@/features/contracts/lib/contractState';
 import { SettlementCard, SettlementWizard } from '@/features/contracts/components/SettlementPanel';
 import { RefundCard } from '@/features/contracts/components/RefundPanel';
+import {
+  ReplacementCard,
+  ReplacementRequestModal,
+} from '@/features/contracts/components/ReplacementPanel';
 import type { ContractListItem } from '@/features/contracts/types';
 import type { ReactNode } from 'react';
 
@@ -365,32 +379,33 @@ function ReturnCard({
 }
 
 /**
- * «عمليات العقد» داخل صفحة التفاصيل: إلغاء وتسوية · إرجاع · (استبدال) ·
+ * «عمليات العقد» داخل صفحة التفاصيل: إلغاء وتسوية · إرجاع · استبدال ·
  * طلبات الاسترداد · سجل العمليات والموافقات. كل زر يعمل فعلياً أو يشرح سبب تعطيله.
  */
-export function ContractOpsPanel({
-  contract,
-  extraActions,
-}: {
-  contract: ContractListItem;
-  extraActions?: ReactNode;
-}) {
+export function ContractOpsPanel({ contract }: { contract: ContractListItem }) {
   const { can } = usePermissions();
   const settlementsQ = useSettlements(contract.id);
   const returnsQ = useReturns(contract.id);
   const refundsQ = useRefunds(contract.id);
   const eventsQ = useOpsEvents(contract.id);
+  const replacementsQ = useReplacements(contract.id);
   const { data: cancelReasons = [] } = useLookups('cancel_reason');
   const [wizard, setWizard] = useState<{
     returnId: string | null;
     date: string | undefined;
   } | null>(null);
   const [returning, setReturning] = useState(false);
+  const [replacing, setReplacing] = useState(false);
 
   const settlements = settlementsQ.data ?? [];
   const returns = returnsQ.data ?? [];
   const refunds = refundsQ.data ?? [];
   const events = eventsQ.data ?? [];
+  const replacementList = replacementsQ.data ?? [];
+  const liveReplacement =
+    replacementList.find((r) =>
+      ['requested', 'pending_exception', 'eligible', 'scheduled'].includes(r.status),
+    ) ?? null;
   const liveSettlement =
     settlements.find((s) => !['rejected', 'cancelled'].includes(s.status)) ?? null;
   const liveReturn =
@@ -421,8 +436,22 @@ export function ContractOpsPanel({
             ? 'استُلمت العاملة وأُتيحت مسبقاً'
             : null;
 
-  const loading = settlementsQ.isLoading || returnsQ.isLoading || refundsQ.isLoading;
-  const error = settlementsQ.isError || returnsQ.isError || refundsQ.isError;
+  const replaceBlocked = !can('contracts', 'edit')
+    ? 'يتطلب صلاحية تعديل العقود'
+    : contract.status !== 'active'
+      ? 'الاستبدال لعقد نشط سُلِّمت فيه العاملة'
+      : !contract.worker_profile_id && !contract.worker_name
+        ? 'لا توجد عاملة مرتبطة بهذا العقد'
+        : liveSettlement
+          ? 'يوجد إلغاء/تسوية قائمة لهذا العقد'
+          : liveReplacement
+            ? `يوجد طلب استبدال قائم (${liveReplacement.replacement_no})`
+            : null;
+
+  const loading =
+    settlementsQ.isLoading || returnsQ.isLoading || refundsQ.isLoading || replacementsQ.isLoading;
+  const error =
+    settlementsQ.isError || returnsQ.isError || refundsQ.isError || replacementsQ.isError;
 
   return (
     <Card>
@@ -443,7 +472,12 @@ export function ContractOpsPanel({
           blocked={returnBlocked}
           onClick={() => setReturning(true)}
         />
-        {extraActions}
+        <ActionButton
+          icon={<ArrowLeftRight size={15} />}
+          label="استبدال العاملة"
+          blocked={replaceBlocked}
+          onClick={() => setReplacing(true)}
+        />
       </div>
 
       {loading ? (
@@ -455,10 +489,11 @@ export function ContractOpsPanel({
               void settlementsQ.refetch();
               void returnsQ.refetch();
               void refundsQ.refetch();
+              void replacementsQ.refetch();
             }}
           />
         </div>
-      ) : settlements.length + returns.length + refunds.length === 0 ? (
+      ) : settlements.length + returns.length + refunds.length + replacementList.length === 0 ? (
         <div className="mt-4">
           <EmptyState
             icon={History}
@@ -468,6 +503,9 @@ export function ContractOpsPanel({
         </div>
       ) : (
         <div className="mt-4 space-y-3">
+          {replacementList.map((r) => (
+            <ReplacementCard key={r.id} r={r} contract={contract} />
+          ))}
           {returns.map((r) => (
             <ReturnCard
               key={r.id}
@@ -525,6 +563,9 @@ export function ContractOpsPanel({
         />
       )}
       {returning && <ReturnRequestModal contract={contract} onClose={() => setReturning(false)} />}
+      {replacing && (
+        <ReplacementRequestModal contract={contract} onClose={() => setReplacing(false)} />
+      )}
     </Card>
   );
 }
