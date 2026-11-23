@@ -114,7 +114,8 @@ describe('recording a payment from the contract page', () => {
     await recordContractPayment(c.id, {
       amount: 1000,
       method: 'transfer',
-      reference_no: 'TRF-1',
+      bank_account_id: 'bank-2',
+      transaction_no: 'TRF-1',
       paid_on: '2026-11-20',
     });
     expect((await getContract(c.id))?.amount_paid).toBe(1000);

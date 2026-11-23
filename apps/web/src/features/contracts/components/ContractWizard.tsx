@@ -6,6 +6,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, CalendarRange, Check, CircleAlert, FileText, UserPlus } from 'lucide-react';
 import { Button, Card, Input, Select, useToast } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
+import { packagesFor } from '@/features/pricing/lib/engine';
+import { buildSchedule, setInstallments } from '@/features/contracts/api/contractPayments.api';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
 import { BRANCHES_AR, type WorkerProfile } from '@/lib/funnel';
 import { usePrice } from '@/hooks/usePricing';
@@ -89,6 +91,10 @@ interface Draft {
   endTime: string;
   /** موعد التسليم المتوقع (مهمة توصيل بانتظار إسناد سائق) */
   deliveryAt: string;
+  /** الباقة المختارة (قاعدة تسعير مسمّاة بمدة — 0096)؛ فارغ = حسب العدد */
+  packageId?: string | undefined;
+  /** خطة السداد: عدد الأقساط الشهرية (1 = دفعة واحدة) */
+  installments?: number | undefined;
 }
 
 const EMPTY: Draft = {
@@ -275,8 +281,27 @@ export default function ContractWizard() {
   const current = stepKeys[step] ?? 'service';
 
   const service = d.service || 'recruitment';
+  // الباقات المسمّاة للخدمة (من قائمة الأسعار نفسها) — التأجير الشهري واليومي
+  const packages = useMemo(
+    () =>
+      d.service === 'monthly_rental' || d.service === 'daily_rental'
+        ? packagesFor(rules, d.service, {
+            nationality: d.nationality || undefined,
+            branch: d.branch || null,
+          }).filter(
+            (r) => d.service !== 'daily_rental' || r.profession == null || r.profession === d.task,
+          )
+        : [],
+    [rules, d.service, d.nationality, d.branch, d.task],
+  );
+  const activePkg = packages.find((p) => p.id === d.packageId) ?? null;
   // مدة العقد: أشهر عقد الاستقدام، أو العدد (أشهر/أيام) للتأجير؛ نقل الكفالة بلا مدة.
-  const termCount = d.service === 'recruitment' ? d.contractMonths : d.quantity;
+  const termCount =
+    d.service === 'recruitment'
+      ? d.contractMonths
+      : activePkg
+        ? Math.max(activePkg.duration_count ?? 1, 1)
+        : d.quantity;
   const endDate = isHourly
     ? d.start_date || null
     : contractEndDate(d.service || null, d.start_date, termCount);
@@ -291,12 +316,13 @@ export default function ContractWizard() {
       profession: d.service === 'daily_rental' || isHourly ? d.task : d.profession || undefined,
       quantity:
         d.service === 'monthly_rental' || d.service === 'daily_rental'
-          ? Math.max(d.quantity, 1)
+          ? Math.max(termCount, 1)
           : isHourly
             ? Math.max(hours, 0)
             : 1,
+      package_id: activePkg?.id ?? undefined,
     }),
-    [d.nationality, d.profession, d.task, d.quantity, d.service, isHourly, hours],
+    [d.nationality, d.profession, d.task, termCount, d.service, isHourly, hours, activePkg],
   );
   const { data: listPrice, isLoading: priceLoading } = usePrice(
     service,
@@ -448,6 +474,12 @@ export default function ContractWizard() {
     return null;
   }
   const err = stepError();
+  // خطة السداد: دفعة واحدة أو أقساط شهرية (حتى عدد أشهر العقد الشهري)
+  const planOptions = useMemo(() => {
+    const max = d.service === 'monthly_rental' ? Math.max(termCount, 1) : 4;
+    return Array.from({ length: Math.min(max, 24) }, (_, i) => i + 1);
+  }, [d.service, termCount]);
+  const planCount = Math.min(d.installments ?? 1, planOptions.length);
 
   function pickWorker(w: WorkerProfile) {
     set({ worker: w, nationality: w.nationality, profession: w.profession });
@@ -554,6 +586,7 @@ export default function ContractWizard() {
       template_id: musaned ? null : rentalTpl ? rentalTpl.id : (template?.id ?? null),
       promotion_id: promotion?.id ?? null,
       promotion_code: d.promotionCode,
+      package_id: activePkg?.id ?? null,
       // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
       clauses: musaned ? [] : rentalTpl ? legalClausesOf(rentalTpl.doc) : clausePreview,
       musaned_contract_no: musaned ? d.musanedNo.trim() || undefined : undefined,
@@ -598,6 +631,14 @@ export default function ContractWizard() {
             });
         }
         await scheduleDelivery(created.id);
+        if (planCount > 1 && created.total_amount > 0) {
+          await setInstallments(
+            created.id,
+            buildSchedule(created.total_amount, d.start_date, planCount),
+          ).catch((e: unknown) =>
+            toast.error(`أُنشئ العقد دون جدول الاستحقاقات: ${e instanceof Error ? e.message : ''}`),
+          );
+        }
         clearDraft(uid);
         toast.success(
           musaned
@@ -782,13 +823,34 @@ export default function ContractWizard() {
                 }))}
               />
             )}
+            {packages.length > 0 && (
+              <Select
+                label="الباقة"
+                value={activePkg?.id ?? ''}
+                onChange={(e) => {
+                  const p = packages.find((x) => x.id === e.target.value);
+                  set({
+                    packageId: p?.id,
+                    ...(p ? { quantity: Math.max(p.duration_count ?? 1, 1) } : {}),
+                  });
+                }}
+                options={[
+                  { value: '', label: 'بدون باقة — حسب العدد' },
+                  ...packages.map((p) => ({
+                    value: p.id,
+                    label: `${p.package_name} — ${p.duration_count} ${d.service === 'monthly_rental' ? 'شهر' : 'يوم'} · ${sar(p.base_price)} ر.س للوحدة`,
+                  })),
+                ]}
+              />
+            )}
             {(d.service === 'monthly_rental' || d.service === 'daily_rental') && (
               <Input
                 label={d.service === 'monthly_rental' ? 'عدد الأشهر' : 'عدد الأيام'}
                 type="number"
                 min={1}
                 step={1}
-                value={d.quantity}
+                value={activePkg ? termCount : d.quantity}
+                disabled={Boolean(activePkg)}
                 onChange={(e) => set({ quantity: Number(e.target.value) })}
               />
             )}
@@ -958,6 +1020,26 @@ export default function ContractWizard() {
                 onChange={(p, code) => set({ promotion: p, promotionCode: code })}
                 disabled={!listPrice}
               />
+              {!isHourly && d.service !== 'sponsorship_transfer' && planOptions.length > 1 && (
+                <div className="mt-4">
+                  <Select
+                    label="خطة السداد"
+                    value={String(planCount)}
+                    onChange={(e) => set({ installments: Number(e.target.value) })}
+                    options={planOptions.map((n) => ({
+                      value: String(n),
+                      label:
+                        n === 1
+                          ? 'دفعة واحدة'
+                          : `${n} أقساط شهرية${price ? ` — ${sar(Math.round((price.total / n) * 100) / 100)} ر.س تقريباً` : ''}`,
+                    }))}
+                  />
+                  <p className="mt-1 text-[11px] text-purple">
+                    يُنشأ جدول الاستحقاقات مع العقد، وتُسجَّل الدفعات من صفحة العقد (الطريقة والحساب
+                    المستلم ورقم العملية).
+                  </p>
+                </div>
+              )}
               <p className="mt-3 text-[11px] text-purple">
                 لا يوجد خصم مفتوح — تُختار الخصومات من القائمة المعتمدة في شاشة التسعير، ويُعاد
                 التحقق من شروطها واحتسابها في الـ backend عند حفظ العقد.

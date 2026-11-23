@@ -16,6 +16,9 @@ export interface PricingRule {
   branch_id?: string | null;
   /** display name of that branch */
   branch_name?: string | null;
+  /** باقة مسمّاة بمدة ثابتة (0096) — تُختار صراحةً ولا تدخل في المطابقة العامة */
+  package_name?: string | null;
+  duration_count?: number | null;
 }
 
 /** A price change (pricing_rule_changes, 0058) — old → new with reason & effective date. */

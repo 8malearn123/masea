@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeftRight, Landmark, Plus, ScrollText } from 'lucide-react';
-import { Button, Card, Input, Modal, Select, Table, type Column } from '@/shared/ui';
+import { ArrowLeftRight, Landmark, Pencil, Plus, ScrollText } from 'lucide-react';
+import { Badge, Button, Card, Input, Modal, Select, Table, type Column } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { BRANCHES_AR } from '@/lib/funnel';
 import {
   useAddBankAccount,
   useBankAccounts,
+  useUpdateBankAccount,
   useBankTransfer,
   useJournal,
 } from '@/features/accounting/hooks/useAccounting';
 import type { BankAccount, JournalEntry } from '@/features/accounting/types';
+import { bankAccountSchema } from '@/features/accounting/api/accounting.api';
 
 const branchOptions = [
   { value: 'head', label: 'المركز الرئيسي' },
@@ -29,6 +31,8 @@ function balanceOf(entries: JournalEntry[], code: string): number {
 export function BanksScreen() {
   const { can } = usePermissions();
   const editable = can('accounting', 'create');
+  const canEdit = can('accounting', 'edit');
+  const [editing, setEditing] = useState<BankAccount | null>(null);
   const { data: accounts = [], isLoading, isError, refetch } = useBankAccounts();
   const { data: entries = [] } = useJournal();
   const [transfer, setTransfer] = useState(false);
@@ -42,9 +46,39 @@ export function BanksScreen() {
     {
       key: 'name',
       header: 'الحساب',
-      cell: (a) => <span className="font-semibold text-navy">{a.name}</span>,
+      cell: (a) => (
+        <div>
+          <span className="font-semibold text-navy">{a.name}</span>
+          {a.holder_name && <p className="text-[11px] text-purple">{a.holder_name}</p>}
+        </div>
+      ),
     },
-    { key: 'bank', header: 'البنك', cell: (a) => a.bank },
+    {
+      key: 'bank',
+      header: 'البنك',
+      cell: (a) => (
+        <div>
+          {a.bank}
+          {a.account_no && <p className="num text-[11px] text-purple">{a.account_no}</p>}
+        </div>
+      ),
+    },
+    {
+      key: 'branch',
+      header: 'الفرع / العملة',
+      cell: (a) => (
+        <span className="text-xs">
+          {a.branch ?? 'كل الفروع'} · <span className="num">{a.currency ?? 'SAR'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'الحالة',
+      cell: (a) => (
+        <Badge tone={a.is_active ? 'success' : 'neutral'}>{a.is_active ? 'مفعّل' : 'معطّل'}</Badge>
+      ),
+    },
     {
       key: 'iban',
       header: 'الآيبان',
@@ -64,13 +98,24 @@ export function BanksScreen() {
       key: 'actions',
       header: '',
       cell: (a) => (
-        <button
-          type="button"
-          onClick={() => setStatement(a)}
-          className="inline-flex items-center gap-1 rounded-lg bg-navy-50 px-2.5 py-1.5 text-xs font-medium text-navy hover:bg-navy-100"
-        >
-          <ScrollText size={13} /> كشف الحساب
-        </button>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            onClick={() => setStatement(a)}
+            className="inline-flex items-center gap-1 rounded-lg bg-navy-50 px-2.5 py-1.5 text-xs font-medium text-navy hover:bg-navy-100"
+          >
+            <ScrollText size={13} /> كشف الحساب
+          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setEditing(a)}
+              className="inline-flex items-center gap-1 rounded-lg bg-navy-50 px-2.5 py-1.5 text-xs font-medium text-navy hover:bg-navy-100"
+            >
+              <Pencil size={13} /> تعديل
+            </button>
+          )}
+        </div>
       ),
     },
   ];
@@ -106,7 +151,8 @@ export function BanksScreen() {
       </p>
 
       {transfer && <TransferModal accounts={accounts} onClose={() => setTransfer(false)} />}
-      {adding && <AddBankModal onClose={() => setAdding(false)} />}
+      {adding && <BankAccountModal onClose={() => setAdding(false)} />}
+      {editing && <BankAccountModal account={editing} onClose={() => setEditing(null)} />}
       {statement && (
         <StatementModal account={statement} entries={entries} onClose={() => setStatement(null)} />
       )}
@@ -194,47 +240,88 @@ function TransferModal({ accounts, onClose }: { accounts: BankAccount[]; onClose
   );
 }
 
-function AddBankModal({ onClose }: { onClose: () => void }) {
+function BankAccountModal({ account, onClose }: { account?: BankAccount; onClose: () => void }) {
   const add = useAddBankAccount();
-  const [name, setName] = useState('');
-  const [bank, setBank] = useState('');
-  const [iban, setIban] = useState('');
+  const update = useUpdateBankAccount();
+  const [name, setName] = useState(account?.name ?? '');
+  const [bank, setBank] = useState(account?.bank ?? '');
+  const [holder, setHolder] = useState(account?.holder_name ?? '');
+  const [iban, setIban] = useState(account?.iban ?? '');
+  const [accountNo, setAccountNo] = useState(account?.account_no ?? '');
+  const [currency, setCurrency] = useState(account?.currency ?? 'SAR');
   const [opening, setOpening] = useState(0);
-  const [branch, setBranch] = useState('نجران');
+  const [branch, setBranch] = useState(account ? (account.branch ?? 'head') : 'head');
+  const [active, setActive] = useState(account?.is_active ?? true);
+  const input = {
+    name,
+    bank,
+    holder_name: holder,
+    iban,
+    account_no: accountNo,
+    currency,
+    branch: toBranch(branch),
+    is_active: active,
+  };
+  const parsed = bankAccountSchema.safeParse(input);
+  const err = parsed.success ? null : (parsed.error.issues[0]?.message ?? null);
+  const pending = add.isPending || update.isPending;
 
   function submit() {
-    add.mutate(
-      { name, bank, iban, opening_balance: opening, branch: toBranch(branch) },
-      { onSuccess: onClose },
-    );
+    if (account) update.mutate({ id: account.id, input }, { onSuccess: onClose });
+    else add.mutate({ ...input, opening_balance: opening }, { onSuccess: onClose });
   }
 
   return (
-    <Modal open onClose={onClose} title="إضافة حساب بنكي">
+    <Modal open onClose={onClose} title={account ? `تعديل — ${account.name}` : 'إضافة حساب بنكي'}>
       <div className="space-y-3">
         <Input label="اسم الحساب" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="grid gap-3 sm:grid-cols-2">
           <Input label="البنك" value={bank} onChange={(e) => setBank(e.target.value)} />
-          <Input label="الآيبان" value={iban} onChange={(e) => setIban(e.target.value)} />
           <Input
-            label="الرصيد الافتتاحي"
-            type="number"
-            min={0}
-            value={opening}
-            onChange={(e) => setOpening(Number(e.target.value))}
+            label="اسم صاحب الحساب"
+            value={holder}
+            onChange={(e) => setHolder(e.target.value)}
           />
+          <Input
+            label="الآيبان"
+            placeholder="SA.. (24 خانة)"
+            value={iban}
+            onChange={(e) => setIban(e.target.value)}
+          />
+          <Input
+            label="رقم الحساب"
+            value={accountNo}
+            onChange={(e) => setAccountNo(e.target.value)}
+          />
+          <Input label="العملة" value={currency} onChange={(e) => setCurrency(e.target.value)} />
           <Select
-            label="مركز التكلفة"
+            label="الفرع"
             value={branch}
             onChange={(e) => setBranch(e.target.value)}
             options={branchOptions}
           />
+          {!account && (
+            <Input
+              label="الرصيد الافتتاحي"
+              type="number"
+              min={0}
+              value={opening}
+              onChange={(e) => setOpening(Number(e.target.value))}
+            />
+          )}
         </div>
+        <label className="flex items-center gap-2 text-sm text-navy">
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          مفعّل — يظهر في حسابات استلام الدفعات
+        </label>
         <p className="text-xs text-purple">
-          يُنشأ حساب في دليل الحسابات تحت «النقدية والبنوك»، ويُرحَّل الرصيد الافتتاحي إن وُجد.
+          {account
+            ? `مربوط بالحساب ${account.account_code} في دليل الحسابات — القيود السابقة لا تتغيّر.`
+            : 'يُنشأ حساب في دليل الحسابات تحت «النقدية والبنوك»، ويُرحَّل الرصيد الافتتاحي إن وُجد.'}
         </p>
-        <Button onClick={submit} disabled={!name.trim()} className="w-full">
-          <Landmark size={16} /> إضافة الحساب
+        {err && <p className="text-[11px] text-gold-600">{err}</p>}
+        <Button onClick={submit} disabled={Boolean(err)} loading={pending} className="w-full">
+          <Landmark size={16} /> {account ? 'حفظ التعديلات' : 'إضافة الحساب'}
         </Button>
       </div>
     </Modal>

@@ -497,6 +497,12 @@ export interface BankAccount {
   bank: string;
   iban: string | null;
   is_active: boolean;
+  /** 0096 — بيانات الحساب الكاملة */
+  holder_name?: string | null;
+  account_no?: string | null;
+  currency?: string;
+  /** اسم الفرع (null = المركز الرئيسي / كل الفروع) */
+  branch?: string | null;
 }
 
 /* ------------------------------ aging (AR/AP) ----------------------------- */

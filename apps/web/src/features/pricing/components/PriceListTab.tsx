@@ -230,7 +230,17 @@ export function PriceListTab() {
                       <td className="px-3 py-3 font-semibold text-navy-900">
                         {PRICING_SERVICE_LABEL[r.service_code] ?? r.service_code}
                       </td>
-                      <td className="px-3 py-3">{keyOf(r)}</td>
+                      <td className="px-3 py-3">
+                        {keyOf(r)}
+                        {r.package_name && (
+                          <span className="mr-2 inline-flex">
+                            <Badge tone="gold">
+                              {r.package_name} · <span className="num">{r.duration_count}</span>{' '}
+                              {UNIT_LABEL[r.duration_unit ?? 'fixed'] ?? ''}
+                            </Badge>
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-3">
                         <Badge tone="navy">
                           {UNIT_LABEL[r.duration_unit ?? 'fixed'] ?? r.duration_unit}
@@ -508,6 +518,12 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
   const [base, setBase] = useState(0);
   const [min, setMin] = useState<number | null>(null);
   const [branch, setBranch] = useState('');
+  // باقة: قاعدة مسمّاة بمدة ثابتة (التأجير فقط)
+  const [isPackage, setIsPackage] = useState(false);
+  const [pkgName, setPkgName] = useState('');
+  const [pkgCount, setPkgCount] = useState(6);
+  const packageable = ['monthly_rental', 'daily_rental', 'hourly_rental'].includes(service);
+  const pkg = packageable && isPackage;
   // daily and hourly rentals are priced by task, the rest by nationality
   const isDaily = service === 'daily_rental' || service === 'hourly_rental';
   const keyOptions: readonly string[] =
@@ -515,7 +531,12 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
   const valid =
     base > 0 &&
     (min == null || (min >= 0 && min <= base)) &&
-    (keyOptions.length === 0 || key !== '');
+    (keyOptions.length === 0 || key !== '') &&
+    (!pkg ||
+      (pkgName.trim().length >= 2 &&
+        Number.isInteger(pkgCount) &&
+        pkgCount >= 1 &&
+        pkgCount <= 120));
   return (
     <Drawer
       open
@@ -538,6 +559,8 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
                     base_price: base,
                     min_price: min,
                     branch: branch || null,
+                    package_name: pkg ? pkgName.trim() : null,
+                    duration_count: pkg ? pkgCount : null,
                   },
                   actor: fullName,
                 },
@@ -590,6 +613,40 @@ function NewRuleDrawer({ onClose }: { onClose: () => void }) {
           وحدة التسعير: {UNIT_LABEL[SERVICE_UNIT[service] ?? 'fixed']}
           {branch && ' · سعر الفرع يُقدَّم على السعر العام لنفس الخدمة'}
         </p>
+        {packageable && (
+          <div className="space-y-3 rounded-xl border border-navy-100 p-3">
+            <label className="flex items-center gap-2 text-sm text-navy">
+              <input
+                type="checkbox"
+                checked={isPackage}
+                onChange={(e) => setIsPackage(e.target.checked)}
+              />
+              باقة مسمّاة بمدة ثابتة
+            </label>
+            {isPackage && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="اسم الباقة"
+                  placeholder="مثال: باقة ستة أشهر"
+                  value={pkgName}
+                  onChange={(e) => setPkgName(e.target.value)}
+                />
+                <Input
+                  label={`المدة (${UNIT_LABEL[SERVICE_UNIT[service] ?? 'fixed'] ?? ''})`}
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={pkgCount || ''}
+                  onChange={(e) => setPkgCount(e.target.valueAsNumber)}
+                />
+                <p className="text-xs text-purple sm:col-span-2">
+                  السعر أدناه للوحدة؛ إجمالي الباقة = السعر × المدة. تُختار الباقة صراحةً في العقد
+                  ولا تغيّر السعر العام.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
         <Input
           label="السعر الأساسي"
           type="number"

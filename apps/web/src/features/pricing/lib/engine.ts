@@ -26,10 +26,12 @@ export function resolveRule(
   service: string,
   args: PriceArgs,
 ): PricingRule | null {
+  if (args.package_id) return resolvePackage(rules, service, args.package_id);
   const match = rules
     .filter(
       (r) =>
         r.is_active &&
+        !r.package_name &&
         r.service_code === service &&
         (r.nationality == null || r.nationality === args.nationality) &&
         (r.profession == null || r.profession === args.profession) &&
@@ -47,14 +49,46 @@ export function resolveRule(
   return match ?? null;
 }
 
+/** الباقة المختارة — نشطة ولنفس الخدمة (مطابق لـ calc_price 0096). */
+export function resolvePackage(
+  rules: PricingRule[],
+  service: string,
+  packageId: string,
+): PricingRule | null {
+  return (
+    rules.find(
+      (r) => r.id === packageId && r.is_active && r.service_code === service && !!r.package_name,
+    ) ?? null
+  );
+}
+
+/** الباقات النشطة لخدمة (والجنسية/الفرع إن حُدّدا) مرتّبة بالمدة. */
+export function packagesFor(
+  rules: PricingRule[],
+  service: string,
+  args: { nationality?: string | undefined; branch?: string | null | undefined } = {},
+): PricingRule[] {
+  return rules
+    .filter(
+      (r) =>
+        r.is_active &&
+        !!r.package_name &&
+        r.service_code === service &&
+        (r.nationality == null || !args.nationality || r.nationality === args.nationality) &&
+        (r.branch_id == null || !args.branch || r.branch_id === args.branch),
+    )
+    .sort((a, b) => (a.duration_count ?? 0) - (b.duration_count ?? 0));
+}
+
 /**
  * List base for an order from the managed price list (unit price × quantity).
  * The single base used by the calculator, contracts, CRM and the call center;
  * the seed mirror is used only when no managed rule exists.
  */
 export function managedBase(rules: PricingRule[], service: ServiceCode, args: PriceArgs): number {
-  const q = Math.max(args.quantity, 1);
   const rule = resolveRule(rules, service, args);
+  // الباقة: مدتها ثابتة — لا تُضرب في الكمية المُدخلة
+  const q = rule?.package_name ? Math.max(rule.duration_count ?? 1, 1) : Math.max(args.quantity, 1);
   const unit = rule ? rule.base_price : fallbackBase(service, { ...args, quantity: 1 });
   return round2(unit * q);
 }

@@ -751,6 +751,7 @@ async function localDraft(
     nationality: input.nationality,
     profession: input.profession,
     quantity: input.quantity ?? 1,
+    package_id: input.package_id ?? undefined,
   };
   const [rules, cfg] = await Promise.all([listPricingRules(), getPricingConfig()]);
   // managed price list (same base as the calculator) — never code prices
