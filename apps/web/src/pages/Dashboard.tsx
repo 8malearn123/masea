@@ -31,6 +31,11 @@ const AccountantDashboard = lazy(() =>
     default: m.AccountantDashboard,
   })),
 );
+const WorkerDashboard = lazy(() =>
+  import('@/features/worker-portal/components/WorkerDashboard').then((m) => ({
+    default: m.WorkerDashboard,
+  })),
+);
 const ExternalOfficeDashboard = lazy(() =>
   import('@/features/contracts/components/ExternalOfficeDashboard').then((m) => ({
     default: m.ExternalOfficeDashboard,
@@ -54,6 +59,18 @@ export default function Dashboard() {
       <Suspense fallback={<DashboardBody />}>
         <DriverTrips />
       </Suspense>
+    );
+  }
+
+  // The worker gets her personal portal: her profile, tasks, schedule and reviews.
+  if (role === 'worker') {
+    return (
+      <div>
+        <PageHeader title="لوحتي" subtitle="ملفي ومهامي وجدولي وتقييماتي" />
+        <Suspense fallback={<DashboardBody />}>
+          <WorkerDashboard />
+        </Suspense>
+      </div>
     );
   }
 

@@ -379,5 +379,6 @@
     "targets.edit",
     "targets.export",
     "targets.view"
-  ]
+  ],
+  "worker": []
 }

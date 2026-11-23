@@ -54,4 +54,5 @@ export const roleLabel: Record<AppRole, string> = {
   hr: 'الموارد البشرية',
   accountant: 'محاسب',
   external_office: 'مكتب خارجي',
+  worker: 'عاملة',
 };

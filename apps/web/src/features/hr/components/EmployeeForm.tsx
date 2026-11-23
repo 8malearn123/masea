@@ -432,10 +432,13 @@ export function EmployeeForm({
                 label="الدور في النظام (الصلاحيات)"
                 value={f.role}
                 onChange={set('role')}
-                options={(Object.keys(ROLE_META) as RoleCode[]).map((r) => ({
-                  value: r,
-                  label: ROLE_META[r].label,
-                }))}
+                options={(Object.keys(ROLE_META) as RoleCode[])
+                  // العاملة ليست موظفة: حسابها يُربط بملفها في العمالة لا بسجل موظف
+                  .filter((r) => r !== 'worker')
+                  .map((r) => ({
+                    value: r,
+                    label: ROLE_META[r].label,
+                  }))}
               />
             </div>
             <div className="rounded-xl bg-navy-50 p-3">
