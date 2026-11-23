@@ -106,6 +106,19 @@ export function transitionBlocker(
   return null;
 }
 
+/**
+ * 0090: عقد موقّع/نشط أو عليه مبالغ محصّلة لا يُلغى بتغيير الحالة — يُلغى عبر
+ * «إلغاء العقد وتسويته» (حساب المستحق والمسترد واعتماده مالياً).
+ */
+export function requiresSettlement(contract: {
+  status: ContractStatus;
+  amount_paid: number;
+}): boolean {
+  return (
+    ['signed', 'musaned_signed', 'active'].includes(contract.status) || contract.amount_paid > 0
+  );
+}
+
 /** Destructive / final transitions that need an explicit confirmation. */
 export function needsConfirmation(to: ContractStatus): boolean {
   return to === 'cancelled' || to === 'completed';

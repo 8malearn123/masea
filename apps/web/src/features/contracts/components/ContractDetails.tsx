@@ -56,8 +56,10 @@ import {
   isEditable,
   needsConfirmation,
   nextStatuses,
+  requiresSettlement,
   transitionBlocker,
 } from '@/features/contracts/lib/contractState';
+import { ContractOpsPanel } from '@/features/contracts/components/ContractOpsPanel';
 import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
 import { loadRentalDocument } from '@/features/contracts/api/rentalContract.api';
 import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/print';
@@ -134,7 +136,10 @@ export default function ContractDetails() {
     return can('contracts', 'edit');
   }
   const origin = musaned ? 'musaned' : 'internal';
-  const actions = nextStatuses(contract.status, origin).filter(canDo);
+  // 0090: الموقّع أو المدفوع يُلغى من «عمليات العقد ← إلغاء العقد وتسويته» لا من هنا
+  const actions = nextStatuses(contract.status, origin)
+    .filter(canDo)
+    .filter((to) => to !== 'cancelled' || !requiresSettlement(contract));
   const canEditDraft = isEditable(contract.status) && can('contracts', 'edit');
   const remaining = contractInsight(contract, new Date()).remaining;
   const parent = lineage.find((c) => c.id === contract.parent_contract_id) ?? null;
@@ -354,6 +359,9 @@ export default function ContractDetails() {
 
           {/* External-office recruitment workflow (recruitment contracts only) */}
           {contract.service_code === 'recruitment' && <RecruitmentJourney contract={contract} />}
+
+          {/* الإلغاء والتسوية · الإرجاع · الاسترداد · سجل العمليات (0090) */}
+          {contract.status !== 'draft' && <ContractOpsPanel contract={contract} />}
         </div>
 
         <div className="space-y-4">

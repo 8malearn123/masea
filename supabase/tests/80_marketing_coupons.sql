@@ -115,8 +115,10 @@ select pg_temp.check(((calc_price('monthly_rental', '{"nationality":"الفلب�
                      like '%خارج فترتها%', 'coupon of an ended campaign refused');
 
 -- ---------- cancellation releases the usage in the stats ----------
+select set_config('masea.settling', 'on', false); -- 0090: cancelled through its settlement
 update contracts set status = 'cancelled'
  where quote_id = (select id from quotes where lead_id = 'e0000000-0000-0000-0000-000000000020');
+select set_config('masea.settling', 'off', false);
 select pg_temp.check((select uses from coupon_stats where promotion_id = (select id from t_cp)) = 0,
   'a cancelled contract no longer counts as a coupon use');
 select pg_temp.check((select usage_count from promotions where id = (select id from t_cp)) = 0,

@@ -125,7 +125,9 @@ select pg_temp.check((select vat_amount = 150 and total_amount = 1150 from contr
 update pricing_config set vat_rate = 0.15 where id = 1;
 
 -- ---- 5) Musaned number frozen on a finished contract; 6) old renewal removed
+select set_config('masea.settling', 'on', false); -- 0090: cancelled through its settlement
 update contracts set status = 'cancelled' where id = '9c000000-0000-0000-0000-000000000001';
+select set_config('masea.settling', 'off', false);
 select pg_temp.login('ad000000-0000-0000-0000-000000000061');
 select pg_temp.rejects($$ select set_musaned_contract_no('9c000000-0000-0000-0000-000000000001', 'MS-1') $$,
   'منتهٍ أو ملغى', 'Musaned number frozen on a cancelled contract');
