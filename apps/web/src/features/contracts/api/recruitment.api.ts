@@ -6,7 +6,7 @@
  * advance_recruitment_stage RPCs); this layer falls back to demo data offline.
  */
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import { listSystemUsers } from '@/features/rbac/api/rbac.api';
 import { demoMutateContract, DEMO_OFFICE_ID } from '@/features/contracts/api/contracts.api';
 import type {
@@ -148,67 +148,48 @@ let demoSeq = 100;
 
 /* ------------------------------- queries --------------------------------- */
 export async function listRecruitmentStages(): Promise<RecruitmentStage[]> {
-  try {
-    const { data, error } = await supabase
-      .from('recruitment_stages')
-      .select('*')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true });
-    if (!error && data && data.length > 0) return data as RecruitmentStage[];
-  } catch {
-    /* fall through */
-  }
-  return DEMO_STAGES;
+  if (isDemoMode()) return DEMO_STAGES;
+  const { data, error } = await supabase
+    .from('recruitment_stages')
+    .select('*')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true });
+  if (error) throw new Error(`تعذّر جلب مراحل الاستقدام: ${error.message}`);
+  return (data ?? []) as RecruitmentStage[];
 }
 
 export async function getFollowups(contractId: string): Promise<RecruitmentFollowup[]> {
-  try {
-    const { data, error } = await supabase
-      .from('recruitment_followups')
-      .select('*')
-      .eq('contract_id', contractId)
-      .order('created_at', { ascending: true });
-    if (!error && data && data.length > 0) return data as RecruitmentFollowup[];
-  } catch {
-    /* fall through */
-  }
-  return demoFollowups.get(contractId) ?? [];
+  if (isDemoMode()) return demoFollowups.get(contractId) ?? [];
+  const { data, error } = await supabase
+    .from('recruitment_followups')
+    .select('*')
+    .eq('contract_id', contractId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`تعذّر جلب متابعات الاستقدام: ${error.message}`);
+  return (data ?? []) as RecruitmentFollowup[];
 }
 
 export async function listExternalOffices(): Promise<ExternalOfficeAccount[]> {
-  try {
+  if (!isDemoMode()) {
+    // حسابات المكاتب الخارجية الفعلية فقط — لا مكتب تجريبي يُسند لعقد حقيقي
     const { data, error } = await supabase
       .from('user_profiles')
       .select('id, full_name, branch_id, role, is_active')
       .eq('role', 'external_office')
       .eq('is_active', true);
-    if (!error && data && data.length > 0) {
-      return (data as { id: string; full_name: string | null; branch_id: string | null }[]).map(
-        (u) => ({
-          id: u.id,
-          full_name: u.full_name ?? 'مكتب خارجي',
-          branch: u.branch_id,
-        }),
-      );
-    }
-  } catch {
-    /* fall through */
+    if (error) throw new Error(`تعذّر جلب المكاتب الخارجية: ${error.message}`);
+    return (
+      (data ?? []) as { id: string; full_name: string | null; branch_id: string | null }[]
+    ).map((u) => ({ id: u.id, full_name: u.full_name ?? 'مكتب خارجي', branch: u.branch_id }));
   }
   // demo: surface any active external_office accounts the RBAC screen knows too
-  try {
-    const sys = (await listSystemUsers()).filter(
-      (u) => u.role === 'external_office' && u.is_active,
-    );
-    if (sys.length > 0) {
-      return [
-        ...DEMO_OFFICES,
-        ...sys.map((u) => ({ id: u.id, full_name: u.full_name, branch: u.branch })),
-      ];
-    }
-  } catch {
-    /* fall through */
-  }
-  return DEMO_OFFICES;
+  const sys = (await listSystemUsers().catch(() => [])).filter(
+    (u) => u.role === 'external_office' && u.is_active,
+  );
+  return [
+    ...DEMO_OFFICES,
+    ...sys.map((u) => ({ id: u.id, full_name: u.full_name, branch: u.branch })),
+  ];
 }
 
 /* ------------------------------ mutations -------------------------------- */
@@ -252,15 +233,14 @@ export async function advanceStage(
 
 /* ----------------------- documents + travel data ------------------------ */
 export async function getDocuments(contractId: string): Promise<RecruitmentDocument[]> {
-  try {
+  if (!isDemoMode()) {
     const { data, error } = await supabase
       .from('recruitment_documents')
       .select('*')
       .eq('contract_id', contractId)
       .order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) return data as RecruitmentDocument[];
-  } catch {
-    /* fall through */
+    if (error) throw new Error(`تعذّر جلب مستندات الاستقدام: ${error.message}`);
+    return (data ?? []) as RecruitmentDocument[];
   }
   return [...(demoDocuments.get(contractId) ?? [])].sort((a, b) =>
     b.created_at.localeCompare(a.created_at),

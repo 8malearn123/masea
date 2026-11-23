@@ -14,13 +14,15 @@ import { Badge, Button, Input, Modal, Select } from '@/shared/ui';
 import { dateTimeAr, sar } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { NATIONALITIES, TASK_TYPES } from '@/lib/orderTypes';
-import { canMoveTo, quoteContractPath } from '@/shared/lib/quotesLedger';
+import { canMoveTo } from '@/shared/lib/quotesLedger';
 import { calculate, EMPTY_CALC, type CalcInput } from '@/features/pricing/lib/engine';
 import { usePricingConfig, usePricingRules } from '@/features/pricing/hooks/usePricingRules';
 import {
   useActivities,
   useAddActivity,
   useConvertLead,
+  useConvertQuote,
+  useLeadQuotes,
   useCreateQuote,
   useQuotes,
   useSetQuoteStatus,
@@ -44,10 +46,15 @@ const KIND_OPTS = (Object.entries(ACTIVITY_LABEL) as [ActivityKind, string][]).m
 const SERVICE_OPTS = (Object.entries(SERVICE_LABEL) as [ServiceCode, string][]).map(
   ([value, label]) => ({ value, label }),
 );
-/** Current status + the moves the quote lifecycle allows (no invalid options). */
-function quoteStatusOpts(from: QuoteStatus) {
+/**
+ * Current status + the moves the quote lifecycle allows (no invalid options). A
+ * quote awaiting approval is decided only by an approver (leads.approve).
+ */
+function quoteStatusOpts(from: QuoteStatus, canApprove: boolean) {
   return (Object.entries(QUOTE_STATUS_LABEL) as [QuoteStatus, string][])
-    .filter(([to]) => to === from || canMoveTo(from, to))
+    .filter(
+      ([to]) => to === from || (canMoveTo(from, to) && (from !== 'pending_approval' || canApprove)),
+    )
     .map(([value, label]) => ({ value, label }));
 }
 const NAT_OPTS = NATIONALITIES.map((n) => ({ value: n, label: n }));
@@ -71,6 +78,7 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
   const { stageLabel, stageTone, sourceLabel } = useCrmMeta();
   const { data: activities = [] } = useActivities(lead.id);
   const { data: quotes = [] } = useQuotes(lead.id);
+  const { data: quoteRecords = [] } = useLeadQuotes(lead.id);
   const addActivity = useAddActivity();
   const toggle = useToggleActivity();
   const convertLead = useConvertLead();
@@ -78,6 +86,7 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
   const setQuoteStatus = useSetQuoteStatus();
   const navigate = useNavigate();
   const { can, fullName } = usePermissions();
+  const convert = useConvertQuote();
   const canEdit = can('leads', 'edit');
   const canLog = can('leads', 'create');
   const { data: rules = [], isLoading: rulesLoading } = usePricingRules();
@@ -366,8 +375,10 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
                           actor: fullName,
                         })
                       }
-                      options={quoteStatusOpts(q.status)}
-                      disabled={!canEdit || quoteStatusOpts(q.status).length < 2}
+                      options={quoteStatusOpts(q.status, can('leads', 'approve'))}
+                      disabled={
+                        !canEdit || quoteStatusOpts(q.status, can('leads', 'approve')).length < 2
+                      }
                       aria-label="حالة العرض"
                       className="flex-1"
                     />
@@ -375,7 +386,16 @@ function LeadDrawerBody({ lead }: { lead: Lead }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => navigate(quoteContractPath(q, q.coupon_code))}
+                        loading={convert.isPending}
+                        onClick={() =>
+                          convert.mutate(
+                            {
+                              quote: quoteRecords.find((r) => r.id === q.id) ?? null,
+                              actor: fullName,
+                            },
+                            { onSuccess: (r) => navigate(`/contracts/${r.contract_id}`) },
+                          )
+                        }
                       >
                         <FileSignature size={14} /> تحويل لعقد
                       </Button>

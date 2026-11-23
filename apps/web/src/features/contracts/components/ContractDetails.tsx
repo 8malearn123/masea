@@ -25,6 +25,7 @@ import {
   Input,
   Modal,
   Select,
+  useToast,
 } from '@/shared/ui';
 import { isDemoMode } from '@/shared/lib/demoBackend';
 import { sar, dateAr, dateTimeAr } from '@/shared/lib/format';
@@ -58,6 +59,8 @@ import {
   transitionBlocker,
 } from '@/features/contracts/lib/contractState';
 import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
+import { loadRentalDocument } from '@/features/contracts/api/rentalContract.api';
+import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/print';
 import {
   RECRUITMENT_TERM_MONTHS,
   contractEndDate,
@@ -108,6 +111,8 @@ export default function ContractDetails() {
   const [showSign, setShowSign] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [confirmTo, setConfirmTo] = useState<ContractStatus | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const toast = useToast();
 
   if (isLoading) {
     return (
@@ -134,6 +139,42 @@ export default function ContractDetails() {
   const remaining = contractInsight(contract, new Date()).remaining;
   const parent = lineage.find((c) => c.id === contract.parent_contract_id) ?? null;
   const renewals = activeRenewalsOf(contract.id, lineage);
+
+  /**
+   * عقد صادر على قالب «عقد تأجير خدمات عمالية» يُطبع بصيغته الأصلية الكاملة
+   * (الشعار + البنود الحرفية + مواضع التوقيع). العقود القديمة تبقى بقالبها السابق.
+   */
+  async function printContract() {
+    if (!contract) return;
+    setPrinting(true);
+    try {
+      const doc = await loadRentalDocument(contract);
+      if (!doc) {
+        openContractPrint(
+          buildContractHtml(
+            contract,
+            clauses.map((c) => c.body),
+          ),
+        );
+        return;
+      }
+      const img = (type: 'customer' | 'company') => {
+        const v = signatures.find((x) => x.signer_type === type)?.signature_image ?? null;
+        return v && v.startsWith('data:image/') ? v : null;
+      };
+      const signed = ['signed', 'active', 'completed'].includes(contract.status);
+      openContractPrint(
+        await rentalContractHtml(doc.template.doc, doc.source, {
+          watermark: signed ? null : 'مسودة — غير موقّعة',
+          signatures: { employee: img('company'), customer: img('customer') },
+        }),
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذّر تجهيز العقد للطباعة');
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   function runTransition(to: ContractStatus) {
     if (needsConfirmation(to)) setConfirmTo(to);
@@ -188,14 +229,8 @@ export default function ContractDetails() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                openContractPrint(
-                  buildContractHtml(
-                    contract,
-                    clauses.map((c) => c.body),
-                  ),
-                )
-              }
+              loading={printing}
+              onClick={() => void printContract()}
             >
               <FileDown size={16} /> تنزيل PDF
             </Button>

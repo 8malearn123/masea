@@ -43,6 +43,19 @@ import {
   validateContractTerm,
 } from '@/features/contracts/lib/contractTerm';
 import { SERVICE_LABEL, type ContractServiceCode } from '@/features/contracts/types';
+import {
+  useCompanyProfile,
+  useRentalTemplates,
+} from '@/features/contracts/hooks/useRentalContract';
+import {
+  approvedTemplateFor,
+  getWorkerDoc,
+  setContractDocFields,
+  type DocFields,
+} from '@/features/contracts/api/rentalContract.api';
+import { legalClausesOf } from '@/features/contracts/lib/rentalContract/template';
+import type { RentalContractSource } from '@/features/contracts/lib/rentalContract/fields';
+import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/print';
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
 
 interface Draft {
@@ -61,6 +74,11 @@ interface Draft {
   promotion: Promotion | null;
   /** Coupon code the discount was applied with (null = picked from the list). */
   promotionCode: string | null;
+  /** حقول عقد التأجير (القالب الأصلي) غير المسجّلة في ملف العميل. */
+  customerIdNo: string;
+  customerAddress: string;
+  workLocation: string;
+  employeeMobile: string;
 }
 
 const EMPTY: Draft = {
@@ -78,6 +96,10 @@ const EMPTY: Draft = {
   musanedNo: '',
   promotion: null,
   promotionCode: null,
+  customerIdNo: '',
+  customerAddress: '',
+  workLocation: '',
+  employeeMobile: '',
 };
 
 const STEP_LABEL: Record<string, string> = {
@@ -161,7 +183,10 @@ export default function ContractWizard() {
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   // مساند: العقد يُنشأ ويُوقّع على منصة مساند — لا بنود ولا توقيع داخلي.
   const musaned = isMusaned(origins, d.service || null);
-  const needsWorker = d.service === 'recruitment' || d.service === 'monthly_rental';
+  const isRental = d.service === 'monthly_rental' || d.service === 'daily_rental';
+  const needsWorker = d.service === 'recruitment' || isRental;
+  // التأجير: العاملات المتاحات فقط (المحجوزة لا تُعرض)
+  const workerChoices = isRental ? workers.filter((w) => w.status === 'available') : workers;
   const stepKeys = [
     'service',
     ...(needsWorker ? ['worker'] : []),
@@ -237,6 +262,73 @@ export default function ContractWizard() {
     });
   }, [template, d, price]);
 
+  // «عقد تأجير خدمات عمالية»: القالب الأصلي المعتمد للتأجير — بنوده ثابتة لا تتغيّر
+  // بالباقة أو المدة أو الجنسية؛ تتغيّر الحقول فقط (العميل، العاملة، المدة، السعر).
+  const { data: rentalRows = [] } = useRentalTemplates();
+  const { data: company } = useCompanyProfile();
+  const rentalTpl = isRental ? approvedTemplateFor(rentalRows, d.service) : null;
+  const rentalPending =
+    isRental &&
+    !rentalTpl &&
+    rentalRows.some((r) => r.service_code === d.service && r.status === 'pending_review');
+  const rentalDocFields: DocFields | null = useMemo(() => {
+    if (!rentalTpl || !company || !d.customer) return null;
+    const unit = d.service === 'daily_rental' ? 'يوم' : 'شهر';
+    return {
+      customer: {
+        full_name: d.customer.full_name,
+        national_id: d.customerIdNo.trim() || d.customer.national_id || null,
+        phone: d.customer.phone,
+        mobile: d.customer.phone,
+        address: d.customerAddress.trim() || d.customer.address || null,
+        city: d.customer.city,
+      },
+      worker: d.worker
+        ? { full_name: d.worker.full_name, nationality: d.worker.nationality }
+        : null,
+      company,
+      employee_mobile: d.employeeMobile.trim() || null,
+      work_location: d.workLocation.trim() || null,
+      service_label: `${SERVICE_LABEL[service]} — ${d.quantity} ${unit}`,
+    };
+  }, [rentalTpl, company, d, service]);
+  const rentalSource: RentalContractSource | null =
+    rentalDocFields && price
+      ? {
+          contract: {
+            contract_no: '',
+            issued_on: new Date().toISOString().slice(0, 10),
+            service_code: d.service || null,
+            start_date: d.start_date,
+            end_date: endDate,
+            base_amount: price.base,
+            vat_amount: price.vat,
+            total_amount: price.total,
+            amount_paid: 0,
+            notes: null,
+            work_location: rentalDocFields.work_location ?? null,
+          },
+          customer: rentalDocFields.customer,
+          worker: rentalDocFields.worker,
+          company: rentalDocFields.company,
+          employee_mobile: rentalDocFields.employee_mobile ?? null,
+          payments: [],
+          service_label: rentalDocFields.service_label,
+        }
+      : null;
+  const [rentalHtml, setRentalHtml] = useState('');
+  useEffect(() => {
+    if (current !== 'review' || !rentalTpl || !rentalSource) return;
+    let live = true;
+    void rentalContractHtml(rentalTpl.doc, rentalSource, {
+      watermark: 'معاينة — قبل الحفظ والتوقيع',
+    }).then((h) => live && setRentalHtml(h));
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on the inputs that change the text
+  }, [current, rentalTpl, JSON.stringify(rentalSource)]);
+
   function stepError(): string | null {
     if (current === 'service') return d.service ? null : 'اختر نوع الخدمة';
     if (current === 'worker') return d.worker ? null : 'اختر العاملة';
@@ -290,11 +382,11 @@ export default function ContractWizard() {
       quantity: priceArgs.quantity,
       nationality: priceArgs.nationality,
       profession: priceArgs.profession,
-      template_id: musaned ? null : (template?.id ?? null),
+      template_id: musaned ? null : rentalTpl ? rentalTpl.id : (template?.id ?? null),
       promotion_id: promotion?.id ?? null,
       promotion_code: d.promotionCode,
       // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
-      clauses: musaned ? [] : clausePreview,
+      clauses: musaned ? [] : rentalTpl ? legalClausesOf(rentalTpl.doc) : clausePreview,
       musaned_contract_no: musaned ? d.musanedNo.trim() || undefined : undefined,
     });
     if (!parsed.success) {
@@ -306,12 +398,31 @@ export default function ContractWizard() {
       toast.error('عرض السعر هذا مرتبط بعقد مسبقًا — لا يمكن تحويله مرة أخرى');
       return;
     }
+    const docFields = rentalTpl ? rentalDocFields : null;
+    if (rentalTpl && !docFields) {
+      toast.error('تعذّر تجهيز بيانات العقد — تحقّق من بيانات الطرف الأول');
+      return;
+    }
     create.mutate(parsed.data, {
-      onSuccess: (created) => {
+      onSuccess: async (created) => {
+        if (docFields) {
+          // بيانات الأطراف تُثبَّت مع المسودة (لا تتغيّر لاحقاً بتعديل الملفات)
+          const doc = d.worker ? await getWorkerDoc(d.worker.id) : null;
+          await setContractDocFields(created.id, {
+            ...docFields,
+            worker: docFields.worker ? { ...docFields.worker, ...(doc ?? {}) } : null,
+          }).catch((e: unknown) =>
+            toast.error(e instanceof Error ? e.message : 'تعذّر حفظ بيانات العقد'),
+          );
+        }
         if (fromQuote) {
           // accept + link the quote, mark the sales lead won
           void convertQuoteToContract(fromQuote, created.contract_no ?? created.id)
-            .catch(() => undefined)
+            .catch((e: unknown) =>
+              toast.error(
+                `أُنشئ العقد لكن تعذّر ربطه بعرض السعر: ${e instanceof Error ? e.message : ''}`,
+              ),
+            )
             .finally(() => {
               void qc.invalidateQueries({ queryKey: ['pricing'] });
               void qc.invalidateQueries({ queryKey: ['crm'] });
@@ -403,8 +514,13 @@ export default function ContractWizard() {
             <p className="mb-3 text-sm text-brand-dark/60 text-purple">
               اختر العاملة — ستُعبّأ جنسيتها ومهنتها في العقد تلقائيًا.
             </p>
+            {workerChoices.length === 0 && (
+              <p className="rounded-xl border border-dashed border-navy-100 p-6 text-center text-sm text-purple">
+                لا توجد عاملات متاحات حالياً — كل العاملات محجوزات.
+              </p>
+            )}
             <div className="grid gap-3 sm:grid-cols-2">
-              {workers.map((w) => (
+              {workerChoices.map((w) => (
                 <button
                   key={w.id}
                   type="button"
@@ -631,8 +747,30 @@ export default function ContractWizard() {
                   <span className="num font-semibold">{d.musanedNo || 'يُضاف لاحقًا'}</span>
                 </p>
               </div>
+            ) : rentalTpl ? (
+              <RentalReview
+                d={d}
+                set={set}
+                total={price?.total ?? 0}
+                html={rentalHtml}
+                title={rentalTpl.doc.title}
+                version={rentalTpl.version}
+              />
             ) : (
               <div>
+                {rentalPending && (
+                  <p className="mb-3 flex items-start gap-2 rounded-xl bg-gold-100/60 p-3 text-sm text-navy-900">
+                    <CircleAlert size={16} className="mt-0.5 shrink-0 text-gold-600" />
+                    <span>
+                      قالب «عقد تأجير خدمات عمالية» المطابق للعقد الأصلي بانتظار الاعتماد — يُستخدم
+                      تلقائياً بعد اعتماده من{' '}
+                      <Link to="/contracts/templates/rental" className="font-semibold underline">
+                        مراجعة القالب
+                      </Link>
+                      .
+                    </span>
+                  </p>
+                )}
                 {serviceTemplates.length > 1 && (
                   <div className="mb-3 max-w-xs">
                     <Select
@@ -812,6 +950,91 @@ function CustomerStep({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** مراجعة عقد التأجير قبل الحفظ: الحقول المكمّلة + بيانات الدفع + العقد كاملاً. */
+function RentalReview({
+  d,
+  set,
+  total,
+  html,
+  title,
+  version,
+}: {
+  d: Draft;
+  set: (p: Partial<Draft>) => void;
+  total: number;
+  html: string;
+  title: string;
+  version: number;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
+          <FileText size={16} /> {title}{' '}
+          <span className="num text-xs font-normal text-purple">(النسخة {version} — معتمدة)</span>
+        </h2>
+        <p className="text-xs text-purple">
+          البنود ثابتة بنص العقد الأصلي؛ أكمل البيانات التالية لتظهر في العقد.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Input
+          label="رقم هوية العميل (البطاقة)"
+          value={d.customerIdNo || d.customer?.national_id || ''}
+          inputMode="numeric"
+          className="num"
+          onChange={(e) => set({ customerIdNo: e.target.value })}
+        />
+        <Input
+          label="عنوان العميل"
+          value={d.customerAddress || d.customer?.address || ''}
+          onChange={(e) => set({ customerAddress: e.target.value })}
+        />
+        <Input
+          label="مكان العمل"
+          value={d.workLocation}
+          onChange={(e) => set({ workLocation: e.target.value })}
+        />
+        <Input
+          label="رقم جوال الموظف المسؤول"
+          value={d.employeeMobile}
+          inputMode="tel"
+          className="num"
+          onChange={(e) => set({ employeeMobile: e.target.value })}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <PayFact label="إجمالي قيمة العقد" value={total} />
+        <PayFact label="المبلغ المدفوع" value={0} />
+        <PayFact label="المبلغ المتبقي" value={total} />
+      </div>
+      <p className="text-xs text-purple">
+        الدفعات تُسجَّل من «المدفوعات» وتظهر تلقائياً في العقد (المدفوع والمتبقي وجدول المدفوعات).
+      </p>
+      {html ? (
+        <iframe
+          title="معاينة العقد"
+          srcDoc={html}
+          className="h-[70vh] w-full rounded-xl border border-navy-100 bg-gray-100"
+        />
+      ) : (
+        <p className="rounded-xl bg-navy-50 p-6 text-center text-sm text-purple">
+          جارٍ تجهيز معاينة العقد…
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PayFact({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-navy-50 p-3">
+      <p className="text-xs text-purple">{label}</p>
+      <p className="num mt-1 text-base font-bold text-navy">{sar(value)} ر.س</p>
     </div>
   );
 }

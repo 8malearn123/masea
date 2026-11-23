@@ -208,6 +208,15 @@ const CONFIG: ConfigItem[] = [
     sort_order: 7,
   },
   {
+    key: 'replacement_max_proposed',
+    label_ar:
+      'الحد الأقصى المقترح لمرات الاستبدال (مقترح — غير مُضاف للعقد وغير مفعّل كشرط تعاقدي)',
+    grp: 'سياسة الاستبدال المقترحة',
+    value: 2,
+    unit: 'مرة',
+    sort_order: 60,
+  },
+  {
     key: 'contract_expiry_alert_days',
     label_ar: 'مهلة التنبيه قبل انتهاء العقد',
     grp: 'العقود',

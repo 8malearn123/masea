@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  Building2,
   CalendarHeart,
   HeartHandshake,
   Home,
@@ -10,6 +11,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { Badge, Button, Card, Input } from '@/shared/ui';
+import { CompanyProfileSettings } from '@/features/site/components/CompanyProfileSettings';
 import {
   useConfig,
   useRefList,
@@ -23,7 +25,7 @@ import {
   type RefKind,
 } from '@/features/settings/api/settings.api';
 
-type Tab = RefKind | 'config';
+type Tab = RefKind | 'config' | 'company';
 
 const TABS: { key: Tab; label: string; icon: typeof Tag }[] = [
   { key: 'sources', label: 'مصادر العملاء', icon: Tag },
@@ -32,6 +34,7 @@ const TABS: { key: Tab; label: string; icon: typeof Tag }[] = [
   { key: 'occasion_types', label: 'أنواع المناسبات', icon: CalendarHeart },
   { key: 'care_needs', label: 'احتياجات الرعاية', icon: HeartHandshake },
   { key: 'config', label: 'قيم النظام', icon: SlidersHorizontal },
+  { key: 'company', label: 'بيانات الشركة والموقع', icon: Building2 },
 ];
 
 /** عنوان ووصف كل قائمة مرجعية في شاشة الإعدادات. */
@@ -94,6 +97,8 @@ export default function SettingsBoard() {
 
       {tab === 'config' ? (
         <ConfigSection />
+      ) : tab === 'company' ? (
+        <CompanyProfileSettings />
       ) : (
         <RefSection
           key={tab}

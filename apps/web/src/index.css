@@ -180,3 +180,98 @@ th.num {
     animation: none !important;
   }
 }
+
+/* ---------------- الموقع العام (صفحة الهبوط) ---------------- */
+.site-reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.site-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+/* قصّة الماسة: زوايا مشطوفة بدل البطاقات المستديرة المكرّرة */
+.site-facet {
+  clip-path: polygon(14% 0, 86% 0, 100% 14%, 100% 86%, 86% 100%, 14% 100%, 0 86%, 0 14%);
+}
+.site-facet-sm {
+  clip-path: polygon(
+    10px 0,
+    calc(100% - 10px) 0,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    0 calc(100% - 10px),
+    0 10px
+  );
+}
+@keyframes siteGlint {
+  0%,
+  100% {
+    stroke-dashoffset: 260;
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  60% {
+    stroke-dashoffset: 0;
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0;
+  }
+}
+.site-glint {
+  stroke-dasharray: 60 200;
+  animation: siteGlint 6.5s ease-in-out infinite;
+}
+@keyframes siteDrift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) rotate(1.5deg);
+  }
+}
+.site-drift {
+  animation: siteDrift 12s ease-in-out infinite;
+}
+.site-link-line {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0 1px;
+  background-repeat: no-repeat;
+  background-position: 100% 100%;
+  transition: background-size 0.35s ease;
+}
+.site-link-line:hover,
+.site-link-line:focus-visible {
+  background-size: 100% 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .site-glint,
+  .site-drift {
+    animation: none;
+  }
+}
+
+/* زر مساعد العملاء يرتفع فوق شريط الطلب الثابت على الجوال (صفحة الهبوط) */
+.chat-launcher {
+  bottom: calc(1rem + var(--site-cta-offset, 0px));
+}
+@media (min-width: 1024px) {
+  .chat-launcher {
+    bottom: 1.5rem;
+  }
+}

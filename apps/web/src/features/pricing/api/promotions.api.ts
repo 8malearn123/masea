@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { supabase } from '@/shared/lib/supabase';
-import { isDemoId, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoMode } from '@/shared/lib/demoBackend';
 import { findByCode, type Promotion } from '@/shared/lib/pricing';
 
 /**
@@ -242,30 +242,47 @@ function normalize(r: Record<string, unknown>): Promotion {
 }
 
 export async function listPromotions(): Promise<Promotion[]> {
-  try {
-    const { data, error } = await supabase
-      .from('promotions')
-      .select(COLUMNS)
-      .order('created_at', { ascending: false });
-    if (!error && data && data.length > 0) {
-      return (data as Record<string, unknown>[]).map(normalize);
-    }
-  } catch {
-    /* fall through */
-  }
-  return STORE.map((p) => ({ ...p, service_codes: [...p.service_codes] }));
+  if (isDemoMode()) return STORE.map((p) => ({ ...p, service_codes: [...p.service_codes] }));
+  const { data, error } = await supabase
+    .from('promotions')
+    .select(COLUMNS)
+    .order('created_at', { ascending: false });
+  // خادم حقيقي: لا خصومات = قائمة فارغة (لا كوبونات تجريبية تُرسل للتسعير)
+  if (error) throw new Error(`تعذّر تحميل الخصومات: ${error.message}`);
+  return ((data ?? []) as Record<string, unknown>[]).map(normalize);
+}
+
+/** رمز الخصم فريد (uq_promotions_code على upper(code)) — رسالة واضحة قبل الإرسال. */
+async function assertCodeFree(code: string | null | undefined, selfId?: string): Promise<void> {
+  const c = code?.trim().toUpperCase();
+  if (!c) return;
+  const taken = (await listPromotions()).find(
+    (p) => p.id !== selfId && p.code?.trim().toUpperCase() === c,
+  );
+  if (taken) throw new Error(`الرمز «${c}» مستخدم لخصم آخر («${taken.name}»)`);
+}
+
+const normCode = <T extends { code?: string | null }>(row: T): T =>
+  'code' in row ? { ...row, code: row.code?.trim().toUpperCase() || null } : row;
+
+function promotionError(message: string): string {
+  return message.includes('uq_promotions_code') ? 'رمز الخصم مستخدم لخصم آخر' : message;
 }
 
 export async function createPromotion(
-  row: Omit<Promotion, 'id' | 'usage_count'>,
+  input: Omit<Promotion, 'id' | 'usage_count'>,
 ): Promise<Promotion> {
-  const { data, error } = await supabase
-    .from('promotions')
-    .insert({ ...row, type: 'manual' })
-    .select(COLUMNS)
-    .single();
-  if (!error && data) return normalize(data as Record<string, unknown>);
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+  const row = normCode(input);
+  await assertCodeFree(row.code);
+  if (!isDemoMode()) {
+    const { data, error } = await supabase
+      .from('promotions')
+      .insert({ ...row, type: 'manual' })
+      .select(COLUMNS)
+      .single();
+    if (error) throw new Error(promotionError(error.message));
+    return normalize(data as Record<string, unknown>);
+  }
   const local: Promotion = { ...row, id: `pm-${Date.now()}`, usage_count: 0 };
   STORE.unshift(local);
   return { ...local };
@@ -273,16 +290,22 @@ export async function createPromotion(
 
 export async function updatePromotion(
   id: string,
-  patch: Partial<Omit<Promotion, 'id' | 'usage_count'>>,
+  input: Partial<Omit<Promotion, 'id' | 'usage_count'>>,
 ): Promise<void> {
-  const local = STORE.find((p) => p.id === id);
-  if (local) Object.assign(local, patch);
-  if (isDemoId(id)) return;
-  const { error } = await supabase
+  const patch = normCode(input);
+  if (patch.code) await assertCodeFree(patch.code, id);
+  if (isDemoMode()) {
+    const local = STORE.find((p) => p.id === id);
+    if (local) Object.assign(local, patch);
+    return;
+  }
+  const { data, error } = await supabase
     .from('promotions')
     .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error && !isIgnorableWriteError(error.message)) throw new Error(error.message);
+    .eq('id', id)
+    .select('id');
+  if (error) throw new Error(promotionError(error.message));
+  if (!data?.length) throw new Error('لا تملك صلاحية تعديل الخصومات');
 }
 
 /**
