@@ -1,5 +1,5 @@
 import { getQuoteRecord } from '@/shared/lib/quotesLedger';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight,
@@ -12,7 +12,9 @@ import {
   History,
   Eye,
   Pencil,
-  RotateCcw,
+  ArrowLeftRight,
+  Scale,
+  Undo2,
   Wallet,
   Signature,
   TriangleAlert,
@@ -61,7 +63,7 @@ import {
   requiresSettlement,
   transitionBlocker,
 } from '@/features/contracts/lib/contractState';
-import { ContractOpsPanel } from '@/features/contracts/components/ContractOpsPanel';
+import { ContractOpsPanel, type OpsIntent } from '@/features/contracts/components/ContractOpsPanel';
 import { TrialPanel } from '@/features/contracts/components/TrialPanel';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
 import { contractDocumentHtml } from '@/features/contracts/lib/contractDocument';
@@ -71,6 +73,7 @@ import {
   FinanceTab,
   PartiesTab,
   RecordPaymentModal,
+  useUserNames,
 } from '@/features/contracts/components/details/ContractTabs';
 import {
   RECRUITMENT_TERM_MONTHS,
@@ -134,6 +137,8 @@ export default function ContractDetails() {
   const [printing, setPrinting] = useState(false);
   const [tab, setTab] = useState<DetailTab>('overview');
   const [paying, setPaying] = useState(false);
+  const [opsIntent, setOpsIntent] = useState<OpsIntent | null>(null);
+  const { data: userNames } = useUserNames(history.map((h) => h.changed_by));
   const toast = useToast();
 
   if (isLoading) {
@@ -206,6 +211,25 @@ export default function ContractDetails() {
   ];
   const visibleTabs = TABS.filter((t) => t.show);
   const activeTab = visibleTabs.some((t) => t.key === tab) ? tab : 'overview';
+  // إجراءات العمليات في الرأس — فقط لما يناسب نوع العقد وحالته والصلاحية (القواعد الدقيقة في اللوحة)
+  const rentalWithWorker =
+    ['monthly_rental', 'daily_rental', 'transfer_trial'].includes(contract.service_code ?? '') &&
+    Boolean(contract.worker_profile_id || contract.worker_name);
+  const headerOps: { key: OpsIntent; label: string; icon: ReactNode }[] = can('contracts', 'edit')
+    ? [
+        ...(rentalWithWorker &&
+        contract.status === 'active' &&
+        contract.service_code !== 'transfer_trial'
+          ? [{ key: 'replace' as const, label: 'طلب استبدال', icon: <ArrowLeftRight size={15} /> }]
+          : []),
+        ...(rentalWithWorker && contract.status === 'active'
+          ? [{ key: 'return' as const, label: 'طلب إرجاع', icon: <Undo2 size={15} /> }]
+          : []),
+        ...(requiresSettlement(contract) && !['cancelled', 'completed'].includes(contract.status)
+          ? [{ key: 'cancel' as const, label: 'إلغاء وتسوية العقد', icon: <Scale size={15} /> }]
+          : []),
+      ]
+    : [];
   const canRecordPayment =
     can('payments', 'create') &&
     contract.total_amount - contract.amount_paid > 0 &&
@@ -290,11 +314,19 @@ export default function ContractDetails() {
                 <Wallet size={15} /> تسجيل دفعة
               </Button>
             )}
-            {contract.status !== 'draft' && (
-              <Button variant="outline" size="sm" onClick={() => setTab('operations')}>
-                <RotateCcw size={15} /> استبدال / إرجاع / تسوية
+            {headerOps.map((o) => (
+              <Button
+                key={o.key}
+                variant={o.key === 'cancel' ? 'danger' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setOpsIntent(o.key);
+                  setTab('operations');
+                }}
+              >
+                {o.icon} {o.label}
               </Button>
-            )}
+            ))}
           </div>
         </div>
         <div className="mt-4 flex flex-wrap items-start gap-2 border-t border-navy-50 pt-3">
@@ -466,7 +498,13 @@ export default function ContractDetails() {
       {activeTab === 'finance' && <FinanceTab contract={contract} />}
       {activeTab === 'operations' && (
         <div className="space-y-4">
-          {contract.status !== 'draft' && <ContractOpsPanel contract={contract} />}
+          {contract.status !== 'draft' && (
+            <ContractOpsPanel
+              contract={contract}
+              intent={opsIntent}
+              onIntentDone={() => setOpsIntent(null)}
+            />
+          )}
           {/* سجل النسخ (الأصل والتجديدات) */}
           {lineage.length > 1 && (
             <Card>
@@ -529,7 +567,12 @@ export default function ContractDetails() {
                       <p className="text-sm font-medium text-navy-900">
                         {CONTRACT_STATUS_LABEL[h.to_status as ContractStatus] ?? h.to_status}
                       </p>
-                      <p className="num text-[11px] text-purple">{dateAr(h.created_at)}</p>
+                      <p className="text-[11px] text-purple">
+                        <span className="num">{dateTimeAr(h.created_at)}</span> ·{' '}
+                        {h.changed_by
+                          ? (userNames?.get(h.changed_by) ?? 'مستخدم النظام')
+                          : 'غير متوفر'}
+                      </p>
                     </div>
                   </li>
                 ))}

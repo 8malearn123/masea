@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ArrowLeftRight,
   History,
@@ -382,7 +382,18 @@ function ReturnCard({
  * «عمليات العقد» داخل صفحة التفاصيل: إلغاء وتسوية · إرجاع · استبدال ·
  * طلبات الاسترداد · سجل العمليات والموافقات. كل زر يعمل فعلياً أو يشرح سبب تعطيله.
  */
-export function ContractOpsPanel({ contract }: { contract: ContractListItem }) {
+export type OpsIntent = 'cancel' | 'return' | 'replace';
+
+export function ContractOpsPanel({
+  contract,
+  intent = null,
+  onIntentDone,
+}: {
+  contract: ContractListItem;
+  /** إجراء طُلب من رأس صفحة العقد — يُفتح نموذجه مباشرة إن كان مسموحاً */
+  intent?: OpsIntent | null;
+  onIntentDone?: () => void;
+}) {
   const { can } = usePermissions();
   const settlementsQ = useSettlements(contract.id);
   const returnsQ = useReturns(contract.id);
@@ -447,6 +458,16 @@ export function ContractOpsPanel({ contract }: { contract: ContractListItem }) {
           : liveReplacement
             ? `يوجد طلب استبدال قائم (${liveReplacement.replacement_no})`
             : null;
+
+  const ready = !settlementsQ.isLoading && !returnsQ.isLoading && !replacementsQ.isLoading;
+  useEffect(() => {
+    if (!intent || !ready) return;
+    if (intent === 'cancel' && !cancelBlocked) setWizard({ returnId: null, date: undefined });
+    if (intent === 'return' && !returnBlocked) setReturning(true);
+    if (intent === 'replace' && !replaceBlocked) setReplacing(true);
+    onIntentDone?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per requested intent
+  }, [intent, ready]);
 
   const loading =
     settlementsQ.isLoading || returnsQ.isLoading || refundsQ.isLoading || replacementsQ.isLoading;

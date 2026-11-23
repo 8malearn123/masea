@@ -825,6 +825,31 @@ export default function ContractWizard() {
               placeholder="اختر الفرع"
               disabled={Boolean(ownBranch)}
             />
+            {isRental && (
+              <div className="grid gap-3 rounded-xl border border-navy-50 p-3 sm:col-span-2 sm:grid-cols-3">
+                <p className="text-xs font-bold text-navy sm:col-span-3">
+                  بيانات التسليم والاستلام{isHourly ? ' (مكان الخدمة)' : ''}
+                </p>
+                <Input
+                  label={isHourly ? 'عنوان مكان الخدمة' : 'عنوان التسليم'}
+                  value={d.customerAddress}
+                  onChange={(e) => set({ customerAddress: e.target.value })}
+                  placeholder="يُؤخذ من ملف العميل إن تُرك فارغاً"
+                />
+                <Input
+                  label="مكان العمل"
+                  value={d.workLocation}
+                  onChange={(e) => set({ workLocation: e.target.value })}
+                />
+                <Input
+                  label="جوال الموظف المسؤول"
+                  value={d.employeeMobile}
+                  inputMode="tel"
+                  className="num"
+                  onChange={(e) => set({ employeeMobile: e.target.value })}
+                />
+              </div>
+            )}
             {musaned && (
               <div className="sm:col-span-2">
                 <Input
@@ -1244,23 +1269,16 @@ function RentalReview({
           className="num"
           onChange={(e) => set({ customerIdNo: e.target.value })}
         />
-        <Input
-          label="عنوان العميل"
-          value={d.customerAddress || d.customer?.address || ''}
-          onChange={(e) => set({ customerAddress: e.target.value })}
-        />
-        <Input
-          label="مكان العمل"
-          value={d.workLocation}
-          onChange={(e) => set({ workLocation: e.target.value })}
-        />
-        <Input
-          label="رقم جوال الموظف المسؤول"
-          value={d.employeeMobile}
-          inputMode="tel"
-          className="num"
-          onChange={(e) => set({ employeeMobile: e.target.value })}
-        />
+        <dl className="rounded-xl bg-navy-50 p-3 text-xs">
+          <dt className="mb-1 font-bold text-navy">
+            بيانات التسليم والاستلام (من «تفاصيل الخدمة»)
+          </dt>
+          <dd>العنوان: {d.customerAddress || d.customer?.address || 'غير متوفر'}</dd>
+          <dd>مكان العمل: {d.workLocation || 'غير متوفر'}</dd>
+          <dd>
+            جوال الموظف المسؤول: <span className="num">{d.employeeMobile || 'غير متوفر'}</span>
+          </dd>
+        </dl>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <PayFact label="إجمالي قيمة العقد" value={total} />
