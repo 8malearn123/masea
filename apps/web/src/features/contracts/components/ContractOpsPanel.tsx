@@ -66,6 +66,7 @@ const ENTITY_LABEL = {
   refund: 'الاسترداد',
   replacement: 'الاستبدال',
   trial: 'التجربة',
+  driver_task: 'التوصيل والاستلام',
 } as const;
 
 function today(): string {

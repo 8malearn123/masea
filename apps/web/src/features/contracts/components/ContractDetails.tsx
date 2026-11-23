@@ -64,6 +64,7 @@ import {
   transitionBlocker,
 } from '@/features/contracts/lib/contractState';
 import { ContractOpsPanel, type OpsIntent } from '@/features/contracts/components/ContractOpsPanel';
+import { DeliveryTab, WorkerTab } from '@/features/contracts/components/details/WorkerDeliveryTabs';
 import { TrialPanel } from '@/features/contracts/components/TrialPanel';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
 import { contractDocumentHtml } from '@/features/contracts/lib/contractDocument';
@@ -114,9 +115,11 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 type DetailTab =
   | 'overview'
+  | 'worker'
   | 'parties'
   | 'clauses'
   | 'finance'
+  | 'delivery'
   | 'operations'
   | 'documents'
   | 'activity';
@@ -196,14 +199,24 @@ export default function ContractDetails() {
     else transition.mutate(to);
   }
 
+  // التبويبات حسب نوع العقد: العاملة للاستقدام والتأجير والتجربة، والتوصيل للتأجير والتجربة
+  const isRentalLike = [
+    'monthly_rental',
+    'daily_rental',
+    'hourly_rental',
+    'transfer_trial',
+  ].includes(contract.service_code ?? '');
+  const withWorker = isRentalLike || contract.service_code === 'recruitment';
   const TABS: { key: DetailTab; label: string; show: boolean }[] = [
     { key: 'overview', label: 'نظرة عامة', show: true },
+    { key: 'worker', label: 'بيانات العاملة', show: withWorker },
     { key: 'parties', label: 'الأطراف', show: true },
     { key: 'clauses', label: 'بنود العقد', show: !musaned },
     { key: 'finance', label: 'المالية', show: true },
+    { key: 'delivery', label: 'التوصيل والاستلام', show: isRentalLike },
     {
       key: 'operations',
-      label: 'العمليات',
+      label: isRentalLike ? 'الاستبدالات والإرجاع' : 'العمليات',
       show: contract.status !== 'draft' || lineage.length > 1,
     },
     { key: 'documents', label: 'المستندات', show: !musaned },
@@ -493,7 +506,9 @@ export default function ContractDetails() {
           {contract.service_code === 'transfer_trial' && <TrialPanel contract={contract} />}
         </div>
       )}
+      {activeTab === 'worker' && <WorkerTab contract={contract} />}
       {activeTab === 'parties' && <PartiesTab contract={contract} />}
+      {activeTab === 'delivery' && <DeliveryTab contract={contract} />}
       {activeTab === 'clauses' && <ClausesTab contract={contract} clauses={clauses} />}
       {activeTab === 'finance' && <FinanceTab contract={contract} />}
       {activeTab === 'operations' && (

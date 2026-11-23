@@ -67,7 +67,7 @@ describe('واجهة تجديد العقد', () => {
     expect(parentLinks[0]).toHaveAttribute('href', '/contracts/00009');
     expect(screen.getByText(/تجديد العقد/, { selector: 'span' })).toBeInTheDocument();
     // سجل النسخ في تبويب «العمليات»
-    fireEvent.click(screen.getByRole('tab', { name: 'العمليات' }));
+    fireEvent.click(screen.getByRole('tab', { name: /الاستبدالات والإرجاع|العمليات/ }));
     expect(await screen.findByText('سجل النسخ')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'نظرة عامة' }));
     // مدة نسخة التجديد مطابقة للأصل — لا بطاقة تعديل للمدة
