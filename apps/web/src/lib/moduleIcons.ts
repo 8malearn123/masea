@@ -20,6 +20,7 @@ import {
   Users,
   Wallet,
   type LucideIcon,
+  AtSign,
 } from 'lucide-react';
 import type { ModuleCode } from '@/lib/permissions';
 
@@ -44,5 +45,6 @@ export const MODULE_ICON: Record<ModuleCode, LucideIcon> = {
   customers: UserRound,
   sales_ops: Wallet,
   audit: History,
+  it_admin: AtSign,
   hourly: Clock,
 };
