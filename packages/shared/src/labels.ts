@@ -14,6 +14,12 @@ export const workerStatusLabel: Record<WorkerStatus, string> = {
 
 export const contractStatusLabel: Record<ContractStatus, string> = {
   draft: 'مسودة',
+  pending_approval: 'بانتظار الاعتماد',
+  approved: 'معتمد',
+  awaiting_signature: 'بانتظار التوقيع',
+  signed: 'موقّع',
+  musaned_created: 'أُنشئ على مساند',
+  musaned_signed: 'موقّع على مساند',
   active: 'نشط',
   completed: 'مكتمل',
   cancelled: 'ملغي',

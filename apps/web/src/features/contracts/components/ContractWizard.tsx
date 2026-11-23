@@ -376,6 +376,7 @@ export default function ContractWizard() {
       customer_id: d.customer.id,
       customer_name: d.customer.full_name,
       worker_name: d.worker?.full_name ?? null,
+      worker_profile_id: d.worker?.id ?? null,
       branch: d.branch,
       start_date: d.start_date,
       end_date: endDate,

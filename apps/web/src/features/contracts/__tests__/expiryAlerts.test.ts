@@ -26,6 +26,7 @@ function contract(id: string, status: ContractStatus, endOffset: number | null):
     template_id: null,
     customer_id: `cust-${id}`,
     worker_id: null,
+    worker_profile_id: null,
     branch_id: 'نجران',
     created_by: null,
     start_date: '2026-03-01',
