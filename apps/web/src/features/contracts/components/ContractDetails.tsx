@@ -10,8 +10,10 @@ import {
   FileX,
   GitBranch,
   History,
+  Eye,
   Pencil,
-  ScrollText,
+  RotateCcw,
+  Wallet,
   Signature,
   TriangleAlert,
 } from 'lucide-react';
@@ -61,9 +63,15 @@ import {
 } from '@/features/contracts/lib/contractState';
 import { ContractOpsPanel } from '@/features/contracts/components/ContractOpsPanel';
 import { TrialPanel } from '@/features/contracts/components/TrialPanel';
-import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
-import { loadRentalDocument } from '@/features/contracts/api/rentalContract.api';
-import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/print';
+import { openContractPrint } from '@/features/contracts/lib/contractHtml';
+import { contractDocumentHtml } from '@/features/contracts/lib/contractDocument';
+import {
+  ClausesTab,
+  DocumentsTab,
+  FinanceTab,
+  PartiesTab,
+  RecordPaymentModal,
+} from '@/features/contracts/components/details/ContractTabs';
 import {
   RECRUITMENT_TERM_MONTHS,
   contractEndDate,
@@ -101,6 +109,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+type DetailTab =
+  | 'overview'
+  | 'parties'
+  | 'clauses'
+  | 'finance'
+  | 'operations'
+  | 'documents'
+  | 'activity';
+
 export default function ContractDetails() {
   const { id = '' } = useParams();
   const { can } = usePermissions();
@@ -115,6 +132,8 @@ export default function ContractDetails() {
   const [showEdit, setShowEdit] = useState(false);
   const [confirmTo, setConfirmTo] = useState<ContractStatus | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [tab, setTab] = useState<DetailTab>('overview');
+  const [paying, setPaying] = useState(false);
   const toast = useToast();
 
   if (isLoading) {
@@ -154,27 +173,12 @@ export default function ContractDetails() {
     if (!contract) return;
     setPrinting(true);
     try {
-      const doc = await loadRentalDocument(contract);
-      if (!doc) {
-        openContractPrint(
-          buildContractHtml(
-            contract,
-            clauses.map((c) => c.body),
-          ),
-        );
-        return;
-      }
-      const img = (type: 'customer' | 'company') => {
-        const v = signatures.find((x) => x.signer_type === type)?.signature_image ?? null;
-        return v && v.startsWith('data:image/') ? v : null;
-      };
-      const signed = ['signed', 'active', 'completed'].includes(contract.status);
-      openContractPrint(
-        await rentalContractHtml(doc.template.doc, doc.source, {
-          watermark: signed ? null : 'مسودة — غير موقّعة',
-          signatures: { employee: img('company'), customer: img('customer') },
-        }),
-      );
+      const doc = await contractDocumentHtml(contract, {
+        clauses: clauses.map((c) => c.body),
+        signatures,
+        autoPrint: true,
+      });
+      openContractPrint(doc.html);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'تعذّر تجهيز العقد للطباعة');
     } finally {
@@ -187,6 +191,26 @@ export default function ContractDetails() {
     else transition.mutate(to);
   }
 
+  const TABS: { key: DetailTab; label: string; show: boolean }[] = [
+    { key: 'overview', label: 'نظرة عامة', show: true },
+    { key: 'parties', label: 'الأطراف', show: true },
+    { key: 'clauses', label: 'بنود العقد', show: !musaned },
+    { key: 'finance', label: 'المالية', show: true },
+    {
+      key: 'operations',
+      label: 'العمليات',
+      show: contract.status !== 'draft' || lineage.length > 1,
+    },
+    { key: 'documents', label: 'المستندات', show: !musaned },
+    { key: 'activity', label: 'سجل النشاط', show: true },
+  ];
+  const visibleTabs = TABS.filter((t) => t.show);
+  const activeTab = visibleTabs.some((t) => t.key === tab) ? tab : 'overview';
+  const canRecordPayment =
+    can('payments', 'create') &&
+    contract.total_amount - contract.amount_paid > 0 &&
+    !['draft', 'cancelled'].includes(contract.status);
+
   return (
     <div>
       <Link
@@ -196,56 +220,154 @@ export default function ContractDetails() {
         <ArrowRight size={16} /> العودة للعقود
       </Link>
 
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-navy-50 text-navy">
-            <FileText size={20} />
-          </span>
-          <div>
-            <h1 className="num text-xl font-bold text-navy">{contract.contract_no ?? '—'}</h1>
-            <p className="text-sm text-purple">
-              {contract.customer_name ?? '—'} ·{' '}
-              {contract.service_code ? SERVICE_LABEL[contract.service_code] : '—'}
-            </p>
-            <p className="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-purple">
-              <GitBranch size={13} /> الإصدار <span className="num">{contract.version}</span>
-              {contract.parent_contract_id && (
-                <>
-                  {' '}
-                  — تجديد العقد{' '}
-                  {parent ? (
-                    <Link
-                      to={`/contracts/${parent.id}`}
-                      className="num font-semibold text-navy hover:underline"
-                    >
-                      {parent.contract_no}
-                    </Link>
-                  ) : (
-                    'السابق'
+      {/* رأس العقد: الرقم والخدمة والعميل والحالة والتواريخ + الإجراءات المسموحة */}
+      <Card className="mb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-navy-50 text-navy">
+              <FileText size={20} />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="num text-xl font-bold text-navy">{contract.contract_no ?? '—'}</h1>
+                <StatusBadge status={contract.status} />
+                {isDemoMode() && <Badge tone="neutral">بيانات تجريبية</Badge>}
+              </div>
+              <p className="text-sm text-purple">
+                {contract.service_code ? SERVICE_LABEL[contract.service_code] : '—'} ·{' '}
+                {contract.customer_name ?? 'غير متوفر'}
+              </p>
+              <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-purple">
+                <span>
+                  الإنشاء <span className="num">{dateAr(contract.created_at)}</span>
+                </span>
+                <span>
+                  البداية <span className="num">{dateAr(contract.start_date)}</span> ← النهاية{' '}
+                  <span className="num">
+                    {contract.end_date
+                      ? dateAr(contract.end_date)
+                      : contractTermUnit(contract.service_code)
+                        ? 'غير محدّد'
+                        : 'بلا مدة'}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <GitBranch size={12} /> الإصدار <span className="num">{contract.version}</span>
+                  {contract.parent_contract_id && parent && (
+                    <>
+                      {' '}
+                      — تجديد العقد{' '}
+                      <Link
+                        to={`/contracts/${parent.id}`}
+                        className="num font-semibold text-navy hover:underline"
+                      >
+                        {parent.contract_no}
+                      </Link>
+                    </>
                   )}
-                </>
-              )}
-            </p>
+                </span>
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!musaned && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setTab('documents')}>
+                  <Eye size={15} /> عرض العقد
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  loading={printing}
+                  onClick={() => void printContract()}
+                >
+                  <FileDown size={15} /> طباعة / PDF
+                </Button>
+              </>
+            )}
+            {canRecordPayment && (
+              <Button variant="outline" size="sm" onClick={() => setPaying(true)}>
+                <Wallet size={15} /> تسجيل دفعة
+              </Button>
+            )}
+            {contract.status !== 'draft' && (
+              <Button variant="outline" size="sm" onClick={() => setTab('operations')}>
+                <RotateCcw size={15} /> استبدال / إرجاع / تسوية
+              </Button>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isDemoMode() && <Badge tone="neutral">بيانات تجريبية</Badge>}
-          <StatusBadge status={contract.status} />
-          {!musaned && (
-            <Button
-              variant="outline"
-              size="sm"
-              loading={printing}
-              onClick={() => void printContract()}
+        <div className="mt-4 flex flex-wrap items-start gap-2 border-t border-navy-50 pt-3">
+          {renewals[0] ? (
+            <Link
+              to={`/contracts/${renewals[0].id}`}
+              className="flex items-center gap-1.5 rounded-xl bg-navy-50 px-3 py-2 text-xs font-semibold text-navy hover:underline"
             >
-              <FileDown size={16} /> تنزيل PDF
-            </Button>
+              <GitBranch size={14} /> جُدِّد بالعقد{' '}
+              <span className="num">{renewals[0].contract_no}</span>
+            </Link>
+          ) : (
+            <div className="flex">
+              <RenewContractButton contract={contract} existingRenewals={renewals} size="sm" />
+            </div>
+          )}
+          {actions.length === 0 && !canEditDraft ? (
+            <p className="text-sm text-purple">لا توجد إجراءات متاحة لحالتك ودورك.</p>
+          ) : (
+            <div className="flex flex-wrap items-start gap-2">
+              {canEditDraft && (
+                <Button variant="outline" size="sm" onClick={() => setShowEdit(true)}>
+                  <Pencil size={15} /> تعديل المسودة
+                </Button>
+              )}
+              {actions.map((to) => {
+                const blocked = transitionBlocker(contract, to, origin);
+                return to === 'signed' ? (
+                  <Button key={to} variant="primary" size="sm" onClick={() => setShowSign(true)}>
+                    {ACTION_LABEL[to]}
+                  </Button>
+                ) : (
+                  <div key={to}>
+                    <Button
+                      size="sm"
+                      variant={to === 'cancelled' ? 'danger' : 'primary'}
+                      loading={transition.isPending && transition.variables === to}
+                      disabled={transition.isPending || Boolean(blocked)}
+                      onClick={() => runTransition(to)}
+                    >
+                      {ACTION_LABEL[to]}
+                    </Button>
+                    {blocked && (
+                      <p className="mt-1 flex items-center gap-1 text-[11px] text-gold-600">
+                        <TriangleAlert size={12} /> {blocked}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
+      </Card>
+
+      {/* التبويبات */}
+      <div className="mb-4 flex gap-1 overflow-x-auto border-b border-navy-100" role="tablist">
+        {visibleTabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t.key}
+            onClick={() => setTab(t.key)}
+            className={`shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium ${activeTab === t.key ? 'border-navy text-navy' : 'border-transparent text-purple hover:text-navy'}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
+      {activeTab === 'overview' && (
+        <div className="space-y-4">
           {/* Details */}
           <Card>
             <h2 className="mb-2 text-sm font-bold text-navy">بيانات العقد</h2>
@@ -334,95 +456,17 @@ export default function ContractDetails() {
               <TermEditor contract={contract} hasClauses={clauses.length > 0} />
             )}
 
-          {/* Musaned panel (استقدام / نقل كفالة) OR in-system clauses (تأجير) */}
-          {musaned ? (
-            <MusanedPanel contract={contract} />
-          ) : (
-            <Card>
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
-                <ScrollText size={16} />{' '}
-                {contract.terms_accepted_at ? 'الشروط التي وافق عليها العميل' : 'بنود العقد'}
-              </h2>
-              {clauses.length === 0 ? (
-                <p className="text-sm text-purple">لا توجد بنود مُجمّدة لهذا العقد.</p>
-              ) : (
-                <ol className="space-y-2">
-                  {clauses.map((cl, i) => (
-                    <li key={cl.id} className="flex gap-3 text-sm leading-relaxed text-navy-900">
-                      <span className="num font-bold text-gold-600">{i + 1}.</span>
-                      {cl.body}
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Card>
-          )}
-
-          {/* External-office recruitment workflow (recruitment contracts only) */}
+          {musaned && <MusanedPanel contract={contract} />}
           {contract.service_code === 'recruitment' && <RecruitmentJourney contract={contract} />}
-
-          {/* تجربة نقل الخدمات (0092) */}
           {contract.service_code === 'transfer_trial' && <TrialPanel contract={contract} />}
-
-          {/* الإلغاء والتسوية · الإرجاع · الاسترداد · سجل العمليات (0090) */}
-          {contract.status !== 'draft' && <ContractOpsPanel contract={contract} />}
         </div>
-
+      )}
+      {activeTab === 'parties' && <PartiesTab contract={contract} />}
+      {activeTab === 'clauses' && <ClausesTab contract={contract} clauses={clauses} />}
+      {activeTab === 'finance' && <FinanceTab contract={contract} />}
+      {activeTab === 'operations' && (
         <div className="space-y-4">
-          {/* Actions */}
-          <Card>
-            <h2 className="mb-3 text-sm font-bold text-navy">الإجراءات</h2>
-            {renewals[0] ? (
-              <Link
-                to={`/contracts/${renewals[0].id}`}
-                className="mb-3 flex items-center gap-1.5 rounded-xl bg-navy-50 px-3 py-2 text-xs font-semibold text-navy hover:underline"
-              >
-                <GitBranch size={14} /> جُدِّد بالعقد{' '}
-                <span className="num">{renewals[0].contract_no}</span>
-              </Link>
-            ) : (
-              <div className="mb-3 flex flex-col">
-                <RenewContractButton contract={contract} existingRenewals={renewals} size="md" />
-              </div>
-            )}
-            {actions.length === 0 && !canEditDraft ? (
-              <p className="text-sm text-purple">لا توجد إجراءات متاحة لحالتك ودورك.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {canEditDraft && (
-                  <Button variant="outline" onClick={() => setShowEdit(true)}>
-                    <Pencil size={15} /> تعديل المسودة
-                  </Button>
-                )}
-                {actions.map((to) => {
-                  const blocked = transitionBlocker(contract, to, origin);
-                  return to === 'signed' ? (
-                    <Button key={to} variant="primary" onClick={() => setShowSign(true)}>
-                      {ACTION_LABEL[to]}
-                    </Button>
-                  ) : (
-                    <div key={to}>
-                      <Button
-                        className="w-full"
-                        variant={to === 'cancelled' ? 'danger' : 'primary'}
-                        loading={transition.isPending && transition.variables === to}
-                        disabled={transition.isPending || Boolean(blocked)}
-                        onClick={() => runTransition(to)}
-                      >
-                        {ACTION_LABEL[to]}
-                      </Button>
-                      {blocked && (
-                        <p className="mt-1 flex items-center gap-1 text-[11px] text-gold-600">
-                          <TriangleAlert size={12} /> {blocked}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
+          {contract.status !== 'draft' && <ContractOpsPanel contract={contract} />}
           {/* سجل النسخ (الأصل والتجديدات) */}
           {lineage.length > 1 && (
             <Card>
@@ -462,7 +506,13 @@ export default function ContractDetails() {
               </ol>
             </Card>
           )}
-
+        </div>
+      )}
+      {activeTab === 'documents' && (
+        <DocumentsTab contract={contract} clauses={clauses} signatures={signatures} />
+      )}
+      {activeTab === 'activity' && (
+        <div className="grid gap-4 lg:grid-cols-2">
           {/* Status history */}
           <Card>
             <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
@@ -486,7 +536,6 @@ export default function ContractDetails() {
               </ol>
             )}
           </Card>
-
           {/* Signatures log — in-system signing only (musaned signs on مساند) */}
           {!musaned && (
             <Card>
@@ -523,9 +572,11 @@ export default function ContractDetails() {
                 </ol>
               )}
             </Card>
-          )}
+          )}{' '}
         </div>
-      </div>
+      )}
+
+      {paying && <RecordPaymentModal contract={contract} onClose={() => setPaying(false)} />}
 
       {!musaned && (
         <SignContractModal

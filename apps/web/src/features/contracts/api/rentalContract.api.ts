@@ -13,6 +13,7 @@ import type {
   RentalContractSource,
 } from '@/features/contracts/lib/rentalContract/fields';
 import type { ContractListItem, ContractServiceCode } from '@/features/contracts/types';
+import { listContractPayments } from '@/features/contracts/api/contractPayments.api';
 
 /**
  * قالب «عقد تأجير خدمات عمالية» وبياناته — فوق جداول العقود القائمة (0087):
@@ -286,8 +287,17 @@ async function contractExtras(id: string): Promise<{
   doc_fields: unknown;
   payments: { paid_at: string; amount: number; method: string }[];
 }> {
-  if (isDemoMode() || isDemoId(id))
-    return { doc_fields: DEMO_DOC_FIELDS[id] ?? null, payments: [] };
+  if (isDemoMode() || isDemoId(id)) {
+    const pays = await listContractPayments(id);
+    return {
+      doc_fields: DEMO_DOC_FIELDS[id] ?? null,
+      payments: pays.map((x) => ({
+        paid_at: x.paid_at,
+        amount: x.amount,
+        method: methodLabel(x.method),
+      })),
+    };
+  }
   const [c, p] = await Promise.all([
     supabase.from('contracts').select('doc_fields').eq('id', id).maybeSingle(),
     supabase

@@ -39,6 +39,11 @@ export interface ContractFilters {
   service: ContractServiceCode | 'all';
   branch: string | 'all';
   search: string;
+  /** اسم العميل (يحتوي) */
+  customer?: string;
+  /** فترة تاريخ بداية العقد (yyyy-mm-dd) */
+  from?: string;
+  to?: string;
 }
 
 export const SERVICE_LABEL: Record<ContractServiceCode, string> = {

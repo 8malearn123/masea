@@ -14,7 +14,11 @@ import { contractTermLabel, contractTermUnit } from '@/features/contracts/lib/co
  * base64 (no network), producing a pixel-accurate Arabic PDF. ZATCA e-invoice
  * is a SEPARATE document — do not merge it into the contract.
  */
-export function buildContractHtml(contract: ContractListItem, clauses: string[]): string {
+export function buildContractHtml(
+  contract: ContractListItem,
+  clauses: string[],
+  opts: { autoPrint?: boolean } = {},
+): string {
   const rows = clauses
     .map((c, i) => `<li><span class="n">${i + 1}.</span> ${escapeHtml(c)}</li>`)
     .join('');
@@ -96,7 +100,7 @@ export function buildContractHtml(contract: ContractListItem, clauses: string[])
   </div>
 
   <footer>ماسية الشرق للاستقدام · من تطوير قمة كود · QUO-000105</footer>
-  <script>window.onload = function () { window.print(); };</script>
+  ${opts.autoPrint === false ? '' : '<script>window.onload = function () { window.print(); };</script>'}
 </body>
 </html>`;
 }

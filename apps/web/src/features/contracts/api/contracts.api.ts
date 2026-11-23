@@ -535,6 +535,10 @@ function applyFilters(rows: ContractListItem[], f: ContractFilters): ContractLis
       const hay = `${r.contract_no ?? ''} ${r.customer_name ?? ''}`;
       if (!hay.includes(q)) return false;
     }
+    if (f.customer?.trim() && !(r.customer_name ?? '').includes(f.customer.trim())) return false;
+    const day = (r.start_date ?? r.created_at ?? '').slice(0, 10);
+    if (f.from && (!day || day < f.from)) return false;
+    if (f.to && (!day || day > f.to)) return false;
     return true;
   });
 }

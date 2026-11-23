@@ -123,6 +123,11 @@ function EnhancedContractsList() {
   const [page, setPage] = useState(0);
   const { can } = usePermissions();
   const { data = [], isLoading, isError, refetch } = useContracts(filters);
+  const customerNames = useMemo(
+    () =>
+      [...new Set(data.map((c) => c.customer_name).filter((n): n is string => Boolean(n)))].sort(),
+    [data],
+  );
   const { data: stages = [] } = useRecruitmentStages();
   const stageName = (code: string | null) => stages.find((s) => s.code === code)?.name_ar ?? null;
 
@@ -176,7 +181,15 @@ function EnhancedContractsList() {
     setPage(0);
   }
   function clearFilters() {
-    setFilters({ status: 'all', service: 'all', branch: 'all', search: '' });
+    setFilters({
+      status: 'all',
+      service: 'all',
+      branch: 'all',
+      search: '',
+      customer: '',
+      from: '',
+      to: '',
+    });
     setTab('all');
     setSort('recent');
     setPage(0);
@@ -186,6 +199,9 @@ function EnhancedContractsList() {
     filters.service !== 'all' ||
     filters.branch !== 'all' ||
     filters.search.trim() !== '' ||
+    Boolean(filters.customer?.trim()) ||
+    Boolean(filters.from) ||
+    Boolean(filters.to) ||
     tab !== 'all';
 
   return (
@@ -327,6 +343,32 @@ function EnhancedContractsList() {
             value={filters.branch}
             onChange={(e) => patch({ branch: e.target.value })}
             options={BRANCH_OPTIONS}
+          />
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <Input
+            aria-label="العميل"
+            placeholder="العميل"
+            list="contract-customers"
+            value={filters.customer ?? ''}
+            onChange={(e) => patch({ customer: e.target.value })}
+          />
+          <datalist id="contract-customers">
+            {customerNames.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+          <Input
+            aria-label="من تاريخ"
+            type="date"
+            value={filters.from ?? ''}
+            onChange={(e) => patch({ from: e.target.value })}
+          />
+          <Input
+            aria-label="إلى تاريخ"
+            type="date"
+            value={filters.to ?? ''}
+            onChange={(e) => patch({ to: e.target.value })}
           />
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
