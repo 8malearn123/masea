@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getQuoteRecord } from '@/shared/lib/quotesLedger';
 import { convertQuoteToContract } from '@/features/crm/api/crm.api';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
@@ -61,6 +61,10 @@ import { legalClausesOf } from '@/features/contracts/lib/rentalContract/template
 import type { RentalContractSource } from '@/features/contracts/lib/rentalContract/fields';
 import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/print';
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
+import { isRentalService } from '@/features/contracts/api/rentalContract.api';
+import { bookHourly, getHourlyConfig, listBusySlots } from '@/features/hourly/api/hourly.api';
+import { conflictFor, hoursBetween, validateHours } from '@/features/hourly/lib/hourly';
+import { useAuth } from '@/store/auth';
 
 interface Draft {
   service: WizardServiceCode | '';
@@ -83,6 +87,9 @@ interface Draft {
   customerAddress: string;
   workLocation: string;
   employeeMobile: string;
+  /** التأجير بالساعة: وقت الوصول والانصراف في يوم الحجز (start_date). */
+  startTime: string;
+  endTime: string;
 }
 
 const EMPTY: Draft = {
@@ -104,12 +111,42 @@ const EMPTY: Draft = {
   customerAddress: '',
   workLocation: '',
   employeeMobile: '',
+  startTime: '09:00',
+  endTime: '13:00',
 };
+
+/** مسودة المعالج تُحفظ محلياً لكل مستخدم حتى لا تضيع البيانات عند التنقل. */
+const DRAFT_KEY = (uid: string) => `masea.contractWizard.draft.${uid}`;
+function readDraft(uid: string): { d: Draft; step: number } | null {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY(uid));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { d: Draft; step: number };
+    return parsed.d && typeof parsed.step === 'number'
+      ? { d: { ...EMPTY, ...parsed.d }, step: parsed.step }
+      : null;
+  } catch {
+    return null;
+  }
+}
+function writeDraft(uid: string, d: Draft, step: number): void {
+  try {
+    window.localStorage.setItem(DRAFT_KEY(uid), JSON.stringify({ d, step }));
+  } catch {
+    /* storage unavailable — the wizard still works, only without resume */
+  }
+}
+function clearDraft(uid: string): void {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY(uid));
+  } catch {
+    /* ignore */
+  }
+}
 
 const STEP_LABEL: Record<string, string> = {
   service: 'نوع الخدمة',
-  worker: 'العاملة',
-  details: 'التفاصيل',
+  details: 'تفاصيل الخدمة',
   customer: 'العميل',
   pricing: 'التسعير',
   review: 'المعاينة',
@@ -183,28 +220,70 @@ export default function ContractWizard() {
       );
   }
   const [step, setStep] = useState(0);
+  // حفظ المسودة عند التنقل + منع فقدان البيانات (لا يُستأنف تحويل عرض سعر من مسودة قديمة)
+  const uid = useAuth((st) => st.profile?.id) ?? 'anon';
+  const [resume, setResume] = useState(() => (fromQuote ? null : readDraft(uid)));
+  const dirty = !resume && (d.service !== '' || step > 0);
+  useEffect(() => {
+    if (!fromQuote && dirty) writeDraft(uid, d, step);
+  }, [d, step, uid, fromQuote, dirty]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
 
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   // مساند: العقد يُنشأ ويُوقّع على منصة مساند — لا بنود ولا توقيع داخلي.
   const musaned = isMusaned(origins, d.service || null);
-  const isRental = d.service === 'monthly_rental' || d.service === 'daily_rental';
+  // 0094: الشهري واليومي وبالساعة على قالب «عقد تأجير خدمات عمالية» الموحّد
+  const isRental = isRentalService(d.service);
+  const isHourly = d.service === 'hourly_rental';
   const needsWorker = d.service === 'recruitment' || isRental;
-  // التأجير: العاملات المتاحات فقط (المحجوزة لا تُعرض)
-  const workerChoices = isRental ? workers.filter((w) => w.status === 'available') : workers;
-  const stepKeys = [
-    'service',
-    ...(needsWorker ? ['worker'] : []),
-    'details',
-    'customer',
-    'pricing',
-    'review',
-  ];
+  const hours = isHourly ? hoursBetween(d.startTime, d.endTime) : 0;
+  const { data: hourlyCfg } = useQuery({
+    queryKey: ['hourly', 'config'],
+    queryFn: getHourlyConfig,
+    enabled: isHourly,
+  });
+  const { data: busy = [] } = useQuery({
+    queryKey: ['hourly', 'busy', d.start_date],
+    queryFn: () => listBusySlots(d.start_date),
+    enabled: isHourly && Boolean(d.start_date),
+  });
+  // التأجير: العاملات المتاحات فقط، وبالساعة: غير المحجوزات في الوقت المختار
+  const workerChoices = isRental
+    ? workers.filter(
+        (w) =>
+          w.status === 'available' &&
+          (!isHourly ||
+            !hourlyCfg ||
+            !d.start_date ||
+            !conflictFor(
+              busy,
+              {
+                worker_profile_id: w.id,
+                booking_date: d.start_date,
+                start_time: d.startTime,
+                end_time: d.endTime,
+              },
+              hourlyCfg,
+            )),
+      )
+    : workers;
+  // الخطوات الخمس: العاملة ضمن «تفاصيل الخدمة»
+  const stepKeys = ['service', 'details', 'customer', 'pricing', 'review'];
   const current = stepKeys[step] ?? 'service';
 
   const service = d.service || 'recruitment';
   // مدة العقد: أشهر عقد الاستقدام، أو العدد (أشهر/أيام) للتأجير؛ نقل الكفالة بلا مدة.
   const termCount = d.service === 'recruitment' ? d.contractMonths : d.quantity;
-  const endDate = contractEndDate(d.service || null, d.start_date, termCount);
+  const endDate = isHourly
+    ? d.start_date || null
+    : contractEndDate(d.service || null, d.start_date, termCount);
   const termLabel = contractTermLabel({
     service_code: d.service || null,
     start_date: d.start_date,
@@ -213,13 +292,15 @@ export default function ContractWizard() {
   const priceArgs = useMemo(
     () => ({
       nationality: d.nationality || undefined,
-      profession: d.service === 'daily_rental' ? d.task : d.profession || undefined,
+      profession: d.service === 'daily_rental' || isHourly ? d.task : d.profession || undefined,
       quantity:
         d.service === 'monthly_rental' || d.service === 'daily_rental'
           ? Math.max(d.quantity, 1)
-          : 1,
+          : isHourly
+            ? Math.max(hours, 0)
+            : 1,
     }),
-    [d.nationality, d.profession, d.task, d.quantity, d.service],
+    [d.nationality, d.profession, d.task, d.quantity, d.service, isHourly, hours],
   );
   const { data: listPrice, isLoading: priceLoading } = usePrice(
     service,
@@ -277,7 +358,7 @@ export default function ContractWizard() {
     rentalRows.some((r) => r.service_code === d.service && r.status === 'pending_review');
   const rentalDocFields: DocFields | null = useMemo(() => {
     if (!rentalTpl || !company || !d.customer) return null;
-    const unit = d.service === 'daily_rental' ? 'يوم' : 'شهر';
+    const unit = d.service === 'daily_rental' ? 'يوم' : isHourly ? 'ساعة' : 'شهر';
     return {
       customer: {
         full_name: d.customer.full_name,
@@ -293,9 +374,11 @@ export default function ContractWizard() {
       company,
       employee_mobile: d.employeeMobile.trim() || null,
       work_location: d.workLocation.trim() || null,
-      service_label: `${SERVICE_LABEL[service]} — ${d.quantity} ${unit}`,
+      service_label: isHourly
+        ? `${SERVICE_LABEL[service]} — ${hours} ${unit} (${d.startTime}–${d.endTime}) · ${d.task}`
+        : `${SERVICE_LABEL[service]} — ${d.quantity} ${unit}`,
     };
-  }, [rentalTpl, company, d, service]);
+  }, [rentalTpl, company, d, service, isHourly, hours]);
   const rentalSource: RentalContractSource | null =
     rentalDocFields && price
       ? {
@@ -334,9 +417,23 @@ export default function ContractWizard() {
   }, [current, rentalTpl, JSON.stringify(rentalSource)]);
 
   function stepError(): string | null {
-    if (current === 'service') return d.service ? null : 'اختر نوع الخدمة';
-    if (current === 'worker') return d.worker ? null : 'اختر العاملة';
+    if (current === 'service') {
+      if (!d.service) return 'اختر نوع الخدمة';
+      if (isRental && !rentalTpl) {
+        return 'قالب «عقد تأجير خدمات عمالية» لم يُعتمد بعد — لا يُنشأ عقد تأجير قبل اعتماده';
+      }
+      return null;
+    }
     if (current === 'details') {
+      if (needsWorker && !d.worker) return 'اختر العاملة';
+      if (isHourly) {
+        if (!d.start_date) return 'حدّد تاريخ الحجز';
+        const hErr = hourlyCfg ? validateHours(d.startTime, d.endTime, hourlyCfg) : null;
+        if (hErr) return hErr;
+        if (!d.task) return 'اختر نوع المهمة';
+        if (!d.branch) return 'اختر الفرع';
+        return null;
+      }
       const termError = validateContractTerm(d.service || null, d.start_date, termCount);
       if (termError) return termError;
       if (!d.branch) return 'اختر الفرع';
@@ -360,8 +457,59 @@ export default function ContractWizard() {
     set({ worker: w, nationality: w.nationality, profession: w.profession });
   }
 
+  const [booking, setBooking] = useState(false);
+  /** التأجير بالساعة: الحجز القائم (book_hourly) ينشئ الحجز والطلب والعقد على القالب الموحّد. */
+  async function saveHourly() {
+    if (!d.customer || !d.worker || !rentalDocFields) return;
+    const phone = (d.customer.phone ?? '').replace(/\D/g, '');
+    if (!/^05\d{8}$/.test(phone)) {
+      toast.error('جوال العميل يجب أن يبدأ بـ 05 ومكوّنًا من 10 أرقام — حدّثه في ملف العميل');
+      return;
+    }
+    setBooking(true);
+    try {
+      const b = await bookHourly({
+        worker_profile_id: d.worker.id,
+        worker_name: d.worker.full_name,
+        booking_date: d.start_date,
+        start_time: d.startTime,
+        end_time: d.endTime,
+        profession: d.task,
+        customer_name: d.customer.full_name,
+        customer_phone: phone,
+        address: d.customerAddress.trim() || d.customer.address || null,
+        notes: null,
+        branch: d.branch,
+        promotion_code: d.promotionCode,
+      });
+      if (!b.contract_id) throw new Error('حُجزت العاملة لكن لم يُنشأ العقد');
+      const doc = await getWorkerDoc(d.worker.id);
+      await setContractDocFields(b.contract_id, {
+        ...rentalDocFields,
+        worker: rentalDocFields.worker ? { ...rentalDocFields.worker, ...(doc ?? {}) } : null,
+      });
+      clearDraft(uid);
+      void qc.invalidateQueries({ queryKey: ['contracts'] });
+      void qc.invalidateQueries({ queryKey: ['hourly'] });
+      toast.success(`تم الحجز وإنشاء العقد — ${hours} ساعة`);
+      navigate(`/contracts/${b.contract_id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذّر الحجز');
+    } finally {
+      setBooking(false);
+    }
+  }
+
   function save() {
     if (!d.service || !d.customer) return;
+    if (isRental && !rentalTpl) {
+      toast.error('قالب عقد التأجير غير معتمد — لا يُنشأ عقد تأجير قبل اعتماده');
+      return;
+    }
+    if (isHourly) {
+      void saveHourly();
+      return;
+    }
     if (!price) {
       toast.error('تعذّر احتساب السعر — حاول مرة أخرى');
       return;
@@ -433,6 +581,7 @@ export default function ContractWizard() {
               void qc.invalidateQueries({ queryKey: ['crm'] });
             });
         }
+        clearDraft(uid);
         toast.success(
           musaned
             ? 'تم تسجيل العقد — تابِع إنشاءه وتوقيعه على منصة مساند'
@@ -458,6 +607,37 @@ export default function ContractWizard() {
         </span>
         <h1 className="text-xl font-bold text-navy">عقد جديد</h1>
       </div>
+
+      {resume && (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-gold-500/40 bg-gold-100/50">
+          <p className="text-sm text-navy-900">
+            لديك مسودة عقد غير محفوظة
+            {resume.d.service ? ` (${SERVICE_LABEL[resume.d.service]})` : ''} — تريد استئنافها؟
+          </p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => {
+                setD(resume.d);
+                setStep(Math.min(resume.step, 4));
+                setResume(null);
+              }}
+            >
+              استئناف المسودة
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                clearDraft(uid);
+                setResume(null);
+              }}
+            >
+              تجاهلها
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* progress */}
       <Card className="mb-4">
@@ -509,15 +689,165 @@ export default function ContractWizard() {
                 className={`rounded-xl border p-4 text-right transition ${d.service === code ? 'border-navy bg-navy-50' : 'border-navy-100 hover:border-navy'}`}
               >
                 <span className="font-bold text-navy">{SERVICE_LABEL[code]}</span>
+                {isRentalService(code) && (
+                  <span className="mt-1 block text-[11px] text-purple">
+                    على قالب «عقد تأجير خدمات عمالية» المعتمد
+                  </span>
+                )}
               </button>
             ))}
+            {isRental && !rentalTpl && (
+              <p className="flex items-start gap-2 rounded-xl bg-gold-100/60 p-3 text-sm text-navy-900 sm:col-span-2">
+                <CircleAlert size={16} className="mt-0.5 shrink-0 text-gold-600" />
+                <span>
+                  {rentalPending
+                    ? 'قالب «عقد تأجير خدمات عمالية» بانتظار الاعتماد — لا يُنشأ عقد تأجير قبل اعتماده من '
+                    : 'لا يوجد قالب تأجير معتمد — '}
+                  <Link to="/contracts/templates/rental" className="font-semibold underline">
+                    مراجعة القالب
+                  </Link>
+                  .
+                </span>
+              </p>
+            )}
           </div>
         )}
 
-        {current === 'worker' && (
-          <div>
-            <p className="mb-3 text-sm text-brand-dark/60 text-purple">
-              اختر العاملة — ستُعبّأ جنسيتها ومهنتها في العقد تلقائيًا.
+        {current === 'details' && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {d.worker && (
+              <div className="rounded-xl bg-navy-50 p-3 text-sm sm:col-span-2">
+                <p>
+                  <span className="text-purple">العاملة المختارة: </span>
+                  <span className="font-semibold text-navy">{d.worker.full_name}</span>
+                  <span className="text-purple">
+                    {' '}
+                    — {d.worker.nationality} · {d.worker.profession} · {d.worker.age} سنة ·{' '}
+                    {d.worker.experience_years} سنوات خبرة
+                  </span>
+                </p>
+                {d.worker.languages.length > 0 && (
+                  <p className="mt-1 text-xs text-purple">
+                    اللغات: {d.worker.languages.join('، ')}
+                  </p>
+                )}
+                {d.worker.bio_ar && (
+                  <p className="mt-1 text-xs text-purple/80">{d.worker.bio_ar}</p>
+                )}
+              </div>
+            )}
+            {(d.service === 'daily_rental' || isHourly) && (
+              <Select
+                label="نوع المهمة"
+                value={d.task}
+                onChange={(e) => set({ task: e.target.value })}
+                options={TASK_TYPES.map((t) => ({ value: t, label: t }))}
+                placeholder="اختر المهمة"
+              />
+            )}
+            {!needsWorker && d.service === 'sponsorship_transfer' && (
+              <Select
+                label="جنسية العاملة"
+                value={d.nationality}
+                onChange={(e) => set({ nationality: e.target.value })}
+                options={NATIONALITIES.map((n) => ({ value: n, label: n }))}
+                placeholder="اختر الجنسية"
+              />
+            )}
+            {d.service === 'recruitment' && (
+              <Select
+                label="مدة العقد (أشهر)"
+                value={String(d.contractMonths)}
+                onChange={(e) => set({ contractMonths: Number(e.target.value) })}
+                options={RECRUITMENT_TERM_MONTHS.map((n) => ({
+                  value: String(n),
+                  label: `${n.toLocaleString('ar-SA')} شهرًا`,
+                }))}
+              />
+            )}
+            {(d.service === 'monthly_rental' || d.service === 'daily_rental') && (
+              <Input
+                label={d.service === 'monthly_rental' ? 'عدد الأشهر' : 'عدد الأيام'}
+                type="number"
+                min={1}
+                step={1}
+                value={d.quantity}
+                onChange={(e) => set({ quantity: Number(e.target.value) })}
+              />
+            )}
+            <Input
+              label={isHourly ? 'تاريخ الحجز' : 'تاريخ البداية'}
+              type="date"
+              value={d.start_date}
+              onChange={(e) =>
+                set({ start_date: e.target.value, ...(isHourly ? { worker: null } : {}) })
+              }
+            />
+            {isHourly ? (
+              <>
+                <Input
+                  label="وقت الوصول"
+                  type="time"
+                  step={(hourlyCfg?.slotMinutes ?? 30) * 60}
+                  value={d.startTime}
+                  onChange={(e) => set({ startTime: e.target.value, worker: null })}
+                />
+                <Input
+                  label="وقت الانصراف"
+                  type="time"
+                  step={(hourlyCfg?.slotMinutes ?? 30) * 60}
+                  value={d.endTime}
+                  onChange={(e) => set({ endTime: e.target.value, worker: null })}
+                />
+                <p className="self-end rounded-xl bg-navy-50 px-3 py-2.5 text-sm text-navy">
+                  المدة: <span className="num font-bold">{hours > 0 ? hours : '—'}</span> ساعة
+                  {hourlyCfg && (
+                    <span className="text-[11px] text-purple">
+                      {' '}
+                      (من {hourlyCfg.minHours} إلى {hourlyCfg.maxHours})
+                    </span>
+                  )}
+                </p>
+              </>
+            ) : (
+              <TermSummary
+                service={d.service || null}
+                start={d.start_date}
+                end={endDate}
+                label={termLabel}
+              />
+            )}
+            <Select
+              label="الفرع"
+              value={d.branch}
+              onChange={(e) => set({ branch: e.target.value })}
+              options={branchOptions.map((b) => ({ value: b, label: b }))}
+              placeholder="اختر الفرع"
+              disabled={Boolean(ownBranch)}
+            />
+            {musaned && (
+              <div className="sm:col-span-2">
+                <Input
+                  label="رقم عقد مساند (اختياري)"
+                  value={d.musanedNo}
+                  onChange={(e) => set({ musanedNo: e.target.value })}
+                  placeholder="يُدخَل الآن أو بعد إنشاء العقد على منصة مساند"
+                />
+                <p className="mt-1.5 text-[11px] text-purple">
+                  عقود الاستقدام ونقل الكفالة تُنشأ وتُوقّع على منصة مساند — يتتبّع النظام حالتها
+                  ورقم عقدها فقط.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {current === 'details' && needsWorker && (
+          <div className="mt-5 border-t border-navy-50 pt-4">
+            <p className="mb-3 text-sm text-purple">
+              {isHourly
+                ? 'العاملات المتاحات وغير المحجوزات في التاريخ والوقت أعلاه فقط.'
+                : 'اختر العاملة — ستُعبّأ جنسيتها ومهنتها في العقد تلقائيًا.'}
             </p>
             {workerChoices.length === 0 && (
               <p className="rounded-xl border border-dashed border-navy-100 p-6 text-center text-sm text-purple">
@@ -560,105 +890,6 @@ export default function ContractWizard() {
           </div>
         )}
 
-        {current === 'details' && (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {d.worker && (
-              <div className="rounded-xl bg-navy-50 p-3 text-sm sm:col-span-2">
-                <p>
-                  <span className="text-purple">العاملة المختارة: </span>
-                  <span className="font-semibold text-navy">{d.worker.full_name}</span>
-                  <span className="text-purple">
-                    {' '}
-                    — {d.worker.nationality} · {d.worker.profession} · {d.worker.age} سنة ·{' '}
-                    {d.worker.experience_years} سنوات خبرة
-                  </span>
-                </p>
-                {d.worker.languages.length > 0 && (
-                  <p className="mt-1 text-xs text-purple">
-                    اللغات: {d.worker.languages.join('، ')}
-                  </p>
-                )}
-                {d.worker.bio_ar && (
-                  <p className="mt-1 text-xs text-purple/80">{d.worker.bio_ar}</p>
-                )}
-              </div>
-            )}
-            {!needsWorker && d.service === 'daily_rental' && (
-              <Select
-                label="نوع المهمة"
-                value={d.task}
-                onChange={(e) => set({ task: e.target.value })}
-                options={TASK_TYPES.map((t) => ({ value: t, label: t }))}
-                placeholder="اختر المهمة"
-              />
-            )}
-            {!needsWorker && d.service === 'sponsorship_transfer' && (
-              <Select
-                label="جنسية العاملة"
-                value={d.nationality}
-                onChange={(e) => set({ nationality: e.target.value })}
-                options={NATIONALITIES.map((n) => ({ value: n, label: n }))}
-                placeholder="اختر الجنسية"
-              />
-            )}
-            {d.service === 'recruitment' && (
-              <Select
-                label="مدة العقد (أشهر)"
-                value={String(d.contractMonths)}
-                onChange={(e) => set({ contractMonths: Number(e.target.value) })}
-                options={RECRUITMENT_TERM_MONTHS.map((n) => ({
-                  value: String(n),
-                  label: `${n.toLocaleString('ar-SA')} شهرًا`,
-                }))}
-              />
-            )}
-            {(d.service === 'monthly_rental' || d.service === 'daily_rental') && (
-              <Input
-                label={d.service === 'monthly_rental' ? 'عدد الأشهر' : 'عدد الأيام'}
-                type="number"
-                min={1}
-                step={1}
-                value={d.quantity}
-                onChange={(e) => set({ quantity: Number(e.target.value) })}
-              />
-            )}
-            <Input
-              label="تاريخ البداية"
-              type="date"
-              value={d.start_date}
-              onChange={(e) => set({ start_date: e.target.value })}
-            />
-            <TermSummary
-              service={d.service || null}
-              start={d.start_date}
-              end={endDate}
-              label={termLabel}
-            />
-            <Select
-              label="الفرع"
-              value={d.branch}
-              onChange={(e) => set({ branch: e.target.value })}
-              options={branchOptions.map((b) => ({ value: b, label: b }))}
-              placeholder="اختر الفرع"
-              disabled={Boolean(ownBranch)}
-            />
-            {musaned && (
-              <div className="sm:col-span-2">
-                <Input
-                  label="رقم عقد مساند (اختياري)"
-                  value={d.musanedNo}
-                  onChange={(e) => set({ musanedNo: e.target.value })}
-                  placeholder="يُدخَل الآن أو بعد إنشاء العقد على منصة مساند"
-                />
-                <p className="mt-1.5 text-[11px] text-purple">
-                  عقود الاستقدام ونقل الكفالة تُنشأ وتُوقّع على منصة مساند — يتتبّع النظام حالتها
-                  ورقم عقدها فقط.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
         {current === 'customer' && (
           <CustomerStep
             selected={d.customer}
@@ -689,7 +920,22 @@ export default function ContractWizard() {
               </p>
             </div>
             {detail ? (
-              <PriceBreakdown detail={detail} />
+              <div className="space-y-2">
+                <PriceBreakdown detail={detail} />
+                <dl className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-xl bg-navy-50 p-3">
+                    <dt className="text-xs text-purple">المدفوع</dt>
+                    <dd className="num font-bold text-navy">{sar(0)}</dd>
+                  </div>
+                  <div className="rounded-xl bg-navy-50 p-3">
+                    <dt className="text-xs text-purple">المتبقي</dt>
+                    <dd className="num font-bold text-navy">{sar(detail.total)}</dd>
+                  </div>
+                </dl>
+                <p className="text-[11px] text-purple">
+                  تُسجَّل الدفعات بعد حفظ العقد من صفحة تفاصيله ← «تسجيل دفعة».
+                </p>
+              </div>
             ) : (
               <div className="rounded-xl border border-navy-100 p-4 text-sm text-purple">
                 {priceLoading ? 'جارٍ احتساب السعر…' : 'تعذّر احتساب السعر لهذه الخدمة.'}
@@ -814,7 +1060,11 @@ export default function ContractWizard() {
               التالي
             </Button>
           ) : (
-            <Button onClick={save} loading={create.isPending} disabled={!price}>
+            <Button
+              onClick={save}
+              loading={create.isPending || booking}
+              disabled={!price || (isRental && !rentalTpl)}
+            >
               <Check size={16} />{' '}
               {musaned ? 'تسجيل العقد ومتابعة مساند' : 'إنشاء العقد ومتابعة التوقيع'}
             </Button>

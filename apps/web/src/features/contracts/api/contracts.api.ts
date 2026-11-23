@@ -917,16 +917,21 @@ export function addDemoHourlyContract(input: {
   clauses: string[];
   notes: string | null;
   promotion_id?: string | null;
+  /** 0094: قالب «عقد تأجير خدمات عمالية» المعتمد */
+  template_id?: string | null;
+  worker_profile_id?: string | null;
+  worker_name?: string | null;
+  customer_id?: string | null;
 }): ContractListItem {
   const id = `local-${Date.now()}-${++localSeq}`;
   const item: ContractListItem = {
     id,
     contract_no: formatContractNo(new Date().getFullYear(), Math.floor(Math.random() * 99999) + 1),
     service_code: 'hourly_rental',
-    template_id: null,
-    customer_id: `cust-${id}`,
+    template_id: input.template_id ?? null,
+    customer_id: input.customer_id ?? `cust-${id}`,
     worker_id: null,
-    worker_profile_id: null,
+    worker_profile_id: input.worker_profile_id ?? null,
     branch_id: input.branch,
     created_by: null,
     start_date: input.date,
@@ -945,7 +950,7 @@ export function addDemoHourlyContract(input: {
     musaned_contract_no: null,
     created_at: nowIso(),
     customer_name: input.customer_name,
-    worker_name: null,
+    worker_name: input.worker_name ?? null,
     assigned_office_id: null,
     assigned_at: null,
     recruitment_stage: null,

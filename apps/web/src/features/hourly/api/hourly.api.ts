@@ -12,8 +12,12 @@ import { listPricingRules, getPricingConfig } from '@/features/pricing/api/prici
 import { countPromotionUse, listPromotions } from '@/features/pricing/api/promotions.api';
 import { findByCode } from '@/shared/lib/pricing';
 import { calculate, EMPTY_CALC } from '@/features/pricing/lib/engine';
-import { addDemoHourlyContract, getTemplates } from '@/features/contracts/api/contracts.api';
-import { renderClauses } from '@/features/contracts/lib/clauses';
+import { addDemoHourlyContract } from '@/features/contracts/api/contracts.api';
+import {
+  approvedTemplateFor,
+  listRentalTemplates,
+} from '@/features/contracts/api/rentalContract.api';
+import { legalClausesOf } from '@/features/contracts/lib/rentalContract/template';
 import { addLocalOrder } from '@/features/orders/api/orders.api';
 import { listConfig, configValue } from '@/features/settings/api/settings.api';
 import {
@@ -317,7 +321,7 @@ export async function bookHourly(input: BookingInput): Promise<HourlyBooking> {
   const [rules, pcfg, templates, promos] = await Promise.all([
     listPricingRules(),
     getPricingConfig(),
-    getTemplates(),
+    listRentalTemplates(),
     listPromotions(),
   ]);
   const code = input.promotion_code?.trim() || null;
@@ -338,8 +342,14 @@ export async function bookHourly(input: BookingInput): Promise<HourlyBooking> {
   );
   if (price.blockers.length) throw new Error(price.blockers.join(' · '));
   if (promotion && price.detail.discounts > 0) countPromotionUse(promotion.id);
-  const template = templates.find((t) => t.service_code === 'hourly_rental' && t.is_active);
+  // 0094: عقد الساعة على قالب «عقد تأجير خدمات عمالية» المعتمد — لا قالب مختصر
+  const template = approvedTemplateFor(templates, 'hourly_rental');
+  if (!template)
+    throw new Error('قالب «عقد تأجير خدمات عمالية» لم يُعتمد بعد — لا يُنشأ عقد تأجير قبل اعتماده');
   const contract = addDemoHourlyContract({
+    template_id: template.id,
+    worker_profile_id: input.worker_profile_id,
+    worker_name: input.worker_name,
     customer_name: input.customer_name.trim(),
     branch,
     date: input.booking_date,
@@ -350,13 +360,7 @@ export async function bookHourly(input: BookingInput): Promise<HourlyBooking> {
       vat: price.detail.vat,
       total: price.detail.total,
     },
-    clauses: template
-      ? renderClauses(template.clauses, {
-          customer_name: input.customer_name.trim(),
-          task: input.profession,
-          duration: String(hours),
-        })
-      : [],
+    clauses: legalClausesOf(template.doc),
     notes: input.notes,
     promotion_id: price.detail.discounts > 0 ? (promotion?.id ?? null) : null,
   });
