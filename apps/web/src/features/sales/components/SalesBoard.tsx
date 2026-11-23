@@ -15,7 +15,7 @@ import {
   paginate,
 } from '@/shared/ui';
 import type { Column } from '@/shared/ui';
-import { dateAr, dateTimeAr, sar } from '@/shared/lib/format';
+import { dateAr, dateTimeAr, riyadhDay, sar } from '@/shared/lib/format';
 import { exportExcel, exportPdf, type ExportTable } from '@/shared/lib/exportTable';
 import { BRANCHES_AR } from '@/lib/funnel';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -178,7 +178,7 @@ export default function SalesBoard() {
       s.net_amount,
       s.vat_amount,
       s.total_amount,
-      s.sold_at.slice(0, 10),
+      riyadhDay(s.sold_at),
       s.sold_by_name ?? '',
       SALE_STATUS_LABEL[s.status],
     ]),

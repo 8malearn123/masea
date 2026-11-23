@@ -1,3 +1,4 @@
+import { useQuoteApprovalPolicy } from '@/features/crm/hooks/useCrm';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
@@ -47,12 +48,14 @@ export function useCreateQuote() {
 export function useSetQuoteStatus() {
   const qc = useQueryClient();
   const toast = useToast();
+  // نفس سياسة الاعتماد في كل مكان (الحد من الإعدادات + صلاحية leads.approve)
+  const policy = useQuoteApprovalPolicy();
   return useMutation<
     PricingQuote,
     Error,
     { id: string; to: QuoteStatus; actor: string; note?: string }
   >({
-    mutationFn: ({ id, to, actor, note }) => setQuoteStatus(id, to, actor, note),
+    mutationFn: ({ id, to, actor, note }) => setQuoteStatus(id, to, actor, note, policy),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['pricing'] });
       void qc.invalidateQueries({ queryKey: ['crm'] });

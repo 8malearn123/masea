@@ -40,6 +40,9 @@ export function isDemoId(id: string): boolean {
  * is ignorable only in demo mode.
  */
 export function isIgnorableWriteError(message: string): boolean {
+  // مع خادم حقيقي لا يُتجاهل أي خطأ كتابة: فشل الشبكة أو معرّف غير صالح أو رفض
+  // الصلاحية يجب أن يصل للمستخدم، لا أن يُعرض نجاحًا ويُحفظ في الذاكرة فقط
+  if (!isDemoMode()) return false;
   const s = message.toLowerCase();
   return (
     s.includes('could not find') ||
@@ -48,9 +51,7 @@ export function isIgnorableWriteError(message: string): boolean {
     s.includes('not found') ||
     s.includes('invalid input syntax') || // demo ids aren't uuids
     s.includes('uuid') ||
-    // RLS not seeded for demo rows — only in demo mode; with a real backend a
-    // refused permission must reach the user, never read as a success
-    (s.includes('permission denied') && isDemoMode()) ||
+    s.includes('permission denied') || // RLS not seeded for demo rows
     s.includes('abort') || // demo mode / request timeout — backend unreachable
     s.includes('offline') || // the demo-mode fetch guard ("demo mode — offline")
     s.includes('failed to fetch') ||

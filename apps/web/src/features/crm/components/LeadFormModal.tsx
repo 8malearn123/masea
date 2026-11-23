@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Input, Modal, Select } from '@/shared/ui';
 import { useCreateLead, useUpdateLead } from '@/features/crm/hooks/useCrm';
 import { useCrmMeta } from '@/features/crm/hooks/useCrmMeta';
+import { leadInputError } from '@/features/crm/lib/leadInput';
 import {
   SERVICE_LABEL,
   type Lead,
@@ -61,18 +62,24 @@ export function LeadForm({
   const [notes, setNotes] = useState(lead?.notes ?? '');
 
   const busy = create.isPending || update.isPending;
+  const [touched, setTouched] = useState(false);
+
+  const input = {
+    full_name: fullName,
+    phone: phone.trim() ? phone.trim() : null,
+    source_code: source,
+    service_code: service,
+    stage_code: stage,
+    // حقل فارغ = 0؛ نص غير رقمي يُرفض برسالة بدل أن يصير 0 بصمت
+    est_value: estValue.trim() === '' ? 0 : Number(estValue),
+    notes: notes.trim() ? notes.trim() : null,
+  };
+  const error = leadInputError(input);
+  const fieldError = (needle: string) => (touched && error?.includes(needle) ? { error } : {});
 
   function submit() {
-    if (!fullName.trim()) return;
-    const input = {
-      full_name: fullName.trim(),
-      phone: phone.trim() ? phone.trim() : null,
-      source_code: source,
-      service_code: service,
-      stage_code: stage,
-      est_value: Number(estValue) || 0,
-      notes: notes.trim() ? notes.trim() : null,
-    };
+    setTouched(true);
+    if (error) return;
     if (editing && lead) {
       update.mutate({ id: lead.id, patch: input }, { onSuccess: onDone });
     } else {
@@ -81,62 +88,62 @@ export function LeadForm({
   }
 
   return (
-    <div className="space-y-3">
-      <div>
-        <label className="mb-1 block text-xs font-medium text-navy-900">الاسم</label>
+    <form
+      className="space-y-3"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <Input
+        label="الاسم"
+        value={fullName}
+        onChange={(e) => setFullName(e.target.value)}
+        placeholder="اسم العميل"
+        {...fieldError('اسم')}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
         <Input
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          placeholder="اسم العميل"
+          label="الجوال"
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="05xxxxxxxx"
+          {...fieldError('الجوال')}
+        />
+        <Input
+          label="القيمة المتوقعة (ر.س)"
+          value={estValue}
+          onChange={(e) => setEstValue(e.target.value)}
+          inputMode="decimal"
+          {...fieldError('القيمة')}
+        />
+        <Select
+          label="المصدر"
+          value={source}
+          onChange={(e) => setSource(e.target.value as LeadSourceCode)}
+          options={sourceOpts}
+        />
+        <Select
+          label="الخدمة"
+          value={service}
+          onChange={(e) => setService(e.target.value as ServiceCode)}
+          options={SERVICE_OPTS}
+        />
+        <Select
+          label="المرحلة"
+          value={stage}
+          onChange={(e) => setStage(e.target.value as LeadStageCode)}
+          options={stageOpts}
         />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">الجوال</label>
-          <Input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="05xxxxxxxx"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">
-            القيمة المتوقعة (ر.س)
-          </label>
-          <Input
-            value={estValue}
-            onChange={(e) => setEstValue(e.target.value)}
-            inputMode="numeric"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">المصدر</label>
-          <Select
-            value={source}
-            onChange={(e) => setSource(e.target.value as LeadSourceCode)}
-            options={sourceOpts}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">الخدمة</label>
-          <Select
-            value={service}
-            onChange={(e) => setService(e.target.value as ServiceCode)}
-            options={SERVICE_OPTS}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-navy-900">المرحلة</label>
-          <Select
-            value={stage}
-            onChange={(e) => setStage(e.target.value as LeadStageCode)}
-            options={stageOpts}
-          />
-        </div>
-      </div>
       <div>
-        <label className="mb-1 block text-xs font-medium text-navy-900">ملاحظات</label>
+        <label htmlFor="lead-notes" className="mb-1 block text-sm font-medium text-navy-900">
+          ملاحظات
+        </label>
         <textarea
+          id="lead-notes"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
@@ -144,13 +151,13 @@ export function LeadForm({
         />
       </div>
       <div className="flex justify-end gap-2 pt-1">
-        <Button variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel}>
           إلغاء
         </Button>
-        <Button variant="primary" loading={busy} onClick={submit}>
+        <Button type="submit" variant="primary" loading={busy}>
           {editing ? 'حفظ' : 'إضافة'}
         </Button>
       </div>
-    </div>
+    </form>
   );
 }

@@ -39,7 +39,7 @@ describe('sales CRM pipeline (demo)', () => {
   });
 
   it('exposes my monthly target + leaderboard rank', async () => {
-    const t = await getMyTarget();
+    const t = (await getMyTarget())!;
     expect(t.contracts_target).toBeGreaterThan(0);
     expect(t.rank).toBeGreaterThan(0);
     expect(t.rank_total).toBeGreaterThanOrEqual(t.rank);

@@ -179,7 +179,7 @@ export function ChatWidget() {
         data-hidden={fab?.hidden || undefined}
         tabIndex={fab?.hidden ? -1 : undefined}
         aria-hidden={fab?.hidden || undefined}
-        className={`fixed bottom-4 left-4 z-40 inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-navy text-sm font-bold text-white shadow-lg transition hover:bg-navy-700 lg:bottom-6 lg:h-auto lg:w-auto lg:px-4 lg:py-3 ${
+        className={`chat-launcher fixed left-4 z-40 inline-flex h-12 w-12 items-center justify-center gap-2 rounded-full bg-navy text-sm font-bold text-white shadow-lg transition-[background-color,bottom] hover:bg-navy-700 lg:h-auto lg:w-auto lg:px-4 lg:py-3 ${
           fab?.hidden ? 'pointer-events-none scale-75 opacity-0' : ''
         }`}
         aria-label="فتح مساعد العملاء"

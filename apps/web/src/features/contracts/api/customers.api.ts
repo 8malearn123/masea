@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { supabase } from '@/shared/lib/supabase';
-import { isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
+import { scopeToViewerBranch } from '@/lib/branchScope';
 
 export interface CustomerLite {
   id: string;
@@ -20,19 +21,21 @@ const FALLBACK: CustomerLite[] = [
 ];
 
 export async function searchCustomers(q: string): Promise<CustomerLite[]> {
-  try {
+  if (!isDemoMode()) {
+    // لا نتائج = لا عملاء (لا عملاء تجريبيون يُختارون لعقد حقيقي)
     let query = supabase
       .from('customers')
       .select('id, full_name, phone, city, national_id, address')
       .limit(20);
     if (q.trim()) query = query.ilike('full_name', `%${q.trim()}%`);
     const { data, error } = await query;
-    if (!error && data && data.length > 0) return data as CustomerLite[];
-  } catch {
-    /* fall through */
+    if (error) throw new Error(`تعذّر البحث في العملاء: ${error.message}`);
+    return (data ?? []) as CustomerLite[];
   }
+  // نطاق الفرع كما في RLS على customers (مدير فرع جازان يرى عملاء جازان فقط)
+  const scoped = scopeToViewerBranch(FALLBACK, (c) => c.city);
   const s = q.trim();
-  return s ? FALLBACK.filter((c) => c.full_name.includes(s)) : FALLBACK;
+  return s ? scoped.filter((c) => c.full_name.includes(s)) : scoped;
 }
 
 /** New customer from the contract wizard — validated before it reaches the backend. */

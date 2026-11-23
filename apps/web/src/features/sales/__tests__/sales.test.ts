@@ -129,6 +129,13 @@ describe('sales pulled from contracts', () => {
     expect(
       applySalesFilters(rows, { ...EMPTY_SALES_FILTERS, from: '2026-10-10', to: '2026-10-20' }),
     ).toHaveLength(1);
+    // البحث برقم العملية كما يُعرض (SL-n) وبحروف صغيرة
+    const no = rows[0]!.sale_no;
+    const hit = applySalesFilters(rows, { ...EMPTY_SALES_FILTERS, search: `SL-${no}` });
+    expect(hit.length).toBeGreaterThan(0);
+    expect(hit.every((r) => r.sale_no === no)).toBe(true);
+    expect(applySalesFilters(rows, { ...EMPTY_SALES_FILTERS, search: `sl-${no}` })).toEqual(hit);
+    expect(applySalesFilters(rows, { ...EMPTY_SALES_FILTERS, search: 'SL-99999' })).toHaveLength(0);
   });
 
   it('a branch manager sees their branch only; a sales rep their own sales only', async () => {
