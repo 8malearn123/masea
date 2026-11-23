@@ -42,6 +42,7 @@ afterEach(() => {
 
 describe('مراجعة قالب عقد التأجير', () => {
   it('تعرض المعاينة الكاملة وتقرير المطابقة والقالب بانتظار الاعتماد', async () => {
+    resetRentalDemoStore('pending_review');
     signInDemo('admin');
     renderPage();
     expect(
@@ -55,6 +56,7 @@ describe('مراجعة قالب عقد التأجير', () => {
   });
 
   it('الاعتماد يقفل النص (مدير)', async () => {
+    resetRentalDemoStore('pending_review');
     signInDemo('admin');
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: /اعتماد القالب/ }));
@@ -67,6 +69,7 @@ describe('مراجعة قالب عقد التأجير', () => {
   });
 
   it('المبيعات تراجع ولا تعتمد', async () => {
+    resetRentalDemoStore('pending_review');
     signInDemo('sales');
     renderPage();
     expect(await screen.findByText('بانتظار الاعتماد')).toBeInTheDocument();
