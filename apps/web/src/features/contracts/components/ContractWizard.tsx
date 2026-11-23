@@ -44,6 +44,10 @@ import {
 } from '@/features/contracts/lib/contractTerm';
 import { SERVICE_LABEL, type ContractServiceCode } from '@/features/contracts/types';
 import {
+  wizardServiceCodeSchema,
+  type WizardServiceCode,
+} from '@/features/contracts/schemas/contract.schema';
+import {
   useCompanyProfile,
   useRentalTemplates,
 } from '@/features/contracts/hooks/useRentalContract';
@@ -59,7 +63,7 @@ import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/prin
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
 
 interface Draft {
-  service: ContractServiceCode | '';
+  service: WizardServiceCode | '';
   worker: WorkerProfile | null;
   nationality: string;
   profession: string;
@@ -489,7 +493,7 @@ export default function ContractWizard() {
       <Card>
         {current === 'service' && (
           <div className="grid gap-3 sm:grid-cols-2">
-            {(Object.keys(SERVICE_LABEL) as ContractServiceCode[]).map((code) => (
+            {wizardServiceCodeSchema.options.map((code) => (
               <button
                 key={code}
                 type="button"

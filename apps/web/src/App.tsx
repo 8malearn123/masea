@@ -22,6 +22,8 @@ const MyAttendance = lazy(() => import('@/features/hr/components/MyAttendance'))
 const ContractsList = lazy(() => import('@/features/contracts/components/ContractsList'));
 const ContractWizard = lazy(() => import('@/features/contracts/components/ContractWizard'));
 const ContractDetails = lazy(() => import('@/features/contracts/components/ContractDetails'));
+const TrialsBoard = lazy(() => import('@/features/contracts/components/TrialsBoard'));
+const TrialAcceptPage = lazy(() => import('@/features/contracts/components/TrialAcceptPage'));
 const RentalTemplateReview = lazy(
   () => import('@/features/contracts/components/RentalTemplateReview'),
 );
@@ -109,6 +111,7 @@ export default function App() {
           <Route path="/order/start" element={<OrderWizard />} />
           <Route path="/order/track" element={<OrderTracking />} />
           <Route path="/order/request/:requestNo" element={<RequestSummary />} />
+          <Route path="/t/:token" element={<TrialAcceptPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -122,6 +125,7 @@ export default function App() {
           <Route path="/order/start" element={<OrderWizard />} />
           <Route path="/order/track" element={<OrderTracking />} />
           <Route path="/order/request/:requestNo" element={<RequestSummary />} />
+          <Route path="/t/:token" element={<TrialAcceptPage />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route element={<Layout />}>
@@ -142,6 +146,14 @@ export default function App() {
               element={
                 <RequirePerm module="contracts" action="create">
                   <ContractWizard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="contracts/trials"
+              element={
+                <RequirePerm module="contracts">
+                  <TrialsBoard />
                 </RequirePerm>
               }
             />

@@ -14,10 +14,34 @@ export interface CustomerLite {
 }
 
 const FALLBACK: CustomerLite[] = [
-  { id: 'cust-1', full_name: 'محمد الأحمدي', phone: '0501234567', city: 'نجران' },
-  { id: 'cust-2', full_name: 'سارة القحطاني', phone: '0552345678', city: 'جازان' },
-  { id: 'cust-3', full_name: 'فهد العنزي', phone: '0533456789', city: 'شرورة' },
-  { id: 'cust-4', full_name: 'نورة الشهري', phone: '0544567890', city: 'نجران' },
+  {
+    id: 'cust-1',
+    full_name: 'محمد الأحمدي',
+    phone: '0501234567',
+    city: 'نجران',
+    national_id: '1023456781',
+  },
+  {
+    id: 'cust-2',
+    full_name: 'سارة القحطاني',
+    phone: '0552345678',
+    city: 'جازان',
+    national_id: '1034567892',
+  },
+  {
+    id: 'cust-3',
+    full_name: 'فهد العنزي',
+    phone: '0533456789',
+    city: 'شرورة',
+    national_id: '1045678903',
+  },
+  {
+    id: 'cust-4',
+    full_name: 'نورة الشهري',
+    phone: '0544567890',
+    city: 'نجران',
+    national_id: '1056789014',
+  },
 ];
 
 export async function searchCustomers(q: string): Promise<CustomerLite[]> {

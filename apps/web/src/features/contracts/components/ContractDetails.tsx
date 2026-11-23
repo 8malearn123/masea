@@ -60,6 +60,7 @@ import {
   transitionBlocker,
 } from '@/features/contracts/lib/contractState';
 import { ContractOpsPanel } from '@/features/contracts/components/ContractOpsPanel';
+import { TrialPanel } from '@/features/contracts/components/TrialPanel';
 import { buildContractHtml, openContractPrint } from '@/features/contracts/lib/contractHtml';
 import { loadRentalDocument } from '@/features/contracts/api/rentalContract.api';
 import { rentalContractHtml } from '@/features/contracts/lib/rentalContract/print';
@@ -359,6 +360,9 @@ export default function ContractDetails() {
 
           {/* External-office recruitment workflow (recruitment contracts only) */}
           {contract.service_code === 'recruitment' && <RecruitmentJourney contract={contract} />}
+
+          {/* تجربة نقل الخدمات (0092) */}
+          {contract.service_code === 'transfer_trial' && <TrialPanel contract={contract} />}
 
           {/* الإلغاء والتسوية · الإرجاع · الاسترداد · سجل العمليات (0090) */}
           {contract.status !== 'draft' && <ContractOpsPanel contract={contract} />}

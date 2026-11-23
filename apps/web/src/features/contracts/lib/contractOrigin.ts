@@ -14,6 +14,7 @@ export const DEFAULT_SERVICE_ORIGIN: Record<ContractServiceCode, ContractOrigin>
   monthly_rental: 'internal',
   daily_rental: 'internal',
   hourly_rental: 'internal',
+  transfer_trial: 'internal',
 };
 
 export type ServiceOriginMap = Record<string, ContractOrigin>;
