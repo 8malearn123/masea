@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileSignature, ListChecks, Plus } from 'lucide-react';
+import { FileSignature, FlaskConical, ListChecks, Plus } from 'lucide-react';
 import { Badge, Button, Card, EmptyState, ErrorState, Input, Skeleton } from '@/shared/ui';
 import { usePermissions } from '@/hooks/usePermissions';
 import {
@@ -16,6 +16,12 @@ import {
   type LookupKind,
   type SettlementTermRow,
 } from '@/features/contracts/api/contractOps.api';
+import {
+  useApproveTrialTerms,
+  useSaveTrialTerms,
+  useTrialTerms,
+} from '@/features/contracts/hooks/useTrials';
+import { trialTermsSchema } from '@/features/contracts/api/trials.api';
 
 function newCode(): string {
   return Math.random().toString(16).slice(2, 12);
@@ -196,6 +202,84 @@ function TermRow({ t, editable }: { t: SettlementTermRow; editable: boolean }) {
 }
 
 /**
+ * شروط «تجربة عاملة بغرض نقل الخدمات» — تكتبها الشركة وتعتمدها، ثم تُقفل.
+ * التعديل بعد الاعتماد = نسخة جديدة (التجارب السابقة تبقى على نسختها).
+ */
+function TrialTermsEditor({ editable }: { editable: boolean }) {
+  const { data: versions = [], isLoading, isError, refetch } = useTrialTerms();
+  const save = useSaveTrialTerms();
+  const approve = useApproveTrialTerms();
+  const approved = versions.find((v) => v.status === 'approved') ?? null;
+  const pending =
+    versions.find((v) => v.status === 'pending_review' || v.status === 'draft') ?? null;
+  const base = pending ?? approved;
+  const [title, setTitle] = useState(base?.title ?? 'شروط تجربة العاملة بغرض نقل الخدمات');
+  const [text, setText] = useState((base?.clauses ?? []).join('\n'));
+  const clauses = text
+    .split('\n')
+    .map((c) => c.trim())
+    .filter(Boolean);
+  const parsed = trialTermsSchema.safeParse({ title, clauses });
+  return (
+    <Card>
+      <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
+        <FlaskConical size={16} /> شروط تجربة العاملة بغرض نقل الخدمات
+      </h2>
+      <p className="mb-2 text-[11px] text-purple">
+        النص الذي يقبله العميل إلكترونياً. لا شروط افتراضية — تكتبها الشركة (بعد مراجعتها نظامياً)
+        ثم تعتمدها؛ المعتمد يُقفل وأي تعديل يصبح نسخة جديدة.
+      </p>
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : isError ? (
+        <ErrorState onRetry={() => void refetch()} />
+      ) : (
+        <>
+          <div className="mb-2 flex flex-wrap gap-2 text-xs">
+            {approved ? (
+              <Badge tone="success">المعتمدة: النسخة {approved.version}</Badge>
+            ) : (
+              <Badge tone="danger">لا نسخة معتمدة — لا يمكن إنشاء تجارب</Badge>
+            )}
+            {pending && <Badge tone="gold">بانتظار الاعتماد: النسخة {pending.version}</Badge>}
+          </div>
+          {editable && (
+            <div className="space-y-2">
+              <Input label="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <label className="block text-sm font-medium text-navy-900">
+                البنود (بند في كل سطر)
+                <textarea
+                  className="mt-1 min-h-40 w-full rounded-xl border border-navy-100 p-3 text-sm"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              </label>
+              {!parsed.success && (
+                <p className="text-[11px] text-gold-600">{parsed.error.issues[0]?.message}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  disabled={!parsed.success || save.isPending}
+                  onClick={() => save.mutate({ title, clauses })}
+                >
+                  حفظ {pending ? 'التعديلات على النسخة المعلّقة' : 'كنسخة جديدة'}
+                </Button>
+                {pending && (
+                  <Button disabled={approve.isPending} onClick={() => approve.mutate(pending.id)}>
+                    اعتماد النسخة {pending.version} وقفلها
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
  * إعدادات عمليات العقود: القوائم المرجعية (أسباب الإلغاء والإرجاع والاستبدال،
  * حالة العاملة، متطلبات التجربة) وشروط التسوية المستخرجة من القوالب المعتمدة.
  * التعديل لمن يملك اعتماد العقود (contracts.approve) — يفرضه RLS في 0090.
@@ -206,6 +290,7 @@ export function ContractOpsSettings() {
   const termsQ = useSettlementTerms();
   return (
     <div className="space-y-4">
+      <TrialTermsEditor editable={editable} />
       <Card>
         <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-navy">
           <FileSignature size={16} /> شروط التسوية من نصوص العقود المعتمدة

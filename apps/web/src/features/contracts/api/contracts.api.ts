@@ -148,6 +148,45 @@ function termStart(endOffset: number, unit: PeriodUnit, n: number): string {
   return naive;
 }
 
+let trialSeq = 0;
+/**
+ * Demo mirror of the contract row a transfer trial (0092 `create_trial_agreement`) or its
+ * Musaned transfer draft creates. With Supabase the server creates it; never called there.
+ */
+export function createTrialContract(o: {
+  service_code?: 'transfer_trial' | 'sponsorship_transfer';
+  customer_id: string;
+  customer_name: string | null;
+  worker_profile_id: string;
+  worker_name: string | null;
+  branch: string;
+  start_date: string;
+  end_date: string | null;
+  base_amount: number;
+}): ContractListItem {
+  trialSeq += 1;
+  const row: ContractListItem = {
+    ...mk({
+      id: `local-trial-${Date.now()}-${trialSeq}`,
+      contract_no: formatContractNo(new Date().getFullYear(), 90000 + trialSeq),
+      service_code: o.service_code ?? 'transfer_trial',
+      status: 'draft',
+      base_amount: o.base_amount,
+      amount_paid: 0,
+      customer_name: o.customer_name ?? '',
+      branch: o.branch,
+      start_date: o.start_date,
+      end_date: o.end_date,
+      customer_id: o.customer_id,
+    }),
+    worker_profile_id: o.worker_profile_id,
+    worker_name: o.worker_name,
+  };
+  FALLBACK.unshift(row);
+  seedDraftHistory(row);
+  return { ...row };
+}
+
 /** Demo mirror of the settlement executing the cancellation (0090 `settle_contract_settlement`). */
 export function demoCancelBySettlement(id: string): void {
   const c = FALLBACK.find((x) => x.id === id);

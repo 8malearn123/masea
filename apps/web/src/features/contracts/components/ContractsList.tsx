@@ -11,6 +11,7 @@ import {
   ScrollText,
   Search,
   Wallet,
+  FlaskConical,
 } from 'lucide-react';
 import { Badge, Card, Input, Select, Table, type Column } from '@/shared/ui';
 import { sar, dateAr } from '@/shared/lib/format';
@@ -209,6 +210,12 @@ function EnhancedContractsList() {
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
             <ScrollText size={16} /> قالب عقد التأجير
+          </Link>
+          <Link
+            to="/contracts/trials"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
+          >
+            <FlaskConical size={16} /> تجارب نقل الخدمات
           </Link>
           {can('contracts', 'create') && (
             <Link to="/contracts/new" className="btn-primary">

@@ -24,8 +24,12 @@ export const contractServiceCodeSchema = z.enum([
   'daily_rental',
   'sponsorship_transfer',
   'hourly_rental', // 0065 — staff-booked, not in the public wizard
+  'transfer_trial', // 0092 — تجربة عاملة بغرض نقل الخدمات (مسار مستقل)
 ]);
 export type ContractServiceCode = z.infer<typeof contractServiceCodeSchema>;
+/** Services the contract wizard issues (the transfer trial has its own flow — 0092). */
+export const wizardServiceCodeSchema = contractServiceCodeSchema.exclude(['transfer_trial']);
+export type WizardServiceCode = z.infer<typeof wizardServiceCodeSchema>;
 
 /**
  * Where a contract is created & signed. `musaned` contracts (استقدام / نقل كفالة)
@@ -198,7 +202,7 @@ export type ContractTerm = z.infer<typeof contractTermSchema>;
  */
 export const createContractInputSchema = z
   .object({
-    service_code: contractServiceCodeSchema,
+    service_code: wizardServiceCodeSchema,
     customer_id: z.string().min(1, { message: 'اختر العميل' }),
     customer_name: z.string().nullable().optional(),
     worker_id: z.string().nullable().optional(),
