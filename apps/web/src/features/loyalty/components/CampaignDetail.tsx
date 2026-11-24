@@ -22,6 +22,7 @@ import { useConfig } from '@/features/settings/hooks/useSettings';
 import { configValue } from '@/features/settings/api/settings.api';
 import { useCampaigns } from '@/features/loyalty/hooks/useLoyalty';
 import { CampaignResults } from '@/features/marketing/components/CampaignResults';
+import { OffersPanel } from '@/features/marketing/components/OffersPanel';
 import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
 
 const STATUS_TONE = {
@@ -213,6 +214,7 @@ function Body({ campaign }: { campaign: Campaign }) {
       </div>
 
       <CampaignResults campaign={campaign} />
+      <OffersPanel campaign={campaign} />
 
       {canIssue && <IssueForm campaign={campaign} />}
 
