@@ -10,7 +10,9 @@ import { searchCustomers } from '@/features/contracts/api/customers.api';
 import { listCustomerInsights } from '@/features/customers/api/customers.api';
 
 /** الوضع التجريبي: عملاء ملف العملاء + عملاء شاشة العقود (مخزنان منفصلان للعرض). */
-async function demoCustomers(): Promise<{ id: string; full_name: string; phone: string | null }[]> {
+export async function demoCustomers(): Promise<
+  { id: string; full_name: string; phone: string | null }[]
+> {
   const [a, b] = await Promise.all([listCustomerInsights(), searchCustomers('')]);
   const seen = new Set<string>();
   return [...a, ...b]
@@ -38,16 +40,19 @@ export type MessageStatus =
   | 'queued'
   | 'sent'
   | 'delivered'
+  | 'read'
   | 'failed'
   | 'cancelled'
   | 'opened_manually';
+/** الحالات كما يؤكدها مزوّد الخدمة (Meta) — لا «مرسلة» قبل التأكيد. */
 export const MESSAGE_STATUS_LABEL: Record<MessageStatus, string> = {
-  queued: 'في الطابور — بانتظار مزوّد الإرسال',
-  sent: 'أُرسلت',
-  delivered: 'وصلت',
+  queued: 'قيد الانتظار',
+  sent: 'مرسلة',
+  delivered: 'تم التسليم',
+  read: 'تمت القراءة',
   failed: 'فشل الإرسال',
   cancelled: 'أُلغيت',
-  opened_manually: 'فُتح واتساب يدوياً — غير مؤكد الإرسال',
+  opened_manually: 'فُتح واتساب يدوياً — غير مؤكد',
 };
 export type Response = 'interested' | 'not_interested' | 'no_reply';
 export const RESPONSE_LABEL: Record<Response, string> = {
@@ -67,6 +72,14 @@ export interface CampaignMessage {
   status: MessageStatus;
   response: Response | null;
   created_at: string;
+  offer_text?: string | null;
+  offer_expires_at?: string | null;
+  created_by?: string | null;
+  sent_at?: string | null;
+  delivered_at?: string | null;
+  read_at?: string | null;
+  reply_text?: string | null;
+  error?: string | null;
 }
 
 export interface AudienceMember {
@@ -76,8 +89,9 @@ export interface AudienceMember {
   acquisition_source_code: string | null;
 }
 
-const DEMO_CONSENT: Record<string, Consent> = {};
-const DEMO_MSG: CampaignMessage[] = [];
+export const DEMO_CONSENT: Record<string, Consent> = {};
+/** مشترك مع whatsapp.api (الوضع التجريبي) */
+export const DEMO_MSG: CampaignMessage[] = [];
 export function resetOffersDemo(): void {
   for (const k of Object.keys(DEMO_CONSENT)) delete DEMO_CONSENT[k];
   DEMO_MSG.length = 0;
@@ -251,7 +265,7 @@ export async function listCampaignMessages(campaignId: string): Promise<Campaign
   const { data, error } = await supabase
     .from('campaign_messages')
     .select(
-      'id, campaign_id, customer_id, channel, to_address, body, status, response, created_at, customers(full_name)',
+      'id, campaign_id, customer_id, channel, to_address, body, status, response, created_at, offer_text, offer_expires_at, created_by, sent_at, delivered_at, read_at, reply_text, error, customers(full_name)',
     )
     .eq('campaign_id', campaignId)
     .order('created_at', { ascending: false });

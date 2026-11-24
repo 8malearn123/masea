@@ -1,3 +1,8 @@
+import { useQuery } from '@tanstack/react-query';
+import { MessageCircle } from 'lucide-react';
+import { WhatsAppOfferModal } from '@/features/marketing/components/WhatsAppOfferModal';
+import { customerServiceCodes } from '@/features/marketing/api/whatsapp.api';
+import { SERVICE_LABEL } from '@/features/contracts/types';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BarChart3, List, Plus, Users } from 'lucide-react';
@@ -120,18 +125,54 @@ function CustomerList({ rows, isLoading }: { rows: CustomerInsight[]; isLoading:
   const [branch, setBranch] = useState('all');
   const [showDisabled, setShowDisabled] = useState(false);
   const [page, setPage] = useState(1);
+  // تحديد العملاء لإرسال عرض واتساب (0102)
+  const { can } = usePermissions();
+  const canSend = can('loyalty', 'manage');
+  const [service, setService] = useState('all');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState(false);
+  const services = useQuery({
+    queryKey: ['marketing', 'customer-services'],
+    queryFn: customerServiceCodes,
+    enabled: canSend,
+  });
 
   const withSegs = useMemo(() => rows.map((r) => ({ r, s: customerSegments(r, t) })), [rows, t]);
   const visible = withSegs.filter(({ r, s }) => {
     if (!showDisabled && !r.is_active) return false;
     if (segment !== 'all' && !s.has(segment)) return false;
     if (branch !== 'all' && r.branch !== branch) return false;
+    if (service !== 'all' && !services.data?.get(r.id)?.has(service)) return false;
     const q = search.trim();
     return !q || `${r.full_name} ${r.phone ?? ''}`.includes(q);
   });
   const segOf = new Map(withSegs.map((x) => [x.r.id, x.s]));
 
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   const columns: Column<CustomerInsight>[] = [
+    ...(canSend
+      ? [
+          {
+            key: 'pick',
+            header: 'تحديد',
+            cell: (r: CustomerInsight) => (
+              <input
+                type="checkbox"
+                aria-label={`تحديد ${r.full_name}`}
+                className="h-4 w-4 accent-navy"
+                checked={selected.has(r.id)}
+                onChange={() => toggle(r.id)}
+              />
+            ),
+          },
+        ]
+      : []),
     {
       key: 'name',
       header: 'العميل',
@@ -250,6 +291,20 @@ function CustomerList({ rows, isLoading }: { rows: CustomerInsight[]; isLoading:
             }}
           />
         )}
+        {canSend && (
+          <Select
+            label="الخدمة المطلوبة"
+            options={[
+              { value: 'all', label: 'كل الخدمات' },
+              ...Object.entries(SERVICE_LABEL).map(([value, label]) => ({ value, label })),
+            ]}
+            value={service}
+            onChange={(e) => {
+              setService(e.target.value);
+              setPage(1);
+            }}
+          />
+        )}
         <label className="flex items-end gap-2 pb-2 text-sm text-navy">
           <input
             type="checkbox"
@@ -259,6 +314,33 @@ function CustomerList({ rows, isLoading }: { rows: CustomerInsight[]; isLoading:
           إظهار العملاء المعطّلين
         </label>
       </div>
+      {canSend && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 text-sm shadow-card">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setSelected(new Set(visible.map((x) => x.r.id)))}
+          >
+            تحديد كل النتائج المطابقة (<span className="num">{visible.length}</span>)
+          </Button>
+          {selected.size > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              إلغاء التحديد
+            </Button>
+          )}
+          <span className="text-purple">
+            المحدد: <span className="num font-bold text-navy">{selected.size}</span>
+          </span>
+          <Button
+            size="sm"
+            className="mr-auto"
+            disabled={selected.size === 0}
+            onClick={() => setSending(true)}
+          >
+            <MessageCircle size={14} /> إرسال عرض عبر واتساب
+          </Button>
+        </div>
+      )}
       <Table
         columns={columns}
         rows={paginate(
@@ -271,6 +353,15 @@ function CustomerList({ rows, isLoading }: { rows: CustomerInsight[]; isLoading:
         emptyTitle="لا يوجد عملاء مطابقون"
       />
       <Pagination page={page} size={PAGE_SIZE} total={visible.length} onChange={setPage} />
+      {sending && (
+        <WhatsAppOfferModal
+          customers={rows
+            .filter((r) => selected.has(r.id))
+            .map((r) => ({ id: r.id, full_name: r.full_name }))}
+          onClose={() => setSending(false)}
+          onSent={() => setSelected(new Set())}
+        />
+      )}
     </>
   );
 }

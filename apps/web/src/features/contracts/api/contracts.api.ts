@@ -752,6 +752,7 @@ function demoMarketing(input: CreateContractInput): Partial<ContractListItem> {
     source_note: m.source_note?.trim() || null,
     campaign_id: m.campaign_id ?? null,
     lead_id: m.lead_id ?? null,
+    campaign_message_id: m.campaign_message_id ?? null,
     acquisition_source_code: acq.source_code,
     first_contact_at: acq.first_contact_at,
   };

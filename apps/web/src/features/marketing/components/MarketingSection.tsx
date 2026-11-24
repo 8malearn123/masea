@@ -6,6 +6,7 @@ import { dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSources } from '@/features/settings/hooks/useSettings';
 import { useCampaigns } from '@/features/loyalty/hooks/useLoyalty';
+import { customerOfferMessages } from '@/features/marketing/api/whatsapp.api';
 import {
   getCustomerAcquisition,
   noteRequired,
@@ -21,6 +22,8 @@ export interface MarketingDraft {
   source_code: string;
   source_note: string;
   campaign_id: string;
+  /** رسالة عرض واتساب أُرسلت لهذا العميل وأدت للعقد (علاقة موثّقة — 0102) */
+  campaign_message_id?: string | undefined;
 }
 export const EMPTY_MARKETING: MarketingDraft = {
   acquisition_source_code: '',
@@ -91,6 +94,10 @@ export function MarketingSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per customer/source
   }, [existing?.source_code, value.acquisition_source_code]);
 
+  const offers = useQuery({
+    queryKey: ['marketing', 'customer-offers', customerId],
+    queryFn: () => customerOfferMessages(customerId),
+  });
   const liveCampaigns = campaigns.filter((c) => c.is_active || c.id === value.campaign_id);
 
   return (
@@ -158,9 +165,27 @@ export function MarketingSection({
               onChange={(e) => set({ source_note: e.target.value })}
             />
           )}
+          {(offers.data ?? []).length > 0 && (
+            <Select
+              label="عرض واتساب أُرسل للعميل (إن كان سبب العقد)"
+              value={value.campaign_message_id ?? ''}
+              onChange={(e) => {
+                const o = (offers.data ?? []).find((x) => x.id === e.target.value);
+                set({ campaign_message_id: o?.id, ...(o ? { campaign_id: o.campaign_id } : {}) });
+              }}
+              options={[
+                { value: '', label: 'لا علاقة بعرض مرسل' },
+                ...(offers.data ?? []).map((o) => ({
+                  value: o.id,
+                  label: `${o.campaign_name} — ${o.offer_text ?? ''} (${o.created_at.slice(0, 10)})`,
+                })),
+              ]}
+            />
+          )}
           <Select
             label="الحملة التسويقية المرتبطة"
             value={value.campaign_id}
+            disabled={Boolean(value.campaign_message_id)}
             onChange={(e) => set({ campaign_id: e.target.value })}
             options={[
               { value: '', label: 'بدون حملة' },
