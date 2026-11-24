@@ -18,6 +18,7 @@ import { listPromotions } from '@/features/pricing/api/promotions.api';
 import { calculate, EMPTY_CALC } from '@/features/pricing/lib/engine';
 import { createDraft } from '@/features/contracts/api/contracts.api';
 import {
+  publishCampaign,
   addCampaign,
   issueWheelCoupon,
   removeCampaign,
@@ -123,7 +124,12 @@ describe('loyalty coupons are real discounts', () => {
       is_active: true,
       coupon_code: 'MAS-DISC5-SCHL',
     });
+    // الحملة الجديدة مسودة حتى تُفعَّل (0103)
+    expect(c.is_draft).toBe(true);
     await syncCampaignCoupon(c);
+    expect((await calcWith('MAS-DISC5-SCHL')).promotion?.ok).toBe(false);
+    await publishCampaign(c.id);
+    await syncCampaignCoupon({ ...c, is_draft: false });
     expect((await calcWith('MAS-DISC5-SCHL')).detail.discounts).toBe(800);
 
     await syncCampaignCoupon({ ...c, is_active: false });

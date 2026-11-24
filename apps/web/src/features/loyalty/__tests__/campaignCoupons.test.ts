@@ -16,7 +16,7 @@ import {
   getLead,
   setLeadQuoteStatus,
 } from '@/features/crm/api/crm.api';
-import { addCampaign, updateCampaign } from '@/features/loyalty/api/loyalty.api';
+import { publishCampaign, addCampaign, updateCampaign } from '@/features/loyalty/api/loyalty.api';
 import {
   campaignPerformance,
   issueCampaignCoupons,
@@ -172,6 +172,8 @@ describe('campaign referral coupons', () => {
       coupon_code: null,
       service_codes: [],
     });
+    // الحملة الجديدة مسودة — كوبونها لا يُقبل قبل تفعيلها (0103)
+    await publishCampaign(campaign.id);
     const [coupon] = await issueCampaignCoupons(
       campaign,
       { count: 1, pct: 5, usageLimit: null, referrer: null, prefix: 'NAT' },

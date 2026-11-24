@@ -50,7 +50,7 @@ export interface CampaignRow {
   name: string;
   platform_code: string | null;
   branch: string | null;
-  status: 'active' | 'scheduled' | 'paused' | 'ended';
+  status: 'draft' | 'active' | 'scheduled' | 'paused' | 'ended';
   start_at: string | null;
   end_at: string | null;
   budget: number | null;
@@ -80,6 +80,7 @@ const inRange = (d: string, f: ReportFilters) => d >= f.from && d <= f.to;
 
 export function campaignStatus(
   c: {
+    is_draft?: boolean | undefined;
     is_active: boolean;
     start_at: string | null | undefined;
     end_at: string | null | undefined;
@@ -87,6 +88,7 @@ export function campaignStatus(
   },
   now = new Date().toISOString(),
 ): CampaignRow['status'] {
+  if (c.is_draft) return 'draft';
   if (!c.is_active) return 'paused';
   if (c.start_at && now < c.start_at) return 'scheduled';
   const end = c.extended_until || c.end_at;
@@ -95,11 +97,22 @@ export function campaignStatus(
 }
 
 export const CAMPAIGN_STATUS_LABEL: Record<CampaignRow['status'], string> = {
+  draft: 'مسودة',
   active: 'نشطة',
   scheduled: 'مجدولة',
   paused: 'موقوفة',
   ended: 'منتهية',
 };
+
+/** تاريخ ووقت بتوقيت الرياض للعرض. */
+export function riyadhDateTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Intl.DateTimeFormat('ar-SA-u-nu-latn', {
+    timeZone: 'Asia/Riyadh',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(iso));
+}
 
 /* --------------------------- pure mirror of 0099 --------------------------- */
 
@@ -423,4 +436,47 @@ export async function breakdownReport(
     revenue: Number(r.revenue),
     collected: Number(r.collected),
   }));
+}
+
+export interface CampaignSummary {
+  redemptions: number;
+  discount_total: number;
+  customers: number;
+  contracts: number;
+  contracts_value: number;
+}
+
+/** نتائج الحملة المحفوظة بعد انتهائها (campaign_summary — 0103). */
+export async function campaignSummary(campaignId: string): Promise<CampaignSummary> {
+  if (isDemoMode()) {
+    const { listPromotions } = await import('@/features/pricing/api/promotions.api');
+    const [contracts, promos] = await Promise.all([
+      listContracts({ status: 'all', service: 'all', branch: 'all', search: '' }),
+      listPromotions(),
+    ]);
+    const ids = new Set(promos.filter((p) => p.campaign_id === campaignId).map((p) => p.id));
+    const ks = contracts.filter(
+      (k) =>
+        k.status !== 'cancelled' &&
+        (k.campaign_id === campaignId || (k.promotion_id && ids.has(k.promotion_id))),
+    );
+    const red = ks.filter((k) => k.promotion_id && ids.has(k.promotion_id));
+    return {
+      redemptions: red.length,
+      discount_total: r2(red.reduce((s, k) => s + (k.discount_amount ?? 0), 0)),
+      customers: new Set(ks.map((k) => k.customer_id)).size,
+      contracts: ks.length,
+      contracts_value: r2(ks.reduce((s, k) => s + k.total_amount, 0)),
+    };
+  }
+  const { data, error } = await supabase.rpc('campaign_summary', { p_campaign: campaignId });
+  if (error) throw new Error(error.message);
+  const r = ((data ?? []) as Record<string, unknown>[])[0] ?? {};
+  return {
+    redemptions: Number(r.redemptions ?? 0),
+    discount_total: Number(r.discount_total ?? 0),
+    customers: Number(r.customers ?? 0),
+    contracts: Number(r.contracts ?? 0),
+    contracts_value: Number(r.contracts_value ?? 0),
+  };
 }

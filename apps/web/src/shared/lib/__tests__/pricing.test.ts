@@ -171,14 +171,14 @@ describe('predefined discounts (evaluate_promotion mirror)', () => {
     expect(
       evaluatePromotion({ ...base, service_codes: ['monthly_rental'] }, 'recruitment', 1000, now)
         .reason,
-    ).toBe('الخصم لا يشمل هذه الخدمة');
+    ).toBe('العرض لا يشمل هذه الخدمة');
     expect(evaluatePromotion({ ...base, min_base_amount: 5000 }, 'recruitment', 1000, now).ok).toBe(
       false,
     );
     expect(
       evaluatePromotion({ ...base, ends_at: '2026-09-01T00:00:00Z' }, 'recruitment', 1000, now)
         .reason,
-    ).toBe('انتهت صلاحية الخصم');
+    ).toBe('انتهت صلاحية هذا العرض، ولا يمكن تطبيق الخصم');
     expect(
       evaluatePromotion({ ...base, starts_at: '2026-10-01T00:00:00Z' }, 'recruitment', 1000, now)
         .ok,

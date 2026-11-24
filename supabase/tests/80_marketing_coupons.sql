@@ -109,10 +109,10 @@ insert into promotions (name, type, code, discount_pct, requires_code, is_active
 values ('كوبون متعدد', 'manual', 'MULTI-REF10', 10, true, true, 'f0000000-0000-0000-0000-000000000001');
 update campaigns set is_active = false where id = 'f0000000-0000-0000-0000-000000000001';
 select pg_temp.check(((calc_price('monthly_rental', '{"nationality":"الفلبين","promotion_code":"MULTI-REF10"}'))->>'promotion_reason')
-                     like '%الحملة%', 'coupon of a disabled campaign refused');
+                     = 'العرض موقوف', 'coupon of a disabled campaign refused');
 update campaigns set is_active = true, end_at = now() - interval '1 hour' where id = 'f0000000-0000-0000-0000-000000000001';
 select pg_temp.check(((calc_price('monthly_rental', '{"nationality":"الفلبين","promotion_code":"MULTI-REF10"}'))->>'promotion_reason')
-                     like '%خارج فترتها%', 'coupon of an ended campaign refused');
+                     = 'انتهت صلاحية هذا العرض، ولا يمكن تطبيق الخصم', 'coupon of an ended campaign refused');
 
 -- ---------- cancellation releases the usage in the stats ----------
 select set_config('masea.settling', 'on', false); -- 0090: cancelled through its settlement

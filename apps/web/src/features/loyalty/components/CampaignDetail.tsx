@@ -24,9 +24,15 @@ import { useCampaigns } from '@/features/loyalty/hooks/useLoyalty';
 import { CampaignResults } from '@/features/marketing/components/CampaignResults';
 import { OffersPanel } from '@/features/marketing/components/OffersPanel';
 import { CampaignExtendButton } from '@/features/marketing/components/CampaignExtendButton';
-import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
+import {
+  CAMPAIGN_STATUS_LABEL,
+  campaignStatus,
+  riyadhDateTime,
+} from '@/features/marketing/api/analytics.api';
+import { CampaignPublishButton } from '@/features/marketing/components/CampaignPublishButton';
 
 const STATUS_TONE = {
+  draft: 'navy',
   active: 'success',
   scheduled: 'gold',
   paused: 'neutral',
@@ -192,13 +198,15 @@ function Body({ campaign }: { campaign: Campaign }) {
               </Badge>
               <Badge tone="navy">{CAMPAIGN_TYPE_LABEL[campaign.type]}</Badge>
               <CampaignExtendButton campaign={campaign} />
+              <CampaignPublishButton campaign={campaign} />
             </div>
             {campaign.description && (
               <p className="mt-1 text-sm text-navy/80">{campaign.description}</p>
             )}
             <p className="mt-1 text-xs text-purple">
-              {dateAr(campaign.start_at)} — {dateAr(campaign.end_at)} · الخدمات:{' '}
-              {serviceNames || 'كل الخدمات'} · خصم الحملة {campaign.discount_pct}٪
+              {riyadhDateTime(campaign.start_at)} —{' '}
+              {riyadhDateTime(campaign.extended_until || campaign.end_at)} (بتوقيت الرياض) ·
+              الخدمات: {serviceNames || 'كل الخدمات'} · خصم الحملة {campaign.discount_pct}٪
             </p>
           </div>
         </div>

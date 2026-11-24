@@ -137,6 +137,9 @@ export interface PromotionCheck {
 }
 
 /** Pure mirror of the backend `evaluate_promotion()` — same rules, same order. */
+/** نص الانتهاء الموحّد (الخادم 0103 والواجهة). */
+export const PROMO_EXPIRED = 'انتهت صلاحية هذا العرض، ولا يمكن تطبيق الخصم';
+
 export function evaluatePromotion(
   promo: Promotion,
   service: string,
@@ -149,10 +152,11 @@ export function evaluatePromotion(
     return fail('الخصم يتطلب رمز كوبون صحيح');
   }
   if (!promo.is_active) return fail('الخصم معطّل');
-  if (promo.starts_at && now < new Date(promo.starts_at)) return fail('الخصم لم يبدأ بعد');
-  if (promo.ends_at && now > new Date(promo.ends_at)) return fail('انتهت صلاحية الخصم');
+  // مرآة evaluate_promotion (0103): التحقق لحظة الاستخدام — لا اعتماد على تحديث الصفحة
+  if (promo.starts_at && now < new Date(promo.starts_at)) return fail('العرض لم يبدأ بعد');
+  if (promo.ends_at && now > new Date(promo.ends_at)) return fail(PROMO_EXPIRED);
   if (promo.service_codes.length > 0 && !promo.service_codes.includes(service)) {
-    return fail('الخصم لا يشمل هذه الخدمة');
+    return fail('العرض لا يشمل هذه الخدمة');
   }
   if (promo.min_base_amount != null && base < promo.min_base_amount) {
     return fail('المبلغ أقل من الحد الأدنى لتطبيق الخصم');
