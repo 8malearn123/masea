@@ -1,3 +1,4 @@
+import { CustomerSourceCard } from '@/features/marketing/components/CustomerSourceCard';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowRight, MessageCircle, Pencil, Phone, Power } from 'lucide-react';
@@ -274,6 +275,7 @@ function Body({ customer }: { customer: CustomerRecord }) {
         </section>
       )}
 
+      <CustomerSourceCard customerId={customer.id} />
       <Interactions customerId={customer.id} />
 
       <CustomerFormModal open={editing} onClose={() => setEditing(false)} customer={customer} />

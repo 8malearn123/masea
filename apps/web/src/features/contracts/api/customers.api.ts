@@ -1,3 +1,4 @@
+import { demoRecordAcquisition } from '@/features/marketing/api/attribution.api';
 import { z } from 'zod';
 import { supabase } from '@/shared/lib/supabase';
 import { isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
@@ -76,6 +77,12 @@ export async function createCustomer(raw: {
   full_name: string;
   phone: string;
   city: string;
+  /** مصدر العميل الأصلي (0098) — يُسجَّل مع إنشائه */
+  acquisition?: {
+    source_code: string;
+    source_note: string | null;
+    first_contact_at: string | null;
+  };
 }): Promise<CustomerLite> {
   const parsed = newCustomerSchema.safeParse(raw);
   if (!parsed.success)
@@ -83,7 +90,19 @@ export async function createCustomer(raw: {
   const input = parsed.data;
   const { data, error } = await supabase
     .from('customers')
-    .insert({ full_name: input.full_name, phone: input.phone, city: input.city })
+    .insert({
+      full_name: input.full_name,
+      phone: input.phone,
+      city: input.city,
+      ...(raw.acquisition
+        ? {
+            acquisition_source_code: raw.acquisition.source_code,
+            acquisition_source_note: raw.acquisition.source_note,
+            first_contact_at: raw.acquisition.first_contact_at,
+            acquisition_set_at: new Date().toISOString(),
+          }
+        : {}),
+    })
     .select('id, full_name, phone, city')
     .single();
   // Backend not provisioned → return a local demo customer so the flow continues.
@@ -96,6 +115,8 @@ export async function createCustomer(raw: {
         city: input.city || null,
       };
       FALLBACK.unshift(local); // searchable for the rest of the session
+      if (raw.acquisition)
+        demoRecordAcquisition(local.id, { ...raw.acquisition, campaign_id: null });
       return local;
     }
     throw new Error(error.message);

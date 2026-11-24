@@ -1,7 +1,8 @@
 import type { BadgeTone } from '@/shared/ui/Badge';
 
 export type LeadStageCode = 'new' | 'contacted' | 'quoted' | 'negotiation' | 'won' | 'lost';
-export type LeadSourceCode = 'website' | 'call_center' | 'referral' | 'walk_in' | 'campaign';
+/** رمز من lead_sources (قائمة تُدار من الإعدادات — 0044/0098). */
+export type LeadSourceCode = string;
 export type ServiceCode =
   | 'recruitment'
   | 'monthly_rental'
@@ -21,6 +22,12 @@ export interface Lead {
   full_name: string;
   phone: string | null;
   source_code: LeadSourceCode | null;
+  /** توضيح المصدر عند «أخرى» (0098) */
+  source_note?: string | null;
+  /** الحملة الفعلية التي جاء منها (0098) — مستقلة عن المنصة */
+  campaign_id?: string | null;
+  /** تاريخ أول تواصل (0098) */
+  first_contact_at?: string | null;
   service_code: ServiceCode | null;
   stage_code: LeadStageCode;
   est_value: number;

@@ -6,6 +6,10 @@ export interface RefItem {
   name_ar: string;
   is_active: boolean;
   sort_order: number;
+  /** مصادر العملاء (0098): «أخرى» تتطلب توضيحاً */
+  requires_note?: boolean;
+  /** مصادر العملاء: منصة | مباشر | إحالة | أخرى */
+  kind?: 'platform' | 'direct' | 'referral' | 'other';
 }
 export interface ConfigItem {
   key: string;
@@ -18,12 +22,29 @@ export interface ConfigItem {
 
 /* ----------------------------- demo stores ------------------------------- */
 let seq = 1;
+// مرآة lead_sources بعد 0098 (الوضع التجريبي)
 const SOURCES: RefItem[] = [
-  { code: 'website', name_ar: 'الموقع الإلكتروني', is_active: true, sort_order: 1 },
-  { code: 'call_center', name_ar: 'مركز الاتصال', is_active: true, sort_order: 2 },
-  { code: 'referral', name_ar: 'إحالة', is_active: true, sort_order: 3 },
-  { code: 'walk_in', name_ar: 'زيارة للفرع', is_active: true, sort_order: 4 },
-  { code: 'campaign', name_ar: 'حملة تسويقية', is_active: true, sort_order: 5 },
+  { code: 'website', name_ar: 'الموقع الإلكتروني', is_active: true, sort_order: 1, kind: 'direct' },
+  { code: 'call_center', name_ar: 'مركز الاتصال', is_active: true, sort_order: 2, kind: 'direct' },
+  { code: 'referral', name_ar: 'توصية من عميل', is_active: true, sort_order: 3, kind: 'referral' },
+  { code: 'walk_in', name_ar: 'زيارة الفرع', is_active: true, sort_order: 4, kind: 'direct' },
+  { code: 'campaign', name_ar: 'حملة تسويقية', is_active: false, sort_order: 5 },
+  { code: 'snapchat', name_ar: 'سناب شات', is_active: true, sort_order: 10, kind: 'platform' },
+  { code: 'tiktok', name_ar: 'تيك توك', is_active: true, sort_order: 11, kind: 'platform' },
+  { code: 'facebook', name_ar: 'فيسبوك', is_active: true, sort_order: 12, kind: 'platform' },
+  { code: 'x', name_ar: 'منصة إكس', is_active: true, sort_order: 13, kind: 'platform' },
+  { code: 'whatsapp', name_ar: 'واتساب', is_active: true, sort_order: 14, kind: 'platform' },
+  { code: 'instagram', name_ar: 'إنستغرام', is_active: true, sort_order: 15, kind: 'platform' },
+  { code: 'google', name_ar: 'جوجل', is_active: true, sort_order: 16, kind: 'platform' },
+  { code: 'direct_call', name_ar: 'اتصال مباشر', is_active: true, sort_order: 17, kind: 'direct' },
+  {
+    code: 'other',
+    name_ar: 'أخرى',
+    is_active: true,
+    sort_order: 99,
+    kind: 'other',
+    requires_note: true,
+  },
 ];
 const STAGES: RefItem[] = [
   { code: 'new', name_ar: 'جديد', is_active: true, sort_order: 1 },

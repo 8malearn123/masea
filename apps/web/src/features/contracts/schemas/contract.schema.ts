@@ -132,6 +132,13 @@ export const contractSchema = z.object({
   issue_date: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   alert_days_before: z.number().int().nonnegative().nullable().optional(),
+  // البيانات التسويقية (0098): مصدر العقد والحملة، ولقطة مصدر اكتساب العميل وأول تواصل.
+  source_code: z.string().nullable().optional(),
+  source_note: z.string().nullable().optional(),
+  campaign_id: z.string().nullable().optional(),
+  lead_id: z.string().nullable().optional(),
+  acquisition_source_code: z.string().nullable().optional(),
+  first_contact_at: z.string().nullable().optional(),
 });
 export type Contract = z.infer<typeof contractSchema>;
 
@@ -220,6 +227,18 @@ export const createContractInputSchema = z
     promotion_code: z.string().nullable().optional(),
     /** باقة مختارة (0096) — السعر والمدة منها في calc_price */
     package_id: z.string().nullable().optional(),
+    /** البيانات التسويقية (0098) — لا تدخل نص العقد */
+    marketing: z
+      .object({
+        acquisition_source_code: z.string().nullable().optional(),
+        acquisition_source_note: z.string().nullable().optional(),
+        first_contact_at: z.string().nullable().optional(),
+        source_code: z.string().min(1, { message: 'حدّد مصدر العقد' }),
+        source_note: z.string().nullable().optional(),
+        campaign_id: z.string().nullable().optional(),
+        lead_id: z.string().nullable().optional(),
+      })
+      .optional(),
     clauses: z.array(z.string()).default([]),
     // Optional at creation for musaned contracts — can be filled once issued on مساند.
     musaned_contract_no: z.string().optional(),

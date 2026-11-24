@@ -12,6 +12,7 @@ import {
 } from '@/shared/lib/pricing';
 import { countPromotionUse, listPromotions } from '@/features/pricing/api/promotions.api';
 import { getPricingConfig, listPricingRules } from '@/features/pricing/api/pricing.api';
+import { demoAcquisition, demoRecordAcquisition } from '@/features/marketing/api/attribution.api';
 import { managedBase } from '@/features/pricing/lib/engine';
 import { formatContractNo } from '@/features/contracts/lib/contractNo';
 import { addDays, addMonths, computeEndDate } from '@/features/requests/lib/period';
@@ -728,6 +729,34 @@ function parseTerm(start_date: string, end_date: string | null | undefined): Con
   return parsed.data;
 }
 
+/**
+ * مرآة 0098 للوضع التجريبي: مصدر الاكتساب إلزامي إن لم يكن مسجّلاً للعميل، ثم
+ * يُسجَّل مرة؛ العقد يحمل مصدره وحملته ولقطة مصدر الاكتساب وأول تواصل.
+ */
+function demoMarketing(input: CreateContractInput): Partial<ContractListItem> {
+  const m = input.marketing;
+  if (!m) return {};
+  let acq = demoAcquisition(input.customer_id);
+  if (!acq) {
+    if (!m.acquisition_source_code) throw new Error('حدّد مصدر العميل الأصلي قبل إكمال العقد');
+    acq = {
+      source_code: m.acquisition_source_code,
+      source_note: m.acquisition_source_note?.trim() || null,
+      campaign_id: null,
+      first_contact_at: m.first_contact_at || nowIso().slice(0, 10),
+    };
+    demoRecordAcquisition(input.customer_id, acq);
+  }
+  return {
+    source_code: m.source_code || acq.source_code,
+    source_note: m.source_note?.trim() || null,
+    campaign_id: m.campaign_id ?? null,
+    lead_id: m.lead_id ?? null,
+    acquisition_source_code: acq.source_code,
+    first_contact_at: acq.first_contact_at,
+  };
+}
+
 /** عدّاد يضمن تفرّد معرّفات المسودات المحلية المنشأة في نفس اللحظة. */
 let localSeq = 0;
 
@@ -808,6 +837,7 @@ async function localDraft(
     flight_no: null,
     terms_accepted_at: null,
     source_request_no: null,
+    ...demoMarketing(input),
   };
   FALLBACK.unshift(item);
   // the discount is consumed (create_contract_draft does the same server-side)
