@@ -9,11 +9,12 @@ import {
   Check,
   CircleAlert,
   FileText,
-  ScrollText,
+  Printer,
   UserPlus,
 } from 'lucide-react';
 import { Button, Card, Input, Modal, Select, useToast } from '@/shared/ui';
 import { RentalTemplatePanel } from '@/features/contracts/components/RentalTemplateReview';
+import { openContractPrint } from '@/features/contracts/lib/contractHtml';
 import { dateAr, sar } from '@/shared/lib/format';
 import { packagesFor } from '@/features/pricing/lib/engine';
 import { buildSchedule, setInstallments } from '@/features/contracts/api/contractPayments.api';
@@ -748,11 +749,6 @@ export default function ContractWizard() {
       <Card>
         {current === 'service' && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex justify-end sm:col-span-2">
-              <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)}>
-                <ScrollText size={14} /> قالب عقد التأجير
-              </Button>
-            </div>
             {wizardServiceCodeSchema.options.map((code) => (
               <button
                 key={code}
@@ -1419,6 +1415,13 @@ function RentalReview({
       <p className="text-xs text-purple">
         الدفعات تُسجَّل من «المدفوعات» وتظهر تلقائياً في العقد (المدفوع والمتبقي وجدول المدفوعات).
       </p>
+      {html && (
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={() => openContractPrint(html)}>
+            <Printer size={14} /> طباعة / تنزيل PDF
+          </Button>
+        </div>
+      )}
       {html ? (
         <iframe
           title="معاينة العقد"
