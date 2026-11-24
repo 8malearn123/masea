@@ -3,8 +3,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getQuoteRecord } from '@/shared/lib/quotesLedger';
 import { convertQuoteToContract } from '@/features/crm/api/crm.api';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, CalendarRange, Check, CircleAlert, FileText, UserPlus } from 'lucide-react';
-import { Button, Card, Input, Select, useToast } from '@/shared/ui';
+import {
+  ArrowRight,
+  CalendarRange,
+  Check,
+  CircleAlert,
+  FileText,
+  ScrollText,
+  UserPlus,
+} from 'lucide-react';
+import { Button, Card, Input, Modal, Select, useToast } from '@/shared/ui';
+import { RentalTemplatePanel } from '@/features/contracts/components/RentalTemplateReview';
 import { dateAr, sar } from '@/shared/lib/format';
 import { packagesFor } from '@/features/pricing/lib/engine';
 import { buildSchedule, setInstallments } from '@/features/contracts/api/contractPayments.api';
@@ -486,6 +495,8 @@ export default function ContractWizard() {
   }
 
   const [booking, setBooking] = useState(false);
+  /** قالب عقد التأجير (المعاينة والاعتماد وبيانات الطرف الأول) — داخل «عقد جديد» */
+  const [templateOpen, setTemplateOpen] = useState(false);
   /** مهمة التوصيل المتوقعة للعقد (بلا سائق بعد) — فشلها لا يُفشل إنشاء العقد. */
   async function scheduleDelivery(contractId: string) {
     const at =
@@ -728,9 +739,20 @@ export default function ContractWizard() {
         </Card>
       )}
 
+      {templateOpen && (
+        <Modal open onClose={() => setTemplateOpen(false)} title="قالب عقد التأجير" size="xl">
+          <RentalTemplatePanel />
+        </Modal>
+      )}
+
       <Card>
         {current === 'service' && (
           <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex justify-end sm:col-span-2">
+              <Button variant="outline" size="sm" onClick={() => setTemplateOpen(true)}>
+                <ScrollText size={14} /> قالب عقد التأجير
+              </Button>
+            </div>
             {wizardServiceCodeSchema.options.map((code) => (
               <button
                 key={code}
@@ -761,9 +783,13 @@ export default function ContractWizard() {
                   {rentalPending
                     ? 'قالب «عقد تأجير خدمات عمالية» بانتظار الاعتماد — لا يُنشأ عقد تأجير قبل اعتماده من '
                     : 'لا يوجد قالب تأجير معتمد — '}
-                  <Link to="/contracts/templates/rental" className="font-semibold underline">
+                  <button
+                    type="button"
+                    onClick={() => setTemplateOpen(true)}
+                    className="font-semibold underline"
+                  >
                     مراجعة القالب
-                  </Link>
+                  </button>
                   .
                 </span>
               </p>
@@ -1141,9 +1167,13 @@ export default function ContractWizard() {
                     <span>
                       قالب «عقد تأجير خدمات عمالية» المطابق للعقد الأصلي بانتظار الاعتماد — يُستخدم
                       تلقائياً بعد اعتماده من{' '}
-                      <Link to="/contracts/templates/rental" className="font-semibold underline">
+                      <button
+                        type="button"
+                        onClick={() => setTemplateOpen(true)}
+                        className="font-semibold underline"
+                      >
                         مراجعة القالب
-                      </Link>
+                      </button>
                       .
                     </span>
                   </p>

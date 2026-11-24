@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight,
   BadgeCheck,
   CircleAlert,
   CircleCheck,
@@ -48,11 +47,11 @@ import { openContractPrint } from '@/features/contracts/lib/contractHtml';
 import type { CompanyProfile } from '@/features/contracts/lib/rentalContract/fields';
 
 /**
- * «مراجعة قالب عقد التأجير»: معاينة كاملة للعقد الإلكتروني + تقرير المطابقة مع
- * الأصل + بيانات الطرف الأول + الاعتماد الرسمي (contracts.approve). لا يُصدر
- * عقد على القالب قبل اعتماده (يفرضه الـ backend — 0087).
+ * «قالب عقد التأجير» داخل «عقد جديد»: معاينة كاملة للعقد الإلكتروني + تقرير
+ * المطابقة مع الأصل + بيانات الطرف الأول + الاعتماد الرسمي (contracts.approve).
+ * لا يُصدر عقد على القالب قبل اعتماده (يفرضه الـ backend — 0087).
  */
-export default function RentalTemplateReview() {
+export function RentalTemplatePanel() {
   const { data: rows = [], isLoading, isError, refetch } = useRentalTemplates();
   const { can } = usePermissions();
   const canApprove = can('contracts', 'approve');
@@ -87,12 +86,6 @@ export default function RentalTemplateReview() {
 
   return (
     <div className="space-y-5">
-      <Link
-        to="/contracts"
-        className="inline-flex items-center gap-1 text-sm text-purple hover:text-navy"
-      >
-        <ArrowRight size={16} /> العودة للعقود
-      </Link>
       <Header rows={sameVersion} current={current} canApprove={canApprove} />
       <Compliance current={current} />
       <Preview current={current} />

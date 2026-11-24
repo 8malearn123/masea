@@ -9,7 +9,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/shared/ui';
 import { useAuth } from '@/store/auth';
 import { clearDemo, DEMO_ACCOUNTS, demoProfile, saveDemo } from '@/lib/demo';
-import RentalTemplateReview from '@/features/contracts/components/RentalTemplateReview';
+import { RentalTemplatePanel as RentalTemplateReview } from '@/features/contracts/components/RentalTemplateReview';
 import { resetRentalDemoStore } from '@/features/contracts/api/rentalContract.api';
 import type { AppRole } from '@masiat/shared';
 
