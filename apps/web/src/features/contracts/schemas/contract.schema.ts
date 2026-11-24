@@ -137,6 +137,8 @@ export const contractSchema = z.object({
   source_note: z.string().nullable().optional(),
   campaign_id: z.string().nullable().optional(),
   lead_id: z.string().nullable().optional(),
+  /** رسالة العرض التي أدت للعقد (0102) — علاقة موثّقة لنفس العميل */
+  campaign_message_id: z.string().nullable().optional(),
   acquisition_source_code: z.string().nullable().optional(),
   first_contact_at: z.string().nullable().optional(),
 });
@@ -237,6 +239,7 @@ export const createContractInputSchema = z
         source_note: z.string().nullable().optional(),
         campaign_id: z.string().nullable().optional(),
         lead_id: z.string().nullable().optional(),
+        campaign_message_id: z.string().nullable().optional(),
       })
       .optional(),
     clauses: z.array(z.string()).default([]),

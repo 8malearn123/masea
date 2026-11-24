@@ -1,3 +1,4 @@
+import { WhatsAppTemplatesCard } from '@/features/marketing/components/WhatsAppTemplatesCard';
 import { WheelReportCard } from '@/features/marketing/components/WheelReportCard';
 import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
 import { Link } from 'react-router-dom';
@@ -359,7 +360,12 @@ export default function LoyaltyBoard() {
         </div>
       )}
       {tab === 'marketing' && <MarketingView />}
-      {tab === 'admin' && <AdminView />}
+      {tab === 'admin' && (
+        <div className="space-y-4">
+          <AdminView />
+          <WhatsAppTemplatesCard />
+        </div>
+      )}
     </div>
   );
 }

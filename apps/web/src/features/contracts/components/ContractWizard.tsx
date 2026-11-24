@@ -649,6 +649,7 @@ export default function ContractWizard() {
         source_code: d.mkt?.source_code ?? '',
         source_note: d.mkt?.source_note || null,
         campaign_id: d.mkt?.campaign_id || null,
+        campaign_message_id: d.mkt?.campaign_message_id || null,
         lead_id: quote?.lead_id && !quote.lead_id.startsWith('lead-') ? quote.lead_id : null,
       },
       // Musaned contracts carry no in-system clauses — the paperwork is on مساند.

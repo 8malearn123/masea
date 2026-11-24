@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Send } from 'lucide-react';
+import { MessageCircle, RotateCcw, Send, Users } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -9,245 +9,236 @@ import {
   ErrorState,
   Select,
   Skeleton,
+  StatTile,
   useToast,
 } from '@/shared/ui';
-import { dateAr } from '@/shared/lib/format';
+import { dateTimeAr, sar } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useSources } from '@/features/settings/hooks/useSettings';
-import { sourceLabelOf } from '@/features/marketing/api/attribution.api';
-import { campaignStatus } from '@/features/marketing/api/analytics.api';
+import { useUserNames } from '@/features/contracts/components/details/ContractTabs';
 import {
-  campaignAudience,
   listCampaignMessages,
   markManual,
   MESSAGE_STATUS_LABEL,
-  offerSchema,
-  personalize,
-  queueOffer,
   recordResponse,
   RESPONSE_LABEL,
   type CampaignMessage,
   type Response,
 } from '@/features/marketing/api/offers.api';
+import {
+  campaignWhatsappReport,
+  retryMessage,
+  whatsappIntegration,
+} from '@/features/marketing/api/whatsapp.api';
 import type { Campaign } from '@/features/loyalty/types';
 
 const STATUS_TONE = {
   queued: 'gold',
   sent: 'navy',
-  delivered: 'success',
+  delivered: 'teal',
+  read: 'success',
   failed: 'danger',
   cancelled: 'neutral',
   opened_manually: 'neutral',
 } as const;
 
-/**
- * إرسال عرض الحملة للعملاء الموافقين فقط: اختيار العملاء ← نص العرض ← معاينة ← إرسال
- * ← سجل الحالة والاستجابة. بلا مزوّد مربوط تبقى الرسائل «في الطابور».
- */
+/** رسائل واتساب للحملة: الحالات المؤكدة من Meta، إعادة المحاولة، الردود، والنتائج. */
 export function OffersPanel({ campaign }: { campaign: Campaign }) {
   const { can } = usePermissions();
   const qc = useQueryClient();
   const toast = useToast();
-  const { data: sources = [] } = useSources();
-  const [channel, setChannel] = useState<'whatsapp' | 'sms'>('whatsapp');
-  const [picked, setPicked] = useState<string[]>([]);
-  const [body, setBody] = useState(
-    `أهلاً {الاسم}، ${campaign.description || campaign.name}${campaign.coupon_code ? ` — استخدم الكود ${campaign.coupon_code}` : ''}`,
-  );
-  const active = campaignStatus(campaign) === 'active';
-  const aud = useQuery({
-    queryKey: ['marketing', 'audience', channel],
-    queryFn: () => campaignAudience(channel),
-    enabled: can('loyalty', 'manage'),
-  });
+  const manage = can('loyalty', 'manage');
   const log = useQuery({
     queryKey: ['marketing', 'messages', campaign.id],
     queryFn: () => listCampaignMessages(campaign.id),
   });
-  const parsed = offerSchema.safeParse({ body, customers: picked });
-  const err = !active
-    ? 'الحملة غير نشطة — لا تُرسل عروض لها'
-    : parsed.success
-      ? null
-      : (parsed.error.issues[0]?.message ?? null);
-  const first = (aud.data ?? []).find((c) => picked.includes(c.id));
-  const preview = useMemo(() => personalize(body, first?.full_name ?? 'العميل'), [body, first]);
-
-  const send = useMutation({
-    mutationFn: () => queueOffer(campaign.id, active, picked, channel, body),
-    onSuccess: (r) => {
-      void qc.invalidateQueries({ queryKey: ['marketing', 'messages', campaign.id] });
-      toast.success(
-        `وُضعت ${r.queued} رسالة في الطابور${r.skipped_duplicate ? ` · ${r.skipped_duplicate} مكرّرة` : ''}${r.skipped_no_consent ? ` · ${r.skipped_no_consent} بلا موافقة` : ''}${r.skipped_no_phone ? ` · ${r.skipped_no_phone} بلا جوال صحيح` : ''}`,
-      );
-      setPicked([]);
+  const rep = useQuery({
+    queryKey: ['marketing', 'wa-report', campaign.id],
+    queryFn: () => campaignWhatsappReport(campaign.id),
+  });
+  const integ = useQuery({
+    queryKey: ['marketing', 'wa-integration'],
+    queryFn: whatsappIntegration,
+  });
+  const senders = useUserNames((log.data ?? []).map((m) => m.created_by));
+  const refresh = () => void qc.invalidateQueries({ queryKey: ['marketing'] });
+  const retry = useMutation({
+    mutationFn: (m: CampaignMessage) => retryMessage(m.id, m.campaign_id),
+    onSuccess: () => {
+      refresh();
+      toast.success('أُعيدت الرسالة إلى قائمة الانتظار');
     },
     onError: (e: Error) => toast.error(e.message),
   });
   const manual = useMutation({
     mutationFn: (m: CampaignMessage) => markManual(m),
-    onSuccess: () =>
-      void qc.invalidateQueries({ queryKey: ['marketing', 'messages', campaign.id] }),
+    onSuccess: refresh,
   });
   const respond = useMutation({
     mutationFn: ({ m, r }: { m: CampaignMessage; r: Response }) => recordResponse(m, r),
-    onSuccess: () =>
-      void qc.invalidateQueries({ queryKey: ['marketing', 'messages', campaign.id] }),
+    onSuccess: refresh,
   });
+  const r = rep.data;
+  const connected = Boolean(integ.data?.last_ok_at);
 
   return (
     <Card className="p-5">
-      <h2 className="mb-1 flex items-center gap-2 text-base font-bold text-navy">
-        <Send size={18} /> إرسال العرض للعملاء
-      </h2>
-      <p className="mb-4 rounded-xl bg-gold-100/60 p-3 text-xs text-navy-900">
-        لا يوجد مزوّد إرسال آلي مربوط بعد (WhatsApp Business API) — الرسائل تُحفظ «في الطابور» ولا
-        تُعدّ مُرسلة. فتح واتساب يدوياً يُسجَّل «غير مؤكد الإرسال». تُعرض فقط للعملاء الذين سجّلوا
-        موافقتهم.
-      </p>
-      {can('loyalty', 'manage') && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div>
-            <div className="mb-2 flex items-end gap-2">
-              <div className="w-40">
-                <Select
-                  label="القناة"
-                  value={channel}
-                  onChange={(e) => {
-                    setChannel(e.target.value as 'whatsapp' | 'sms');
-                    setPicked([]);
-                  }}
-                  options={[
-                    { value: 'whatsapp', label: 'واتساب' },
-                    { value: 'sms', label: 'رسائل نصية' },
-                  ]}
-                />
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setPicked((aud.data ?? []).map((c) => c.id))}
-              >
-                تحديد الكل
-              </Button>
-            </div>
-            {aud.isLoading ? (
-              <Skeleton className="h-32 w-full" />
-            ) : aud.isError ? (
-              <ErrorState onRetry={() => void aud.refetch()} />
-            ) : (aud.data ?? []).length === 0 ? (
-              <EmptyState
-                icon={Send}
-                title="لا عملاء موافقون على هذه القناة"
-                description="سجّل موافقة العميل من ملفه أولاً."
-              />
-            ) : (
-              <ul className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-navy-100 p-2 text-sm">
-                {(aud.data ?? []).map((c) => (
-                  <li key={c.id}>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-navy"
-                        checked={picked.includes(c.id)}
-                        onChange={(e) =>
-                          setPicked((all) =>
-                            e.target.checked ? [...all, c.id] : all.filter((x) => x !== c.id),
-                          )
-                        }
-                      />
-                      <span className="flex-1">{c.full_name}</span>
-                      <span className="text-[11px] text-purple">
-                        {sourceLabelOf(sources, c.acquisition_source_code)}
-                      </span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-navy-900">
-              نص العرض (استخدم {'{الاسم}'} لاسم العميل)
-              <textarea
-                className="mt-1 min-h-28 w-full rounded-xl border border-navy-100 p-3 text-sm"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-              />
-            </label>
-            <div className="rounded-xl bg-navy-50 p-3 text-sm">
-              <p className="mb-1 text-xs text-purple">
-                معاينة{first ? ` (${first.full_name})` : ''}
-              </p>
-              <p className="whitespace-pre-wrap text-navy-900">{preview}</p>
-            </div>
-            {err && <p className="text-[11px] text-gold-600">{err}</p>}
-            <Button
-              className="w-full"
-              disabled={Boolean(err)}
-              loading={send.isPending}
-              onClick={() => send.mutate()}
-            >
-              <Send size={14} /> إرسال إلى {picked.length} عميل
-            </Button>
-          </div>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-base font-bold text-navy">
+          <Send size={18} /> عروض واتساب للحملة
+        </h2>
+        {manage && (
+          <Link
+            to="/customers"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-3 py-2 text-xs font-semibold text-navy hover:bg-navy-50"
+          >
+            <Users size={14} /> اختيار العملاء وإرسال عرض
+          </Link>
+        )}
+      </div>
+      {!connected && (
+        <p className="mb-4 rounded-xl bg-gold-100/60 p-3 text-xs text-navy-900">
+          الإرسال عبر WhatsApp Business Platform لم يُفعَّل بعد (مفاتيح Meta ودالة الإرسال على
+          الخادم) — الرسائل «قيد الانتظار» ولا تُعدّ مرسلة حتى يؤكدها مزوّد الخدمة.
+          {integ.data?.last_error ? ` آخر خطأ: ${integ.data.last_error}` : ''}
+        </p>
       )}
-      <h3 className="mb-2 mt-5 text-sm font-bold text-navy">سجل الإرسال</h3>
+      {rep.isLoading ? (
+        <Skeleton className="h-20 w-full" />
+      ) : r ? (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <StatTile
+            label="الرسائل"
+            value={r.messages}
+            hint={`قيد الانتظار ${r.queued} · فشل ${r.failed}`}
+          />
+          <StatTile
+            label="مرسلة / تم التسليم"
+            value={`${r.sent + r.delivered + r.read} / ${r.delivered + r.read}`}
+          />
+          <StatTile label="تمت القراءة" value={r.read} tone="success" />
+          <StatTile
+            label="عملاء متفاعلون"
+            value={r.engaged_customers}
+            hint={`ردود ${r.replied} · مهتمون ${r.interested}`}
+          />
+          <StatTile
+            label="عقود مرتبطة"
+            value={r.contracts}
+            hint={`قيمتها ${sar(r.contracts_value)}`}
+          />
+          <StatTile label="المحصّل منها" value={sar(r.collected)} tone="success" />
+        </div>
+      ) : null}
       {log.isLoading ? (
         <Skeleton className="h-16 w-full" />
       ) : log.isError ? (
         <ErrorState onRetry={() => void log.refetch()} />
       ) : (log.data ?? []).length === 0 ? (
-        <EmptyState icon={MessageCircle} title="لا رسائل بعد" />
+        <EmptyState
+          icon={MessageCircle}
+          title="لا رسائل لهذه الحملة"
+          description="اختر العملاء من صفحة العملاء وأرسل لهم العرض."
+        />
       ) : (
-        <ul className="divide-y divide-navy-50 text-sm">
-          {(log.data ?? []).map((m) => (
-            <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span className="min-w-0 flex-1">
-                <span className="font-semibold text-navy">{m.customer_name ?? m.to_address}</span>
-                <span className="block truncate text-[11px] text-purple">
-                  {dateAr(m.created_at)} · {m.body}
-                </span>
-              </span>
-              <Badge tone={STATUS_TONE[m.status]}>{MESSAGE_STATUS_LABEL[m.status]}</Badge>
-              {can('loyalty', 'manage') &&
-                ['queued', 'failed'].includes(m.status) &&
-                m.channel === 'whatsapp' && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      window.open(
-                        `https://wa.me/${m.to_address}?text=${encodeURIComponent(m.body)}`,
-                        '_blank',
-                        'noopener',
-                      );
-                      manual.mutate(m);
-                    }}
-                  >
-                    <MessageCircle size={13} /> فتح واتساب يدوياً
-                  </Button>
-                )}
-              <div className="w-32">
-                <Select
-                  aria-label="استجابة العميل"
-                  value={m.response ?? ''}
-                  onChange={(e) =>
-                    e.target.value && respond.mutate({ m, r: e.target.value as Response })
-                  }
-                  options={[
-                    { value: '', label: 'الاستجابة…' },
-                    ...(Object.keys(RESPONSE_LABEL) as Response[]).map((r) => ({
-                      value: r,
-                      label: RESPONSE_LABEL[r],
-                    })),
-                  ]}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead>
+              <tr className="border-b border-navy-100 text-right text-xs text-purple">
+                {[
+                  'العميل',
+                  'الجوال',
+                  'العرض',
+                  'الموظف',
+                  'الحالة',
+                  'الأوقات',
+                  'الرد',
+                  'الاستجابة',
+                  '',
+                ].map((h) => (
+                  <th key={h} className="px-2 py-2 font-semibold">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(log.data ?? []).map((m) => (
+                <tr key={m.id} className="border-b border-navy-50 align-top">
+                  <td className="px-2 py-2 font-semibold text-navy">{m.customer_name ?? '—'}</td>
+                  <td className="num px-2 py-2 text-xs" dir="ltr">
+                    +{m.to_address}
+                  </td>
+                  <td className="px-2 py-2 text-xs">{m.offer_text ?? m.body}</td>
+                  <td className="px-2 py-2 text-xs">
+                    {(m.created_by && senders.data?.get(m.created_by)) || '—'}
+                  </td>
+                  <td className="px-2 py-2">
+                    <Badge tone={STATUS_TONE[m.status]}>{MESSAGE_STATUS_LABEL[m.status]}</Badge>
+                    {m.error && (
+                      <span className="mt-1 block text-[11px] text-red-600">{m.error}</span>
+                    )}
+                  </td>
+                  <td className="px-2 py-2 text-[11px] text-purple">
+                    <span className="block">إنشاء {dateTimeAr(m.created_at)}</span>
+                    {m.sent_at && <span className="block">إرسال {dateTimeAr(m.sent_at)}</span>}
+                    {m.delivered_at && (
+                      <span className="block">تسليم {dateTimeAr(m.delivered_at)}</span>
+                    )}
+                    {m.read_at && <span className="block">قراءة {dateTimeAr(m.read_at)}</span>}
+                  </td>
+                  <td className="px-2 py-2 text-xs">{m.reply_text ?? '—'}</td>
+                  <td className="px-2 py-2">
+                    <div className="w-28">
+                      <Select
+                        aria-label="استجابة العميل"
+                        value={m.response ?? ''}
+                        disabled={!manage}
+                        onChange={(e) =>
+                          e.target.value && respond.mutate({ m, r: e.target.value as Response })
+                        }
+                        options={[
+                          { value: '', label: '—' },
+                          ...(Object.keys(RESPONSE_LABEL) as Response[]).map((x) => ({
+                            value: x,
+                            label: RESPONSE_LABEL[x],
+                          })),
+                        ]}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-2 py-2">
+                    {manage && m.status === 'failed' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        loading={retry.isPending && retry.variables?.id === m.id}
+                        onClick={() => retry.mutate(m)}
+                      >
+                        <RotateCcw size={13} /> إعادة المحاولة
+                      </Button>
+                    )}
+                    {manage && m.status === 'queued' && !connected && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          window.open(
+                            `https://wa.me/${m.to_address}?text=${encodeURIComponent(m.body)}`,
+                            '_blank',
+                            'noopener',
+                          );
+                          manual.mutate(m);
+                        }}
+                      >
+                        <MessageCircle size={13} /> فتح يدوياً
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Card>
   );

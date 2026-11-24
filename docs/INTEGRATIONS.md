@@ -2,17 +2,18 @@
 
 All third-party secrets must live in **Supabase Edge Function** environment
 variables (server-side), never in the client. The web/mobile clients only hold
-*publishable* keys.
+_publishable_ keys.
 
 ## 💳 Payments
 
-| Gateway | Methods | Notes |
-|---|---|---|
-| **Moyasar** | Mada, Apple Pay, credit | Primary KSA gateway. Publishable key on client; verify via webhook. |
-| **Tamara** | BNPL (split) | Order create → redirect → webhook capture. |
-| **HyperPay** | Mada / Visa fallback | COPYandPAY checkout id from server. |
+| Gateway      | Methods                 | Notes                                                               |
+| ------------ | ----------------------- | ------------------------------------------------------------------- |
+| **Moyasar**  | Mada, Apple Pay, credit | Primary KSA gateway. Publishable key on client; verify via webhook. |
+| **Tamara**   | BNPL (split)            | Order create → redirect → webhook capture.                          |
+| **HyperPay** | Mada / Visa fallback    | COPYandPAY checkout id from server.                                 |
 
 ### Flow (recommended)
+
 1. Client requests a payment session from an Edge Function (`/payments/create`).
 2. Edge Function calls the gateway with the **secret** key, returns a checkout id / URL.
 3. Client completes payment in the gateway SDK/redirect.
@@ -20,6 +21,7 @@ variables (server-side), never in the client. The web/mobile clients only hold
    and updates `contracts.amount_paid`.
 
 Environment variables (Edge Functions):
+
 ```
 MOYASAR_SECRET_KEY=
 TAMARA_API_TOKEN=
@@ -28,20 +30,41 @@ HYPERPAY_ACCESS_TOKEN=
 HYPERPAY_ENTITY_ID=
 ```
 
-## 📲 Notifications — Twilio (WhatsApp + SMS)
+## 📲 WhatsApp — WhatsApp Business Platform (Cloud API)
 
-Triggered server-side (Edge Function or DB webhook) on events such as:
-contract created, payment received, absence reported, abandoned-cart reminder.
+عروض الحملات تُرسل من صفحة العملاء (تحديد ← «إرسال عرض عبر واتساب»). الرسائل تدخل طابور
+`outbound_messages` (0102) وترسلها دالة الخادم `whatsapp-send` بقالب معتمد، وتصل الحالات
+(مرسلة/تم التسليم/تمت القراءة/فشل) والردود عبر `whatsapp-webhook`. لا «مرسلة» قبل تأكيد Meta.
+
+### المتطلبات من Meta
+
+1. Meta Business موثّق + WhatsApp Business Account + رقم مخصّص للأعمال.
+2. قالب تسويقي (Marketing) بالعربية بالمتغيرات `{{1}}` الاسم، `{{2}}` العرض، `{{3}}` تاريخ الانتهاء، معتمد —
+   ثم يُسجَّل في النظام: الولاء والتسويق ← الإدارة ← قوالب واتساب (بنفس الاسم، والحالة «معتمد من Meta»).
+3. System User بمفتاح دائم بصلاحية `whatsapp_business_messaging`، و Phone Number ID، و App Secret.
+
+### التفعيل في Supabase
 
 ```
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_WHATSAPP_FROM=whatsapp:+9665XXXXXXX
-TWILIO_SMS_FROM=
+supabase secrets set WHATSAPP_TOKEN=... WHATSAPP_PHONE_NUMBER_ID=... WHATSAPP_APP_SECRET=... \
+  WHATSAPP_VERIFY_TOKEN=<نص عشوائي> CRON_SECRET=<نص عشوائي>
+supabase functions deploy whatsapp-send
+supabase functions deploy whatsapp-webhook --no-verify-jwt
 ```
 
-Suggested pattern: a `notifications` row insert + a `pg_net`/webhook call that
-hits an Edge Function which sends WhatsApp first, falling back to SMS.
+- في إعدادات تطبيق Meta ← Webhooks: الرابط `https://<project>.functions.supabase.co/whatsapp-webhook`،
+  ورمز التحقق = `WHATSAPP_VERIFY_TOKEN`، والاشتراك في حقل `messages`.
+- جدولة الإرسال كل دقيقة (pg_cron + pg_net):
+
+```sql
+select cron.schedule('whatsapp-send', '* * * * *', $$
+  select net.http_post(url := 'https://<project>.functions.supabase.co/whatsapp-send',
+                       headers := jsonb_build_object('x-cron-secret', '<CRON_SECRET>'))
+$$);
+```
+
+- الحد اليومي ومحاولات إعادة الإرسال من الإعدادات (`whatsapp_daily_limit`، `whatsapp_max_attempts`).
+- لا يُستخدم أي حل غير رسمي (أتمتة واتساب ويب أو أرقام شخصية) — يعرّض الرقم للحظر.
 
 ## 🗺️ Maps / GPS
 
