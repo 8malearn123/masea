@@ -39,7 +39,9 @@ export function WheelOfFortune({
     setWon(null);
     spin.mutate(undefined, {
       onSuccess: (prize) => {
-        const idx = active.findIndex((p) => p.id === prize.id);
+        // تتوقف العجلة على الجائزة التي أعادها النظام (المعرّف، ثم الاسم احتياطاً)
+        const byId = active.findIndex((p) => p.id === prize.id);
+        const idx = byId >= 0 ? byId : active.findIndex((p) => p.label === prize.label);
         const safeIdx = idx >= 0 ? idx : 0;
         // land the prize's slice centre under the top pointer
         const target = 360 * 5 + (360 - (safeIdx * seg + seg / 2));

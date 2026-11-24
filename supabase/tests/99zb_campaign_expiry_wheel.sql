@@ -75,9 +75,11 @@ select pg_temp.rejects($$ insert into wheel_prizes (label, prize_type, value, pr
 insert into campaigns (id, name, type, start_at, end_at, is_draft) values
   ('eb000000-0000-0000-0000-000000000009', 'عجلة نوفمبر', 'lucky_wheel', now() - interval '1 day', now() + interval '10 days', false)
 on conflict (id) do nothing;
+begin;   -- مجموع المفعّلة يُفحص عند نهاية المعاملة (0105)
 update wheel_prizes set is_active = false;
 insert into wheel_prizes (label, prize_type, value, probability, service_codes, max_discount_amount, coupon_valid_days, sort_order)
 values ('خصم 25٪ على التأجير الشهري', 'discount', 25, 100, '{monthly_rental}', 500, 14, 1);
+commit;
 update loyalty_config set wheel_spins_per_customer = 1 where id = 1;
 
 select pg_temp.login('ab000000-0000-0000-0000-000000000002');

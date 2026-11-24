@@ -9,6 +9,9 @@ import {
   extendCampaign,
   prizeActivationError,
   probabilityTotal,
+  probabilityWarning,
+  setProbabilities,
+  updatePrize,
   redeemWheelPrize,
   resetWheelLinksDemo,
   spinByToken,
@@ -169,6 +172,46 @@ describe('wheel (mirror of 0104)', () => {
     expect(
       await wheelReport({ from: today, to: today, campaignId: 'cm2', branch: null }),
     ).toHaveLength(0);
+  });
+
+  it('0105: a total other than 100% is never saved; a bulk edit at 100% is', async () => {
+    WHEEL_PRIZES.splice(0, WHEEL_PRIZES.length,
+      { ...DELIVERY, probability: 60 },
+      { id: 'wt-luck', label: 'حظ أوفر', prize_type: 'none', value: 0, probability: 40, active: true, coupon_code: null },
+      { id: 'wt-off', label: 'خصم 10٪', prize_type: 'discount', value: 10, probability: 0, active: false, coupon_code: null },
+    ); // prettier-ignore
+    expect(probabilityWarning(100)).toBeNull();
+    expect(probabilityWarning(90)).toMatch('أقل من 100٪');
+    expect(probabilityWarning(105)).toMatch('أكثر من 100٪');
+    await expect(updatePrize('wt-1', { probability: 65 })).rejects.toThrow('أكثر من 100٪');
+    await expect(updatePrize('wt-luck', { active: false })).rejects.toThrow('أقل من 100٪');
+    await expect(updatePrize('wt-1', { label: 'توصيل العاملة مجاناً' })).resolves.toBeTruthy();
+    await expect(setProbabilities([{ id: 'wt-1', probability: 50, active: true }])).rejects.toThrow(
+      'أقل من 100٪',
+    );
+    await setProbabilities([
+      { id: 'wt-1', probability: 70, active: true },
+      { id: 'wt-luck', probability: 30, active: true },
+    ]);
+    expect(WHEEL_PRIZES.map((p) => p.probability)).toEqual([70, 30, 0]);
+    expect(probabilityTotal(WHEEL_PRIZES)).toBe(100);
+  });
+
+  it('0105: the wheel lands on the prize the system picked; «حظ أوفر» grants nothing', async () => {
+    WHEEL_PRIZES.splice(0, WHEEL_PRIZES.length,
+      { id: 'wt-luck', label: 'حظ أوفر', prize_type: 'none', value: 0, probability: 100, active: true, coupon_code: null },
+      { id: 'wt-off', label: 'خصم 10٪', prize_type: 'discount', value: 10, probability: 0, active: false, coupon_code: null },
+    ); // prettier-ignore
+    const { token } = await createWheelLink(CUSTOMER);
+    const v = await wheelPublicView(token, 5);
+    expect(v.prizes.map((p) => p.id)).toEqual(['wt-luck']); // المعطّلة لا تظهر
+    const r = await spinByToken(token, '5678', '4567', 5);
+    expect(r.prize_id).toBe('wt-luck');
+    expect(r.prize_type).toBe('none');
+    expect(r.reference).toBeNull();
+    expect(r.valid_until).toBeNull();
+    expect((await wheelPublicView(token, 5)).result?.prize_id).toBe('wt-luck'); // محفوظة
+    await expect(spinByToken(token, '5678', '4567', 5)).rejects.toThrow('مسبقاً'); // لا منح مكرر
   });
 
   it('extending a campaign needs a manager and a reason', async () => {

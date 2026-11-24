@@ -10,7 +10,9 @@ import { isDemoMode, isDemoId } from '@/shared/lib/demoBackend';
 import {
   addWheelPrize,
   generateCouponCode,
+  activeProbabilityTotal,
   listWheelPrizes,
+  pickPrize,
   removeWheelPrize,
   updateWheelPrize,
 } from '@/features/loyalty/data/engine';
@@ -47,9 +49,23 @@ export function prizeActivationError(
 
 /** مجموع احتمالات الجوائز المفعّلة (العجلة تعمل عند 100 فقط — لا تُعدَّل النسب تلقائياً). */
 export function probabilityTotal(prizes: Pick<WheelPrize, 'active' | 'probability'>[]): number {
-  return (
-    Math.round(prizes.filter((p) => p.active).reduce((s, p) => s + p.probability, 0) * 100) / 100
-  );
+  return activeProbabilityTotal(prizes);
+}
+
+/** رسالة التنبيه حسب المجموع (null = 100٪ بالضبط). */
+export function probabilityWarning(total: number): string | null {
+  if (total === 100) return null;
+  return total < 100
+    ? `مجموع احتمالات الجوائز المفعّلة ${total}٪ — أقل من 100٪ بـ ${Math.round((100 - total) * 100) / 100}٪`
+    : `مجموع احتمالات الجوائز المفعّلة ${total}٪ — أكثر من 100٪ بـ ${Math.round((total - 100) * 100) / 100}٪`;
+}
+
+/** لا يُحفظ تعديل يترك مجموع المفعّلة ≠ 100٪ (مرآة trg_wheel_prizes_total — 0105). */
+function assertTotalAfter(next: WheelPrize[]): void {
+  const after = probabilityTotal(next);
+  const hasActive = next.some((p) => p.active);
+  if (hasActive && after !== 100)
+    throw new Error(`${probabilityWarning(after)} — عدّل النسب معاً من «ضبط الاحتمالات»`);
 }
 
 /* ------------------------------ prizes (CRUD) ------------------------------ */
@@ -99,6 +115,8 @@ export async function listPrizes(): Promise<WheelPrize[]> {
 export async function addPrize(input: WheelPrizeInput): Promise<WheelPrize> {
   const rule = prizeActivationError(input);
   if (rule) throw new Error(rule);
+  const all = await listPrizes();
+  assertTotalAfter([...all, { ...input, id: 'new' }]);
   if (!liveMode()) return addWheelPrize(input);
   const { data, error } = await supabase
     .from('wheel_prizes')
@@ -113,10 +131,13 @@ export async function updatePrize(
   id: string,
   patch: Partial<WheelPrizeInput>,
 ): Promise<WheelPrize> {
-  const current = (await listPrizes()).find((p) => p.id === id);
+  const all = await listPrizes();
+  const current = all.find((p) => p.id === id);
   if (!current) throw new Error('الجائزة غير موجودة');
   const rule = prizeActivationError({ ...current, ...patch });
   if (rule) throw new Error(rule);
+  if ('probability' in patch || 'active' in patch)
+    assertTotalAfter(all.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   if (!liveMode() || isDemoId(id)) return updateWheelPrize(id, patch);
   const { data, error } = await supabase
     .from('wheel_prizes')
@@ -126,6 +147,37 @@ export async function updatePrize(
     .single();
   if (error) throw new Error(error.message);
   return fromPrizeRow(data as Record<string, unknown>);
+}
+
+export interface ProbabilityItem {
+  id: string;
+  probability: number;
+  active: boolean;
+}
+
+/** تعديل النسب والتفعيل معاً — يُحفظ فقط إذا كان مجموع المفعّلة 100٪ (set_wheel_probabilities). */
+export async function setProbabilities(items: ProbabilityItem[]): Promise<void> {
+  const all = await listPrizes();
+  const next = all.map((p) => {
+    const it = items.find((x) => x.id === p.id);
+    return it ? { ...p, probability: it.probability, active: it.active } : p;
+  });
+  for (const p of next) {
+    if (!(p.probability >= 0 && p.probability <= 100)) throw new Error('النسبة بين 0 و100');
+    const rule = prizeActivationError(p);
+    if (rule) throw new Error(`${p.label}: ${rule}`);
+  }
+  const total = probabilityTotal(next);
+  if (next.some((p) => p.active) && total !== 100) throw new Error(probabilityWarning(total)!);
+  if (!liveMode()) {
+    for (const it of items)
+      updateWheelPrize(it.id, { probability: it.probability, active: it.active });
+    return;
+  }
+  const { error } = await supabase.rpc('set_wheel_probabilities', {
+    p_items: items.map((i) => ({ id: i.id, probability: i.probability, is_active: i.active })),
+  });
+  if (error) throw new Error(error.message);
 }
 
 /** الحذف = تعطيل مع قاعدة البيانات (الجائزة مرتبطة بدورات سابقة)؛ التجريبي يحذف من المخزن. */
@@ -139,6 +191,8 @@ export async function removePrize(id: string): Promise<void> {
 
 /* ------------------------------- demo links -------------------------------- */
 export interface WheelResult {
+  /** الجائزة التي اختارها الخادم — تتوقف العجلة عليها */
+  prize_id?: string;
   label: string;
   prize_type: string;
   coupon_code: string | null;
@@ -149,6 +203,7 @@ export interface WheelResult {
 }
 
 export interface WheelPublicPrize {
+  id: string;
   label: string;
   prize_type: string;
   chance: number;
@@ -266,6 +321,7 @@ export async function createWheelLink(
 }
 
 const publicPrize = (p: WheelPrize): WheelPublicPrize => ({
+  id: p.id,
   label: p.label,
   prize_type: p.prize_type,
   chance: p.probability,
@@ -355,15 +411,8 @@ function demoSpin(
     throw new Error('سبق لك المشاركة في هذه الحملة');
   const pool = listWheelPrizes().filter((p) => p.active);
   if (probabilityTotal(pool) !== 100) throw new Error(WHEEL_NOT_READY);
-  let r = Math.random() * 100;
-  let prize = pool[pool.length - 1]!;
-  for (const p of pool) {
-    r -= p.probability;
-    if (r <= 0) {
-      prize = p;
-      break;
-    }
-  }
+  const prize = pickPrize(pool, Math.random() * 100);
+  if (!prize) throw new Error('لا توجد جوائز مفعّلة على العجلة');
   const awarded = all.filter((x) => x.result?.prize_id === prize.id && !x.result.exhausted).length;
   const out = prize.max_awards != null && awarded >= prize.max_awards;
   const until = new Date(Date.now() + (prize.coupon_valid_days ?? 30) * 86400000).toISOString();

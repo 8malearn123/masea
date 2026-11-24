@@ -1,5 +1,16 @@
 import { useState } from 'react';
-import { Sparkles, Plus, Pencil, Trash2, Eye, EyeOff, Ticket, CircleCheck } from 'lucide-react';
+import {
+  Sparkles,
+  Plus,
+  Pencil,
+  Trash2,
+  Eye,
+  EyeOff,
+  Ticket,
+  CircleCheck,
+  TriangleAlert,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { Badge, Button, Card } from '@/shared/ui';
 import {
   useRemoveWheelPrize,
@@ -8,6 +19,8 @@ import {
 } from '@/features/loyalty/hooks/useLoyalty';
 import { WHEEL_COLORS } from '@/features/loyalty/data/engine';
 import { WheelPrizeFormModal } from '@/features/loyalty/components/WheelPrizeFormModal';
+import { WheelProbabilitiesModal } from '@/features/loyalty/components/WheelProbabilitiesModal';
+import { probabilityTotal, probabilityWarning } from '@/features/marketing/api/wheel.api';
 import { PRIZE_TYPE_LABEL, type WheelPrize } from '@/features/loyalty/types';
 
 /** `editable` = loyalty.manage (same rule as the wheel_prizes RLS policy). */
@@ -18,9 +31,11 @@ export function WheelPrizesManager({ editable }: { editable: boolean }) {
   const [editing, setEditing] = useState<WheelPrize | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const activePrizes = prizes.filter((p) => p.active);
-  const totalProb = activePrizes.reduce((s, p) => s + p.probability, 0);
-  const probOk = totalProb === 100;
+  const [tuning, setTuning] = useState(false);
+  // المفعّلة فقط تُحتسب (مرآة wheel_probability_total)
+  const totalProb = probabilityTotal(prizes);
+  const warning = probabilityWarning(totalProb);
+  const probOk = warning === null;
 
   return (
     <Card>
@@ -29,9 +44,14 @@ export function WheelPrizesManager({ editable }: { editable: boolean }) {
           <Sparkles size={16} className="text-gold-600" /> جوائز عجلة الحظ
         </h2>
         {editable && (
-          <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
-            <Plus size={14} /> إضافة جائزة
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTuning(true)}>
+              <SlidersHorizontal size={14} /> ضبط الاحتمالات
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
+              <Plus size={14} /> إضافة جائزة
+            </Button>
+          </div>
         )}
       </div>
 
@@ -40,9 +60,11 @@ export function WheelPrizesManager({ editable }: { editable: boolean }) {
           probOk ? 'bg-green-50 text-green-600' : 'bg-gold-100 text-gold-600'
         }`}
       >
-        <span>مجموع احتمالات الجوائز المفعّلة</span>
-        <span className="num flex items-center gap-1 font-bold">
-          {totalProb}٪{probOk ? <CircleCheck size={13} /> : <span>(يُفضّل 100٪)</span>}
+        <span>
+          {warning ? `${warning} — العجلة متوقفة حتى يصبح 100٪` : 'مجموع احتمالات الجوائز المفعّلة'}
+        </span>
+        <span className="num flex items-center gap-1 font-bold" data-testid="prizes-total">
+          {totalProb}٪{probOk ? <CircleCheck size={13} /> : <TriangleAlert size={13} />}
         </span>
       </div>
 
@@ -111,6 +133,7 @@ export function WheelPrizesManager({ editable }: { editable: boolean }) {
         ))}
       </div>
 
+      {tuning && <WheelProbabilitiesModal prizes={prizes} open onClose={() => setTuning(false)} />}
       <WheelPrizeFormModal
         key={creating ? 'new-open' : 'new'}
         prize={null}

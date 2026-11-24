@@ -2,8 +2,16 @@ import { useState } from 'react';
 import { z } from 'zod';
 import { Button, Input, Modal, Select } from '@/shared/ui';
 import { useServices } from '@/hooks/useServices';
-import { prizeActivationError } from '@/features/marketing/api/wheel.api';
-import { useAddWheelPrize, useUpdateWheelPrize } from '@/features/loyalty/hooks/useLoyalty';
+import {
+  prizeActivationError,
+  probabilityTotal,
+  probabilityWarning,
+} from '@/features/marketing/api/wheel.api';
+import {
+  useAddWheelPrize,
+  useUpdateWheelPrize,
+  useWheelPrizes,
+} from '@/features/loyalty/hooks/useLoyalty';
 import { PRIZE_TYPE_LABEL, type PrizeType, type WheelPrize } from '@/features/loyalty/types';
 
 const PRIZE_TYPE_OPTS = (Object.entries(PRIZE_TYPE_LABEL) as [PrizeType, string][]).map(
@@ -62,6 +70,15 @@ export function WheelPrizeFormModal({
   );
   const { data: serviceList = [] } = useServices();
   const busy = add.isPending || update.isPending;
+  // المجموع بعد هذا التعديل (المفعّلة فقط) — يظهر مباشرة أثناء الكتابة
+  const { data: allPrizes = [] } = useWheelPrizes();
+  const draft = { active, probability: Number(probability) || 0 };
+  const totalAfter = probabilityTotal(
+    prize
+      ? allPrizes.map((p) => (p.id === prize.id ? { ...p, ...draft } : p))
+      : [...allPrizes, draft],
+  );
+  const totalWarning = probabilityWarning(totalAfter);
   const defined = DEFINED_TYPES.includes(prizeType);
 
   function submit() {
@@ -220,6 +237,18 @@ export function WheelPrizeFormModal({
             className="w-full rounded-xl border border-navy-100 px-3 py-2 text-sm text-navy focus:border-navy focus:outline-none"
             placeholder="تكتبها الإدارة كما اعتمدتها — لا شروط افتراضية"
           />
+        </div>
+        <div
+          className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${
+            totalWarning ? 'bg-gold-100 text-gold-600' : 'bg-green-50 text-green-600'
+          }`}
+        >
+          <span>
+            {totalWarning
+              ? `${totalWarning} — لن يُحفظ؛ عدّل النسب معاً من «ضبط الاحتمالات»`
+              : 'مجموع احتمالات الجوائز المفعّلة بعد الحفظ'}
+          </span>
+          <span className="num font-bold">{totalAfter}٪</span>
         </div>
         {error && <p className="text-xs font-medium text-red-600">{error}</p>}
 
