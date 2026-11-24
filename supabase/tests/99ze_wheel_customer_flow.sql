@@ -52,6 +52,7 @@ begin
 end $$;
 create or replace function pg_temp.rejects(p_sql text, p_like text, p_msg text) returns void language plpgsql as $$
 begin
+  set constraints all immediate;   -- the 100% total check is deferred to commit (0105)
   execute p_sql;
   raise exception 'FAIL (accepted): %', p_msg;
 exception when others then
@@ -66,24 +67,21 @@ select pg_temp.rejects($$ update wheel_prizes set is_active = true where label =
 select pg_temp.rejects($$ update wheel_prizes set is_active = true where label = 'تأجيل مجاني' $$,
   'اعتماد تعريفها', 'free postponement without a definition');
 select pg_temp.check((select not is_active from wheel_prizes where label = 'تأجيل مجاني'), 'free postponement stays disabled');
-select pg_temp.check((select probability from wheel_prizes where label = 'خصم 10٪') = 20, 'approved probabilities untouched');
+select pg_temp.check((select value from wheel_prizes where label = 'خصم 10٪') = 10, 'prize value untouched');
 
 -- ---------- 100% gate ----------
-update wheel_prizes set is_active = false;
-insert into wheel_prizes (id, label, prize_type, value, probability, sort_order, is_active)
-values ('fe000000-0000-0000-0000-000000000001', '200 نقطة', 'points', 200, 72, 1, true);
-select pg_temp.check(wheel_probability_total() = 72, 'total 72');
-select pg_temp.login('ae000000-0000-0000-0000-000000000001');
-select pg_temp.rejects($$ select create_wheel_link('ce000000-0000-0000-0000-000000000001', 'ee000000-0000-0000-0000-000000000001') $$,
-  'يساوي 100', 'wheel refuses links below 100%');
-select pg_temp.logout();
-select pg_temp.check((select probability from wheel_prizes where id = 'fe000000-0000-0000-0000-000000000001') = 72, 'gate did not change probabilities');
+-- a total other than 100% is never persisted (0105)
+select pg_temp.rejects($$ insert into wheel_prizes (label, prize_type, value, probability, sort_order, is_active)
+                          values ('200 نقطة', 'points', 200, 72, 1, true) $$, 'يساوي 100', 'total 172 refused');
+select pg_temp.check(wheel_probability_total() = 100, 'total still 100');
 
 -- an approved, fully defined non-cash prize: 100%
-update wheel_prizes set is_active = false where id = 'fe000000-0000-0000-0000-000000000001';
+begin;
+update wheel_prizes set is_active = false;
 insert into wheel_prizes (id, label, prize_type, value, probability, sort_order, is_active, service_codes, coupon_valid_days, usage_limit, terms)
 values ('fe000000-0000-0000-0000-000000000002', 'توصيل مجاني للعاملة', 'free_service', 0, 100, 2, true, '{monthly_rental}', 30, 1,
         'توصيل العاملة لمنزل العميل مجاناً داخل المدينة عند عقد تأجير شهري واحد.');
+commit;
 
 -- ---------- links: permission, identity data, campaign ----------
 select pg_temp.login('ae000000-0000-0000-0000-000000000002');

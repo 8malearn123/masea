@@ -3,6 +3,8 @@ import {
   awardPoints,
   getAccount,
   redeemPoints,
+  activeProbabilityTotal,
+  pickPrize,
   spinWheel,
   WHEEL_PRIZES,
 } from '@/features/loyalty/data/engine';
@@ -34,18 +36,60 @@ describe('loyalty engine (ledger mirror of 0020)', () => {
     expect(getAccount().points_balance).toBe(29500);
   });
 
-  it('wheel refuses to spin until the active probabilities total 100% (0104)', () => {
-    // الافتراضي بعد تعطيل الجائزتين غير المعرّفتين = 72٪ — لا تُعدَّل النسب تلقائياً
-    expect(WHEEL_PRIZES.filter((p) => p.active).reduce((s, p) => s + p.probability, 0)).toBe(72);
-    expect(() => spinWheel()).toThrow('100٪');
+  it('approved odds (0105): five active prizes total exactly 100%, the two undefined at 0% and disabled', () => {
+    const odds = Object.fromEntries(WHEEL_PRIZES.map((p) => [p.label, [p.probability, p.active]]));
+    expect(odds).toEqual({
+      '100 نقطة': [40, true],
+      '20 ريال محفظة': [25, true],
+      'خصم 10٪': [0, false],
+      '500 نقطة': [10, true],
+      'تأجيل مجاني': [0, false],
+      '50 ريال محفظة': [5, true],
+      'حظ أوفر': [20, true],
+    });
+    expect(activeProbabilityTotal(WHEEL_PRIZES)).toBe(100);
+    // القيم لم تتغيّر
+    expect(WHEEL_PRIZES.map((p) => p.value)).toEqual([100, 20, 10, 500, 1, 50, 0]);
   });
 
-  it('wheel returns a valid prize then enforces the per-customer limit', () => {
-    // الإدارة تعيد ضبط الاحتمالات (هنا: «حظ أوفر» يأخذ الباقي)
-    const luck = WHEEL_PRIZES.find((p) => p.prize_type === 'none')!;
-    luck.probability += 28;
+  it('pick = cumulative ranges of active prizes in display order (mirror of wheel_pick_prize)', () => {
+    const at = (r: number) => pickPrize(WHEEL_PRIZES, r)?.label;
+    expect(at(0)).toBe('100 نقطة');
+    expect(at(39.999)).toBe('100 نقطة');
+    expect(at(40)).toBe('20 ريال محفظة');
+    expect(at(65)).toBe('500 نقطة'); // «خصم 10٪» المعطّلة لا تأخذ مجالاً
+    expect(at(75)).toBe('50 ريال محفظة'); // «تأجيل مجاني» المعطّلة لا تأخذ مجالاً
+    expect(at(80)).toBe('حظ أوفر');
+    expect(at(99.9999)).toBe('حظ أوفر');
+  });
+
+  it('a 100,000-draw sample lands within ±1 point of each approved odd', () => {
+    const counts = new Map<string, number>();
+    for (let i = 0; i < 100_000; i++) {
+      const p = pickPrize(WHEEL_PRIZES, Math.random() * 100)!;
+      counts.set(p.label, (counts.get(p.label) ?? 0) + 1);
+    }
+    expect([...counts.keys()].sort()).toEqual(
+      WHEEL_PRIZES.filter((p) => p.active)
+        .map((p) => p.label)
+        .sort(),
+    );
+    for (const p of WHEEL_PRIZES.filter((x) => x.active))
+      expect(Math.abs((counts.get(p.label) ?? 0) / 1000 - p.probability)).toBeLessThan(1);
+  });
+
+  it('wheel returns a valid prize, grants it once, then enforces the per-customer limit', () => {
+    const before = getAccount();
     const prize = spinWheel();
-    expect(WHEEL_PRIZES.some((p) => p.id === prize.id)).toBe(true);
+    expect(WHEEL_PRIZES.some((p) => p.id === prize.id && p.active)).toBe(true);
+    const after = getAccount();
+    expect(after.points_balance - before.points_balance).toBe(
+      prize.prize_type === 'points' ? prize.value : 0,
+    );
+    expect(after.wallet_balance - before.wallet_balance).toBe(
+      prize.prize_type === 'wallet' ? prize.value : 0,
+    );
     expect(() => spinWheel()).toThrow(); // wheel_spins_per_customer = 1
+    expect(getAccount().points_balance).toBe(after.points_balance); // لا منح مكرر
   });
 });

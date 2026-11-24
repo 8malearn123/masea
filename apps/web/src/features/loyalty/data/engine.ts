@@ -38,14 +38,52 @@ export const TIERS: TierInfo[] = [
 // No hardcoded prize list in the UI: everything below is editable from الإدارة.
 // ---------------------------------------------------------------------------
 const DEFAULT_WHEEL_PRIZES: WheelPrize[] = [
-  { id: 'w1', label: '100 نقطة', prize_type: 'points', value: 100, probability: 30, active: true, coupon_code: null }, // prettier-ignore
-  { id: 'w2', label: '20 ريال محفظة', prize_type: 'wallet', value: 20, probability: 20, active: true, coupon_code: null }, // prettier-ignore
-  { id: 'w3', label: 'خصم 10٪', prize_type: 'discount', value: 10, probability: 20, active: false, coupon_code: 'MAS-DISC10-7K2A' }, // prettier-ignore
+  { id: 'w1', label: '100 نقطة', prize_type: 'points', value: 100, probability: 40, active: true, coupon_code: null }, // prettier-ignore
+  { id: 'w2', label: '20 ريال محفظة', prize_type: 'wallet', value: 20, probability: 25, active: true, coupon_code: null }, // prettier-ignore
+  { id: 'w3', label: 'خصم 10٪', prize_type: 'discount', value: 10, probability: 0, active: false, coupon_code: 'MAS-DISC10-7K2A' }, // prettier-ignore
   { id: 'w4', label: '500 نقطة', prize_type: 'points', value: 500, probability: 10, active: true, coupon_code: null }, // prettier-ignore
-  { id: 'w5', label: 'تأجيل مجاني', prize_type: 'free_service', value: 1, probability: 8, active: false, coupon_code: 'MAS-FREE-3M9X' }, // prettier-ignore
+  { id: 'w5', label: 'تأجيل مجاني', prize_type: 'free_service', value: 1, probability: 0, active: false, coupon_code: 'MAS-FREE-3M9X' }, // prettier-ignore
   { id: 'w6', label: '50 ريال محفظة', prize_type: 'wallet', value: 50, probability: 5, active: true, coupon_code: null }, // prettier-ignore
-  { id: 'w7', label: 'حظ أوفر', prize_type: 'none', value: 0, probability: 7, active: true, coupon_code: null }, // prettier-ignore
+  { id: 'w7', label: 'حظ أوفر', prize_type: 'none', value: 0, probability: 20, active: true, coupon_code: null }, // prettier-ignore
 ];
+
+/** التوزيع المعتمد من الإدارة (0105) — يُطبَّق مرة على بيانات العرض المحفوظة قبله. */
+const APPROVED_0105: Record<string, { probability: number; active: boolean }> = {
+  '100 نقطة': { probability: 40, active: true },
+  '20 ريال محفظة': { probability: 25, active: true },
+  '500 نقطة': { probability: 10, active: true },
+  '50 ريال محفظة': { probability: 5, active: true },
+  'حظ أوفر': { probability: 20, active: true },
+  'خصم 10٪': { probability: 0, active: false },
+  'تأجيل مجاني': { probability: 0, active: false },
+};
+const REBALANCED_KEY = 'masea_wheel_prizes_0105';
+
+/** مجموع احتمالات الجوائز المفعّلة فقط. */
+export function activeProbabilityTotal(
+  prizes: Pick<WheelPrize, 'active' | 'probability'>[],
+): number {
+  return (
+    Math.round(prizes.filter((p) => p.active).reduce((s, p) => s + p.probability, 0) * 100) / 100
+  );
+}
+
+/**
+ * اختيار الجائزة (مرآة wheel_pick_prize — 0105): r في [0,100) يقع ضمن المجاميع التراكمية
+ * للجوائز المفعّلة بترتيب العرض؛ جائزة 0٪ أو معطّلة لا تُختار أبداً.
+ */
+export function pickPrize<T extends Pick<WheelPrize, 'active' | 'probability'>>(
+  prizes: T[],
+  r: number,
+): T | null {
+  let upto = 0;
+  for (const p of prizes) {
+    if (!p.active || p.probability <= 0) continue;
+    upto += p.probability;
+    if (r < upto) return p;
+  }
+  return null;
+}
 
 /** ألوان شرائح العجلة — تُستخدم في العجلة ولوحة الإدارة معاً. */
 export const WHEEL_COLORS = [
@@ -80,7 +118,18 @@ function loadWheelPrizes(): WheelPrize[] {
       const raw = localStorage.getItem(PRIZES_LS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as WheelPrize[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(enforceDefinition);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          let list = parsed.map(enforceDefinition);
+          if (!localStorage.getItem(REBALANCED_KEY)) {
+            // نفس migration 0105: النسب والتفعيل فقط حسب الاسم — القيم لا تتغيّر
+            list = list.map((p) =>
+              APPROVED_0105[p.label] ? { ...p, ...APPROVED_0105[p.label] } : p,
+            );
+            localStorage.setItem(REBALANCED_KEY, '1');
+            localStorage.setItem(PRIZES_LS_KEY, JSON.stringify(list));
+          }
+          return list;
+        }
       }
     }
   } catch {
@@ -410,19 +459,11 @@ export function spinWheel(customerId: string = PRIMARY_ID): WheelPrize {
   }
   const pool = WHEEL_PRIZES.filter((p) => p.active);
   if (pool.length === 0) throw new Error('لا توجد جوائز مفعّلة على العجلة');
-  const total = pool.reduce((s, p) => s + p.probability, 0);
   // العجلة لا تعمل قبل اعتماد الإدارة لاحتمالات مجموعها 100٪ (0104)
-  if (Math.round(total * 100) !== 10000)
+  if (activeProbabilityTotal(pool) !== 100)
     throw new Error('إعدادات العجلة غير مكتملة: مجموع احتمالات الجوائز المفعّلة يجب أن يساوي 100٪');
-  let r = Math.random() * total;
-  let prize = pool[pool.length - 1]!;
-  for (const p of pool) {
-    r -= p.probability;
-    if (r <= 0) {
-      prize = p;
-      break;
-    }
-  }
+  let prize = pickPrize(pool, Math.random() * 100);
+  if (!prize) throw new Error('لا توجد جوائز مفعّلة على العجلة');
   store.spins_used += 1;
   // a coupon prize gets a code of its own per win (never one code for everyone)
   if (

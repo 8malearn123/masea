@@ -68,9 +68,10 @@ export default function WheelPlayPage() {
   const spin = useMutation({
     mutationFn: () => spinByToken(token, id4, phone4, maxAttempts),
     onSuccess: (r) => {
+      // العجلة تتوقف على الجائزة التي اختارها الخادم (prize_id) — الواجهة لا تحدد النتيجة
       const idx = Math.max(
         0,
-        prizes.findIndex((p) => p.label === r.label),
+        prizes.findIndex((p) => p.id === r.prize_id),
       );
       setSpinning(true);
       setRotation((x) => x - (x % 360) + 360 * 5 + (360 - (idx * seg + seg / 2)));
@@ -218,7 +219,7 @@ export default function WheelPlayPage() {
               <p className="mb-2 text-xs font-semibold text-navy">الجوائز وفرص الفوز</p>
               <ul className="divide-y divide-navy-50 text-sm">
                 {prizes.map((p, i) => (
-                  <li key={p.label} className="py-1.5">
+                  <li key={p.id} className="py-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2">
                         <span

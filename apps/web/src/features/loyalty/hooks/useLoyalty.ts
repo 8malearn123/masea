@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/shared/ui';
 import { QUERY_DEFAULTS } from '@/shared/lib/queryKeys';
+import { supabase } from '@/shared/lib/supabase';
+import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
 import {
   addCampaign,
   listCampaigns,
@@ -18,7 +20,14 @@ import {
   redeemPoints,
   spinWheel,
 } from '@/features/loyalty/data/engine';
-import { addPrize, listPrizes, removePrize, updatePrize } from '@/features/marketing/api/wheel.api';
+import {
+  addPrize,
+  listPrizes,
+  removePrize,
+  setProbabilities,
+  updatePrize,
+  type ProbabilityItem,
+} from '@/features/marketing/api/wheel.api';
 import {
   getLoyaltyConfig,
   listPackages,
@@ -153,6 +162,15 @@ export function useSpinWheel(customerId?: string) {
   const toast = useToast();
   return useMutation<WheelPrize, Error, void>({
     mutationFn: async () => {
+      // عميل حقيقي مع قاعدة البيانات: الاختيار والمنح على الخادم (spin_wheel)؛ غير ذلك مرآة العرض
+      if (!isDemoMode() && customerId && !isDemoId(customerId)) {
+        const { data, error } = await supabase.rpc('spin_wheel', { p_customer_id: customerId });
+        if (error) throw new Error(error.message);
+        const r = data as { prize_id: string; label: string; coupon_code: string | null };
+        const prize = (await listPrizes()).find((p) => p.id === r.prize_id);
+        if (!prize) throw new Error('تعذّر قراءة نتيجة العجلة');
+        return { ...prize, label: r.label, coupon_code: r.coupon_code };
+      }
       const prize = spinWheel(customerId);
       await issueWheelCoupon(prize, getAccount(customerId).customer_name);
       return prize;
@@ -272,5 +290,19 @@ export function useSavePackage() {
       );
     },
     onError: (e) => toast.error(e.message || 'تعذّر حفظ الباقة'),
+  });
+}
+
+/** حفظ النسب والتفعيل معاً — يُرفض إن لم يكن مجموع المفعّلة 100٪. */
+export function useSetWheelProbabilities() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<void, Error, ProbabilityItem[]>({
+    mutationFn: setProbabilities,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: PRIZES_KEY });
+      toast.success('حُفظت احتمالات الجوائز (المجموع 100٪)');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ الاحتمالات'),
   });
 }
