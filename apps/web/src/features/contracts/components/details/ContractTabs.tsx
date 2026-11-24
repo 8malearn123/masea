@@ -13,6 +13,7 @@ import {
   PaymentsCard,
   RecordPaymentModal,
 } from '@/features/contracts/components/details/FinancePanels';
+import { InvoicesCard } from '@/features/contracts/components/details/InvoicesCard';
 import { contractDocumentHtml } from '@/features/contracts/lib/contractDocument';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
 import type {
@@ -300,6 +301,7 @@ export function FinanceTab({ contract }: { contract: ContractListItem }) {
           />
         </dl>
       </Card>
+      <InvoicesCard contract={contract} />
       <InstallmentsCard contract={contract} />
       <PaymentsCard contract={contract} onRecord={canPay ? () => setPaying(true) : null} />
       {paying && <RecordPaymentModal contract={contract} onClose={() => setPaying(false)} />}

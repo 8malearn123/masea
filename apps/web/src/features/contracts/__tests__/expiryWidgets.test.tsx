@@ -137,12 +137,13 @@ describe('تنبيهات العقود في لوحة التحكم', () => {
 });
 
 describe('تنبيهات العقود في صفحة العقود', () => {
-  it('تعرض الأعداد وحالة كل عقد ومؤشّر «تحتاج تجديدًا»', async () => {
+  it('تعرض الأعداد وحالة كل عقد ومؤشّري «منتهية» و«قاربت على الانتهاء»', async () => {
     signInDemo('admin');
     renderWith(<ContractsList />, '/contracts');
     expect(await screen.findByTestId('expiry-alerts')).toBeInTheDocument();
     expect(screen.getByLabelText('منتهية 1')).toBeInTheDocument();
-    expect(screen.getByText('تحتاج تجديدًا')).toBeInTheDocument();
+    expect(screen.getByText('قاربت على الانتهاء')).toBeInTheDocument();
+    expect(screen.getByText('إرجاع واستبدال معلّق')).toBeInTheDocument();
     // شارة حالة الانتهاء في الجدول
     expect(screen.getAllByText('منتهٍ').length).toBeGreaterThan(0);
   });
