@@ -94,6 +94,14 @@ export default function Layout() {
             ))}
           </div>
         )}
+        {m.module === 'loyalty' && (
+          <div className="mt-1 space-y-1">
+            <NavLink to="/marketing/analytics" className={({ isActive }) => subItemCls(isActive)}>
+              <BarChart3 size={16} strokeWidth={1.8} />
+              <span>تحليل مصادر العملاء</span>
+            </NavLink>
+          </div>
+        )}
         {m.module === 'housing' && (
           <div className="mt-1 space-y-1">
             {canScan && (

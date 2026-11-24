@@ -166,7 +166,7 @@ export function generateCampaignCoupon(type: CampaignType, discountPct: number):
 // With Supabase the campaigns live in `campaigns` (0005 + 0066); the store above
 // is the demo fallback (localStorage).
 const CAMPAIGN_COLUMNS =
-  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes';
+  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes, platform_code, budget, owner_id, extended_until, branches(city)';
 
 function fromCampaignRow(r: Record<string, unknown>): Campaign {
   return {
@@ -181,20 +181,46 @@ function fromCampaignRow(r: Record<string, unknown>): Campaign {
     coupon_code: (r.coupon_code as string | null) ?? null,
     description: (r.description as string | null) ?? null,
     service_codes: (r.service_codes as string[] | null) ?? [],
+    platform_code: (r.platform_code as string | null) ?? null,
+    branch: (r.branches as { city: string | null } | null)?.city ?? null,
+    budget: r.budget === null || r.budget === undefined ? null : Number(r.budget),
+    owner_id: (r.owner_id as string | null) ?? null,
+    extended_until: (r.extended_until as string | null) ?? null,
   };
 }
 
-const toCampaignRow = (input: Partial<CampaignInput>) => ({
-  ...input,
-  start_at: input.start_at || null,
-  end_at: input.end_at || null,
-});
+const toCampaignRow = (input: Partial<CampaignInput>) => {
+  // الحقول المعروضة فقط لا تُكتب؛ الفرع يُحوَّل لمعرّفه في campaignRow
+  const { branch: _b, owner_name: _o, extended_until: _e, ...rest } = input;
+  void _b;
+  void _o;
+  void _e;
+  return { ...rest, start_at: input.start_at || null, end_at: input.end_at || null };
+};
+
+async function campaignRow(input: Partial<CampaignInput>) {
+  const row: Record<string, unknown> = toCampaignRow(input);
+  if ('branch' in input) {
+    let id: string | null = null;
+    if (input.branch) {
+      const { data } = await supabase
+        .from('branches')
+        .select('id')
+        .eq('city', input.branch)
+        .maybeSingle();
+      id = (data as { id: string } | null)?.id ?? null;
+      if (!id) throw new Error(`الفرع «${input.branch}» غير موجود`);
+    }
+    row.branch_id = id;
+  }
+  return row;
+}
 
 export async function addCampaign(input: CampaignInput): Promise<Campaign> {
   if (!isDemoMode()) {
     const { data, error } = await supabase
       .from('campaigns')
-      .insert(toCampaignRow(input))
+      .insert(await campaignRow(input))
       .select(CAMPAIGN_COLUMNS)
       .single();
     if (error) throw new Error(`تعذّرت إضافة الحملة: ${error.message}`);
@@ -210,7 +236,7 @@ export async function updateCampaign(id: string, patch: Partial<CampaignInput>):
   if (!isDemoMode() && !isDemoId(id)) {
     const { data, error } = await supabase
       .from('campaigns')
-      .update({ ...toCampaignRow(patch), updated_at: new Date().toISOString() })
+      .update({ ...(await campaignRow(patch)), updated_at: new Date().toISOString() })
       .eq('id', id)
       .select(CAMPAIGN_COLUMNS)
       .single();

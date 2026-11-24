@@ -1,3 +1,6 @@
+import { useSources } from '@/features/settings/hooks/useSettings';
+import { useEmployees } from '@/features/hr/hooks/useHr';
+import { BRANCHES_AR } from '@/lib/funnel';
 import { useState } from 'react';
 import { z } from 'zod';
 import { Ticket } from 'lucide-react';
@@ -26,6 +29,10 @@ const schema = z
     coupon_code: z.string().nullable(),
     description: z.string().nullable(),
     service_codes: z.array(z.string()),
+    platform_code: z.string().min(1, 'حدّد المنصة التسويقية'),
+    branch: z.string().nullable(),
+    budget: z.number().min(0, 'الميزانية لا تكون سالبة').nullable(),
+    owner_id: z.string().nullable(),
   })
   .refine((v) => v.end_at >= v.start_at, {
     message: 'تاريخ النهاية قبل البداية',
@@ -54,6 +61,15 @@ export function CampaignFormModal({
   const [coupon, setCoupon] = useState(campaign?.coupon_code ?? '');
   const [description, setDescription] = useState(campaign?.description ?? '');
   const [serviceCodes, setServiceCodes] = useState<string[]>(campaign?.service_codes ?? []);
+  const [platform, setPlatform] = useState(campaign?.platform_code ?? '');
+  const [branch, setBranch] = useState(campaign?.branch ?? '');
+  const [budget, setBudget] = useState(campaign?.budget == null ? '' : String(campaign.budget));
+  const [owner, setOwner] = useState(campaign?.owner_id ?? '');
+  const { data: sourceList = [] } = useSources();
+  const { data: employees = [] } = useEmployees();
+  const ownerOpts = employees
+    .filter((e) => e.user_id && e.status !== 'terminated')
+    .map((e) => ({ value: e.user_id as string, label: e.full_name }));
   const { data: services = [] } = useServices();
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +86,10 @@ export function CampaignFormModal({
       coupon_code: coupon.trim() ? coupon.trim() : null,
       description: description.trim() || null,
       service_codes: serviceCodes,
+      platform_code: platform,
+      branch: branch || null,
+      budget: budget.trim() === '' ? null : Number(budget),
+      owner_id: owner || null,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'تحقّق من الحقول');
@@ -121,6 +141,40 @@ export function CampaignFormModal({
           </div>
         </div>
 
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Select
+            label="المنصة التسويقية"
+            value={platform}
+            onChange={(e) => setPlatform(e.target.value)}
+            options={[
+              { value: '', label: 'اختر المنصة…' },
+              ...sourceList
+                .filter((s) => s.is_active || s.code === platform)
+                .map((s) => ({ value: s.code, label: s.name_ar })),
+            ]}
+          />
+          <Select
+            label="الفرع المستهدف"
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            options={[
+              { value: '', label: 'كل الفروع' },
+              ...BRANCHES_AR.map((b) => ({ value: b, label: b })),
+            ]}
+          />
+          <Input
+            label="الميزانية المعتمدة (ر.س)"
+            inputMode="decimal"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+          />
+          <Select
+            label="المسؤول عن الحملة"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            options={[{ value: '', label: 'غير محدد' }, ...ownerOpts]}
+          />
+        </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-navy-900">وصف العرض</label>
           <Input

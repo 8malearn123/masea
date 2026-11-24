@@ -26,6 +26,7 @@ const ContractOpsDashboard = lazy(
   () => import('@/features/contracts/components/ContractOpsDashboard'),
 );
 const TrialsBoard = lazy(() => import('@/features/contracts/components/TrialsBoard'));
+const MarketingAnalytics = lazy(() => import('@/features/marketing/components/MarketingAnalytics'));
 const TrialAcceptPage = lazy(() => import('@/features/contracts/components/TrialAcceptPage'));
 const PipelineBoard = lazy(() => import('@/features/crm/components/PipelineBoard'));
 const LeadCreatePage = lazy(() => import('@/features/crm/components/LeadCreatePage'));
@@ -271,6 +272,14 @@ export default function App() {
               element={
                 <RequirePerm module="loyalty">
                   <LoyaltyBoard />
+                </RequirePerm>
+              }
+            />
+            <Route
+              path="marketing/analytics"
+              element={
+                <RequirePerm module="loyalty">
+                  <MarketingAnalytics />
                 </RequirePerm>
               }
             />

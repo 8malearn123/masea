@@ -44,6 +44,12 @@ export interface TaxDocument {
 const SIGNED = ['signed', 'musaned_signed', 'active', 'completed'];
 const DEMO: Record<string, TaxDocument[]> = {};
 let demoSeq = 0;
+/** الوضع التجريبي: صافي الإشعارات الدائنة قبل الضريبة على العقد (مرآة contract_credit_net). */
+export function demoCreditNet(contractId: string): number {
+  return (DEMO[contractId] ?? [])
+    .filter((d) => d.kind === 'credit_note')
+    .reduce((s, d) => s + d.subtotal, 0);
+}
 export function resetContractInvoicesDemo(): void {
   for (const k of Object.keys(DEMO)) delete DEMO[k];
   demoSeq = 0;
