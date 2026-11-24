@@ -31,6 +31,7 @@ const schema = z
     is_active: z.boolean(),
     coupon_code: z.string().nullable(),
     description: z.string().nullable(),
+    terms: z.string().nullable(),
     service_codes: z.array(z.string()),
     platform_code: z.string().min(1, 'حدّد المنصة التسويقية'),
     branch: z.string().nullable(),
@@ -63,6 +64,7 @@ export function CampaignFormModal({
   const [isActive, setIsActive] = useState(campaign?.is_active ?? true);
   const [coupon, setCoupon] = useState(campaign?.coupon_code ?? '');
   const [description, setDescription] = useState(campaign?.description ?? '');
+  const [terms, setTerms] = useState(campaign?.terms ?? '');
   const [serviceCodes, setServiceCodes] = useState<string[]>(campaign?.service_codes ?? []);
   const [platform, setPlatform] = useState(campaign?.platform_code ?? '');
   const [branch, setBranch] = useState(campaign?.branch ?? '');
@@ -88,6 +90,7 @@ export function CampaignFormModal({
       is_active: isActive,
       coupon_code: coupon.trim() ? coupon.trim() : null,
       description: description.trim() || null,
+      terms: terms.trim() || null,
       service_codes: serviceCodes,
       platform_code: platform,
       branch: branch || null,
@@ -184,6 +187,18 @@ export function CampaignFormModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="مثال: خصم 10٪ لكل عميل يُحضر عميلاً جديدًا"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-900">
+            شروط المشاركة (تظهر للعميل في صفحة العجلة)
+          </label>
+          <textarea
+            value={terms}
+            onChange={(e) => setTerms(e.target.value)}
+            rows={2}
+            className="w-full rounded-xl border border-navy-100 px-3 py-2 text-sm text-navy focus:border-navy focus:outline-none"
+            placeholder="تكتبها الإدارة — مثل مدة المشاركة ومن يحق له المشاركة"
           />
         </div>
         <fieldset>

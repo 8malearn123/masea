@@ -14,8 +14,8 @@ insert into user_profiles (id, full_name, role, branch_id) values
   ('ab000000-0000-0000-0000-000000000001', 'منصور المكرمي', 'admin', 'b0000000-0000-0000-0000-00000000000a'),
   ('ab000000-0000-0000-0000-000000000002', 'لمى آل سالم', 'sales', 'b0000000-0000-0000-0000-00000000000a')
 on conflict (id) do update set role = excluded.role, full_name = excluded.full_name;
-insert into customers (id, full_name, phone, branch_id, city) values
-  ('cb000000-0000-0000-0000-000000000001', 'سعيد آل ناجم', '0551231101', 'b0000000-0000-0000-0000-00000000000a', 'نجران')
+insert into customers (id, full_name, phone, branch_id, city, national_id) values
+  ('cb000000-0000-0000-0000-000000000001', 'سعيد آل ناجم', '0551231101', 'b0000000-0000-0000-0000-00000000000a', 'نجران', '1098765432')
 on conflict (id) do nothing;
 insert into campaigns (id, name, type, start_at, end_at, platform_code, coupon_code) values
   ('eb000000-0000-0000-0000-000000000001', 'عرض نوفمبر', 'discount', now() - interval '20 days', now() - interval '1 hour', 'snapchat', 'NOV-OFFER')
@@ -71,16 +71,19 @@ select pg_temp.rejects($$ delete from campaigns where id = 'eb000000-0000-0000-0
 
 -- ---------- wheel ----------
 select pg_temp.rejects($$ insert into wheel_prizes (label, prize_type, value, probability) values ('خصم 30٪', 'discount', 30, 5) $$,
-  'حدّد الخدمات', 'big discount on all services');
+  'الخدمات المشمولة', 'discount prize without services/cap (0104)');
+insert into campaigns (id, name, type, start_at, end_at, is_draft) values
+  ('eb000000-0000-0000-0000-000000000009', 'عجلة نوفمبر', 'lucky_wheel', now() - interval '1 day', now() + interval '10 days', false)
+on conflict (id) do nothing;
 update wheel_prizes set is_active = false;
 insert into wheel_prizes (label, prize_type, value, probability, service_codes, max_discount_amount, coupon_valid_days, sort_order)
 values ('خصم 25٪ على التأجير الشهري', 'discount', 25, 100, '{monthly_rental}', 500, 14, 1);
 update loyalty_config set wheel_spins_per_customer = 1 where id = 1;
 
 select pg_temp.login('ab000000-0000-0000-0000-000000000002');
-select pg_temp.rejects($$ select create_wheel_link('cb000000-0000-0000-0000-000000000001') $$, 'صلاحية', 'sales creates links');
+select pg_temp.rejects($$ select create_wheel_link('cb000000-0000-0000-0000-000000000001', 'eb000000-0000-0000-0000-000000000009') $$, 'صلاحية', 'sales creates links');
 select pg_temp.login('ab000000-0000-0000-0000-000000000001');
-create temp table tok as select create_wheel_link('cb000000-0000-0000-0000-000000000001')->>'token' as t;
+create temp table tok as select create_wheel_link('cb000000-0000-0000-0000-000000000001', 'eb000000-0000-0000-0000-000000000009')->>'token' as t;
 select pg_temp.logout();
 do $$
 declare v_t text := (select t from tok); v jsonb; r jsonb; p promotions%rowtype;
@@ -90,21 +93,21 @@ begin
   perform pg_temp.check(v->>'first_name' = 'سعيد' and (v->>'used')::boolean = false, 'public view');
   perform pg_temp.check((v->'prizes'->0->>'chance')::numeric = 100, 'chances shown');
   perform pg_temp.rejects($q$ select wheel_public_view('bad-token') $q$, 'غير صحيح', 'bad token');
-  r := spin_wheel_by_token(v_t);
+  r := spin_wheel_by_token(v_t, '5432', '1101');
   perform pg_temp.check(r->>'coupon_code' like 'MAS-DISC25-%', 'coupon issued');
   select * into p from promotions where code = r->>'coupon_code';
   perform pg_temp.check(p.service_codes = '{monthly_rental}' and p.max_discount_amount = 500 and p.usage_limit = 1, 'coupon restricted & capped');
   perform pg_temp.check(p.ends_at::date = current_date + 14, 'coupon validity');
   perform pg_temp.check((evaluate_promotion(p.id, 'recruitment', 20000, p.code)->>'ok')::boolean = false, 'not valid on other services');
   perform pg_temp.check((evaluate_promotion(p.id, 'monthly_rental', 10000, p.code)->>'amount')::numeric = 500, 'capped at 500');
-  perform pg_temp.rejects(format($q$ select spin_wheel_by_token(%L) $q$, v_t), 'مسبقاً', 'link reused');
+  perform pg_temp.rejects(format($q$ select spin_wheel_by_token(%L, '5432', '1101') $q$, v_t), 'مسبقاً', 'link reused');
   perform pg_temp.check((select customer_id from wheel_spins where coupon_code = r->>'coupon_code') = 'cb000000-0000-0000-0000-000000000001', 'spin linked to the customer');
   -- a second link can't bypass the per-customer limit
 end $$;
 select pg_temp.login('ab000000-0000-0000-0000-000000000001');
-create temp table tok2 as select create_wheel_link('cb000000-0000-0000-0000-000000000001')->>'token' as t;
+create temp table tok2 as select create_wheel_link('cb000000-0000-0000-0000-000000000001', 'eb000000-0000-0000-0000-000000000009')->>'token' as t;
 select pg_temp.logout();
-select pg_temp.rejects($$ select spin_wheel_by_token((select t from tok2)) $$, 'تجاوزت', 'per-customer limit');
+select pg_temp.rejects($$ select spin_wheel_by_token((select t from tok2), '5432', '1101') $$, 'سبق لك المشاركة', 'per-campaign limit');
 update wheel_links set expires_at = now() - interval '1 minute' where id = (select id from wheel_links order by created_at desc limit 1);
 select pg_temp.login('ab000000-0000-0000-0000-000000000001');
 select pg_temp.check((select spins from wheel_report(current_date - 1, current_date) where prize_label like 'خصم 25٪%') = 1, 'wheel report');

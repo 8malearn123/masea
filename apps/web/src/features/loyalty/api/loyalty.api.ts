@@ -166,7 +166,7 @@ export function generateCampaignCoupon(type: CampaignType, discountPct: number):
 // With Supabase the campaigns live in `campaigns` (0005 + 0066); the store above
 // is the demo fallback (localStorage).
 const CAMPAIGN_COLUMNS =
-  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes, platform_code, budget, owner_id, extended_until, is_draft, branches(city)';
+  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes, platform_code, budget, owner_id, extended_until, is_draft, terms, branches(city)';
 
 function fromCampaignRow(r: Record<string, unknown>): Campaign {
   return {
@@ -187,6 +187,7 @@ function fromCampaignRow(r: Record<string, unknown>): Campaign {
     owner_id: (r.owner_id as string | null) ?? null,
     extended_until: (r.extended_until as string | null) ?? null,
     is_draft: Boolean(r.is_draft),
+    terms: (r.terms as string | null) ?? null,
   };
 }
 
@@ -350,7 +351,7 @@ export async function issueWheelCoupon(prize: WheelPrize, customerName: string):
     max_discount_amount: prize.max_discount_amount ?? null,
     starts_at: new Date().toISOString(),
     ends_at: new Date(Date.now() + (prize.coupon_valid_days ?? 30) * 86400000).toISOString(),
-    usage_limit: 1,
+    usage_limit: prize.usage_limit ?? 1,
     is_active: true,
     requires_code: true,
   });

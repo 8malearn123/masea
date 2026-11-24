@@ -1,13 +1,9 @@
 import { useState } from 'react';
 import { z } from 'zod';
-import { Ticket } from 'lucide-react';
 import { Button, Input, Modal, Select } from '@/shared/ui';
 import { useServices } from '@/hooks/useServices';
-import { useConfig } from '@/features/settings/hooks/useSettings';
-import { configValue } from '@/features/settings/api/settings.api';
-import { prizeRuleError } from '@/features/marketing/api/wheel.api';
+import { prizeActivationError } from '@/features/marketing/api/wheel.api';
 import { useAddWheelPrize, useUpdateWheelPrize } from '@/features/loyalty/hooks/useLoyalty';
-import { generateCouponCode } from '@/features/loyalty/data/engine';
 import { PRIZE_TYPE_LABEL, type PrizeType, type WheelPrize } from '@/features/loyalty/types';
 
 const PRIZE_TYPE_OPTS = (Object.entries(PRIZE_TYPE_LABEL) as [PrizeType, string][]).map(
@@ -24,10 +20,13 @@ const schema = z.object({
   service_codes: z.array(z.string()),
   max_discount_amount: z.number().positive('الحد الأعلى أكبر من صفر').nullable(),
   coupon_valid_days: z.number().int().min(1, 'صلاحية يوم على الأقل').max(365).nullable(),
+  usage_limit: z.number().int().min(1, 'مرة واحدة على الأقل').max(100),
+  max_awards: z.number().int().positive('العدد الأقصى أكبر من صفر').nullable(),
+  terms: z.string().nullable(),
 });
 
-/** أنواع تستفيد من كوبون مباشر. */
-const COUPON_TYPES: PrizeType[] = ['discount', 'free_service', 'wallet'];
+/** جوائز تُستخدم على عقد (لها خدمات وحد وصلاحية وعدد استخدام). */
+const DEFINED_TYPES: PrizeType[] = ['discount', 'free_service'];
 
 export function WheelPrizeFormModal({
   prize,
@@ -47,7 +46,11 @@ export function WheelPrizeFormModal({
   const [value, setValue] = useState(String(prize?.value ?? 0));
   const [probability, setProbability] = useState(String(prize?.probability ?? 10));
   const [active, setActive] = useState(prize?.active ?? true);
-  const [coupon, setCoupon] = useState(prize?.coupon_code ?? '');
+  const [usageLimit, setUsageLimit] = useState(String(prize?.usage_limit ?? 1));
+  const [maxAwards, setMaxAwards] = useState(
+    prize?.max_awards == null ? '' : String(prize.max_awards),
+  );
+  const [terms, setTerms] = useState(prize?.terms ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const [services, setServices] = useState<string[]>(prize?.service_codes ?? []);
@@ -58,10 +61,8 @@ export function WheelPrizeFormModal({
     prize?.coupon_valid_days == null ? '30' : String(prize.coupon_valid_days),
   );
   const { data: serviceList = [] } = useServices();
-  const { data: config = [] } = useConfig();
-  const openMax = configValue(config, 'wheel_open_discount_max_pct', 10);
   const busy = add.isPending || update.isPending;
-  const canCoupon = COUPON_TYPES.includes(prizeType);
+  const defined = DEFINED_TYPES.includes(prizeType);
 
   function submit() {
     const parsed = schema.safeParse({
@@ -70,12 +71,15 @@ export function WheelPrizeFormModal({
       value: Number(value) || 0,
       probability: Number(probability) || 0,
       active,
-      coupon_code: coupon.trim() ? coupon.trim() : null,
+      coupon_code: prize?.coupon_code ?? null,
       service_codes: services,
       max_discount_amount: maxAmount.trim() === '' ? null : Number(maxAmount),
       coupon_valid_days: validDays.trim() === '' ? null : Number(validDays),
+      usage_limit: Number(usageLimit) || 0,
+      max_awards: maxAwards.trim() === '' ? null : Number(maxAwards),
+      terms: terms.trim() || null,
     });
-    const rule = parsed.success ? prizeRuleError(parsed.data, openMax) : null;
+    const rule = parsed.success ? prizeActivationError(parsed.data) : null;
     if (rule) {
       setError(rule);
       return;
@@ -146,35 +150,17 @@ export function WheelPrizeFormModal({
           </div>
         </div>
 
-        {canCoupon && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-navy-900">كود الكوبون</label>
-            <div className="flex gap-2">
-              <Input
-                value={coupon}
-                onChange={(e) => setCoupon(e.target.value)}
-                placeholder="MAS-DISC15-XXXX"
-                className="num"
-              />
-              <Button
-                variant="outline"
-                onClick={() => setCoupon(generateCouponCode(prizeType, Number(value) || 0))}
-              >
-                <Ticket size={15} /> توليد
-              </Button>
-            </div>
-            <p className="mt-1 text-[11px] text-purple">
-              يُبنى الكوبون مباشرة ويُمنح للعميل عند فوزه بهذه الجائزة.
-            </p>
-          </div>
-        )}
-
-        {prizeType === 'discount' && (
+        {defined && (
           <div className="space-y-3 rounded-xl border border-navy-100 p-3">
+            <p className="text-[11px] text-purple">
+              لا تُفعَّل الجائزة قبل اعتماد تعريفها: الخدمات المشمولة
+              {prizeType === 'discount'
+                ? ' والحد الأعلى للخصم بالريال'
+                : '، والتعريف والشروط، ومدة الصلاحية'}
+              . يُصدر لكل فائز مرجع خاص به.
+            </p>
             <fieldset>
-              <legend className="mb-1 text-xs font-medium text-navy-900">
-                الخدمات المشمولة (إلزامي لخصم أكبر من {openMax}٪)
-              </legend>
+              <legend className="mb-1 text-xs font-medium text-navy-900">الخدمات المشمولة</legend>
               <div className="flex flex-wrap gap-3">
                 {serviceList.map((sv) => (
                   <label key={sv.code} className="flex items-center gap-1.5 text-sm text-navy">
@@ -194,21 +180,47 @@ export function WheelPrizeFormModal({
               </div>
             </fieldset>
             <div className="grid gap-3 sm:grid-cols-2">
+              {prizeType === 'discount' && (
+                <Input
+                  label="الحد الأعلى للخصم (ر.س)"
+                  inputMode="decimal"
+                  value={maxAmount}
+                  onChange={(e) => setMaxAmount(e.target.value)}
+                />
+              )}
               <Input
-                label="الحد الأعلى للخصم (ر.س)"
-                inputMode="decimal"
-                value={maxAmount}
-                onChange={(e) => setMaxAmount(e.target.value)}
-              />
-              <Input
-                label="صلاحية الكوبون (يوم)"
+                label="الصلاحية بعد الفوز (يوم)"
                 inputMode="numeric"
                 value={validDays}
                 onChange={(e) => setValidDays(e.target.value)}
               />
+              <Input
+                label="عدد مرات الاستخدام"
+                inputMode="numeric"
+                value={usageLimit}
+                onChange={(e) => setUsageLimit(e.target.value)}
+              />
             </div>
           </div>
         )}
+        <Input
+          label="العدد الأقصى للجوائز (اتركه فارغاً بلا حد)"
+          inputMode="numeric"
+          value={maxAwards}
+          onChange={(e) => setMaxAwards(e.target.value)}
+        />
+        <div>
+          <label className="mb-1 block text-xs font-medium text-navy-900">
+            تعريف الجائزة وشروطها (تظهر للعميل)
+          </label>
+          <textarea
+            value={terms}
+            onChange={(e) => setTerms(e.target.value)}
+            rows={2}
+            className="w-full rounded-xl border border-navy-100 px-3 py-2 text-sm text-navy focus:border-navy focus:outline-none"
+            placeholder="تكتبها الإدارة كما اعتمدتها — لا شروط افتراضية"
+          />
+        </div>
         {error && <p className="text-xs font-medium text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-1">
