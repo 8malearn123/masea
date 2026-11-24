@@ -216,6 +216,9 @@ export interface ContractKpis {
   noEndDate: number;
   pendingApproval: number;
   activeCount: number;
+  /** كل العقود في النتيجة. */
+  total: number;
+  cancelled: number;
 }
 
 export function contractKpis(
@@ -234,6 +237,8 @@ export function contractKpis(
       if (ins.expiry === 'no_end_date') acc.noEndDate += 1;
       if (c.status === 'pending_approval') acc.pendingApproval += 1;
       if (c.status === 'active') acc.activeCount += 1;
+      if (c.status === 'cancelled') acc.cancelled += 1;
+      acc.total += 1;
       return acc;
     },
     {
@@ -245,6 +250,8 @@ export function contractKpis(
       noEndDate: 0,
       pendingApproval: 0,
       activeCount: 0,
+      total: 0,
+      cancelled: 0,
     },
   );
 }

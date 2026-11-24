@@ -13,8 +13,15 @@ import {
   Wallet,
   FlaskConical,
   Gauge,
+  Ban,
+  CalendarX,
+  Download,
+  Repeat,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { Badge, Card, Input, Select, Table, type Column } from '@/shared/ui';
+import { exportExcel } from '@/shared/lib/exportTable';
+import { listReplacements, listReturns } from '@/features/contracts/api/contractOps.api';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useContracts } from '@/features/contracts/hooks/useContracts';
@@ -84,20 +91,6 @@ const ACTION_LABEL: Record<ContractStatus, string> = {
   cancelled: 'تجديد',
 };
 
-/** Lifecycle progress 0–100 for the stage mini-bar. */
-const STAGE_PROGRESS: Record<ContractStatus, number> = {
-  draft: 12,
-  musaned_created: 40,
-  musaned_signed: 70,
-  pending_approval: 28,
-  approved: 45,
-  awaiting_signature: 62,
-  signed: 78,
-  active: 92,
-  completed: 100,
-  cancelled: 0,
-};
-
 export default function ContractsList() {
   const { role } = usePermissions();
   return role === 'external_office' ? <OfficeContractsList /> : <EnhancedContractsList />;
@@ -136,6 +129,19 @@ function EnhancedContractsList() {
   // ولتبويب التجديدات ومؤشّره وشارة الحالة، فتغييرها من الواجهة ينعكس على الشاشة كلها.
   const renewalWindow = useExpiryWindow().days;
   const kpis = useMemo(() => contractKpis(data, now, renewalWindow), [data, now, renewalWindow]);
+  // طلبات الإرجاع والاستبدال المفتوحة (من وحدة عمليات العقد القائمة)
+  const opsPending = useQuery({
+    queryKey: ['contracts', 'ops', 'pending-count'],
+    queryFn: async () => {
+      const [returns, replacements] = await Promise.all([listReturns(), listReplacements()]);
+      return (
+        returns.filter((r) => ['requested', 'scheduled', 'received'].includes(r.status)).length +
+        replacements.filter((r) => !['completed', 'rejected', 'cancelled'].includes(r.status))
+          .length
+      );
+    },
+    enabled: can('contracts', 'view'),
+  });
 
   // rows enriched with derived insight, then tab-filtered + sorted
   const enriched = useMemo(
@@ -226,20 +232,30 @@ function EnhancedContractsList() {
             to="/contracts/templates/rental"
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
-            <ScrollText size={16} /> قالب عقد التأجير
+            <ScrollText size={16} /> إدارة قوالب العقود
           </Link>
           <Link
             to="/contracts/operations"
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
-            <Gauge size={16} /> لوحة المتابعة
+            <Gauge size={16} /> متابعة العقود
           </Link>
           <Link
             to="/contracts/trials"
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
-            <FlaskConical size={16} /> تجارب نقل الخدمات
+            <FlaskConical size={16} /> عقود التجربة
           </Link>
+          {can('contracts', 'export') && (
+            <button
+              type="button"
+              onClick={() => exportContracts(visible, now)}
+              disabled={visible.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50 disabled:opacity-50"
+            >
+              <Download size={16} /> تصدير
+            </button>
+          )}
           {can('contracts', 'create') && (
             <Link to="/contracts/new" className="btn-primary">
               <Plus size={16} /> عقد جديد
@@ -252,27 +268,20 @@ function EnhancedContractsList() {
       {!isLoading && !isError && <ExpiryAlerts contracts={data} />}
 
       {/* KPI row */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <Kpi
-          icon={<Wallet size={18} />}
-          tone="danger"
-          label="متأخرات التحصيل"
-          value={`${sar(kpis.overdueTotal)}`}
-          hint="ريال · مستحق للتحصيل"
-        />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           icon={<FileText size={18} />}
           tone="navy"
-          label="قيمة المحفظة"
-          value={`${sar(kpis.portfolioValue)}`}
-          hint="ريال · إجمالي العقود"
+          label="إجمالي العقود"
+          value={String(kpis.total)}
+          hint={`قيمة المحفظة ${sar(kpis.portfolioValue)} ريال`}
         />
         <Kpi
-          icon={<RefreshCw size={18} />}
-          tone="gold"
-          label="تحتاج تجديدًا"
-          value={String(kpis.renewals)}
-          hint={`منتهية ${kpis.expired} · تنتهي خلال ${renewalWindow} يومًا ${kpis.expiringSoon}`}
+          icon={<CalendarClock size={18} />}
+          tone="success"
+          label="عقود نشطة"
+          value={String(kpis.activeCount)}
+          hint="قيد التشغيل الآن"
         />
         <Kpi
           icon={<AlertCircle size={18} />}
@@ -282,11 +291,39 @@ function EnhancedContractsList() {
           hint="تنتظر قرار المدير"
         />
         <Kpi
-          icon={<CalendarClock size={18} />}
-          tone="success"
-          label="عقود سارية"
-          value={String(kpis.activeCount)}
-          hint="قيد التشغيل الآن"
+          icon={<RefreshCw size={18} />}
+          tone="gold"
+          label="قاربت على الانتهاء"
+          value={String(kpis.expiringSoon)}
+          hint={`خلال ${renewalWindow} يومًا`}
+        />
+        <Kpi
+          icon={<CalendarX size={18} />}
+          tone="danger"
+          label="منتهية"
+          value={String(kpis.expired)}
+          hint="تجاوزت تاريخ نهايتها"
+        />
+        <Kpi
+          icon={<Ban size={18} />}
+          tone="neutral"
+          label="ملغاة"
+          value={String(kpis.cancelled)}
+          hint="بتسوية أو إلغاء"
+        />
+        <Kpi
+          icon={<Repeat size={18} />}
+          tone="gold"
+          label="إرجاع واستبدال معلّق"
+          value={opsPending.isLoading ? '…' : String(opsPending.data ?? 0)}
+          hint="طلبات لم تُغلق بعد"
+        />
+        <Kpi
+          icon={<Wallet size={18} />}
+          tone="danger"
+          label="متأخرات التحصيل"
+          value={`${sar(kpis.overdueTotal)}`}
+          hint="ريال · مستحق للتحصيل"
         />
       </div>
 
@@ -455,6 +492,7 @@ const KPI_TONE: Record<string, string> = {
   navy: 'bg-navy-50 text-navy',
   gold: 'bg-gold-100 text-gold-600',
   success: 'bg-green-50 text-green-700',
+  neutral: 'bg-gray-100 text-gray-600',
 };
 function Kpi({
   icon,
@@ -545,8 +583,8 @@ function ContractTable({
       ),
     },
     {
-      key: 'branch_id',
-      header: 'العمالة / الفرع',
+      key: 'worker',
+      header: 'العاملة',
       cell: (r) => (
         <div>
           <span className="block text-sm text-navy-900">{r.worker_name ?? '—'}</span>
@@ -555,51 +593,36 @@ function ContractTable({
       ),
     },
     {
+      key: 'start_date',
+      header: 'البداية',
+      cell: (r) => <span className="num text-xs">{r.start_date ? dateAr(r.start_date) : '—'}</span>,
+    },
+    {
+      key: 'end_date',
+      header: 'النهاية',
+      cell: (r) => <span className="num text-xs">{r.end_date ? dateAr(r.end_date) : '—'}</span>,
+    },
+    {
       key: 'total_amount',
-      header: 'القيمة والسداد',
+      header: 'الإجمالي',
+      cell: (r) => <span className="num text-sm font-bold text-navy">{sar(r.total_amount)}</span>,
+    },
+    {
+      key: 'amount_paid',
+      header: 'المدفوع',
+      cell: (r) => <span className="num text-sm text-green-700">{sar(r.amount_paid)}</span>,
+    },
+    {
+      key: 'remaining',
+      header: 'المتبقي',
       cell: (r) => {
         const ins = contractInsight(r, now);
         return (
-          <div className="min-w-[130px]">
-            <span className="num text-sm font-bold text-navy">{sar(r.total_amount)} ر.س</span>
-            <div className="my-1 h-1.5 w-full overflow-hidden rounded-full bg-navy-50">
-              <div
-                className={`h-full rounded-full ${ins.remaining === 0 ? 'bg-green-500' : ins.isOverdue ? 'bg-red-500' : 'bg-gold-500'}`}
-                style={{ width: `${ins.paidPct}%` }}
-              />
-            </div>
-            <span
-              className={`num text-[11px] font-medium ${
-                ins.payTone === 'success'
-                  ? 'text-green-600'
-                  : ins.payTone === 'danger'
-                    ? 'text-red-600'
-                    : 'text-gold-600'
-              }`}
-            >
-              {ins.payLabel}
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      key: 'stage',
-      header: 'مرحلة العقد',
-      cell: (r) => {
-        const ins = contractInsight(r, now, windowDays);
-        return (
-          <div className="min-w-[120px]">
-            <span className="block text-xs text-navy-900">
-              {contractStageLabel(r, ins, stageName(r.recruitment_stage))}
-            </span>
-            <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-navy-50">
-              <div
-                className="h-full rounded-full bg-navy/60"
-                style={{ width: `${STAGE_PROGRESS[r.status]}%` }}
-              />
-            </div>
-          </div>
+          <span
+            className={`num text-sm font-semibold ${ins.remaining === 0 ? 'text-green-600' : ins.isOverdue ? 'text-red-600' : 'text-gold-600'}`}
+          >
+            {sar(ins.remaining)}
+          </span>
         );
       },
     },
@@ -613,6 +636,9 @@ function ContractTable({
           <div className="flex flex-col items-start gap-1">
             <StatusBadge status={r.status} />
             {label && <Badge tone={expiryStateTone(ins.expiry)}>{label}</Badge>}
+            <span className="text-[11px] text-purple">
+              {contractStageLabel(r, ins, stageName(r.recruitment_stage))}
+            </span>
           </div>
         );
       },
@@ -775,5 +801,42 @@ function OfficeContractsList() {
         </div>
       )}
     </div>
+  );
+}
+
+/** تصدير العقود المعروضة (بالفلاتر الحالية) — بصلاحية contracts.export. */
+function exportContracts(rows: ContractListItem[], now: Date): void {
+  exportExcel(
+    {
+      title: 'العقود',
+      subtitle: `تاريخ التصدير ${dateAr(now.toISOString())} · ${rows.length} عقد`,
+      headers: [
+        'رقم العقد',
+        'العميل',
+        'الخدمة',
+        'العاملة',
+        'الفرع',
+        'البداية',
+        'النهاية',
+        'الإجمالي',
+        'المدفوع',
+        'المتبقي',
+        'الحالة',
+      ],
+      rows: rows.map((r) => [
+        r.contract_no ?? '',
+        r.customer_name ?? '',
+        r.service_code ? SERVICE_LABEL[r.service_code] : '',
+        r.worker_name ?? '',
+        branchLabel(r),
+        r.start_date ?? '',
+        r.end_date ?? '',
+        r.total_amount,
+        r.amount_paid,
+        contractInsight(r, now).remaining,
+        CONTRACT_STATUS_LABEL[r.status],
+      ]),
+    },
+    `contracts-${now.toISOString().slice(0, 10)}`,
   );
 }
