@@ -17,7 +17,7 @@ import { usePermissions } from '@/hooks/usePermissions';
 import { useSources } from '@/features/settings/hooks/useSettings';
 import { useUserNames } from '@/features/contracts/components/details/ContractTabs';
 import { sourceLabelOf } from '@/features/marketing/api/attribution.api';
-import { campaignReport } from '@/features/marketing/api/analytics.api';
+import { campaignReport, campaignSummary } from '@/features/marketing/api/analytics.api';
 import {
   addSpend,
   listSpend,
@@ -43,6 +43,10 @@ export function CampaignResults({ campaign }: { campaign: Campaign }) {
       (await campaignReport({ from, to: today(), branch: null })).find(
         (r) => r.campaign_id === campaign.id,
       ) ?? null,
+  });
+  const sum = useQuery({
+    queryKey: ['marketing', 'campaign-summary', campaign.id],
+    queryFn: () => campaignSummary(campaign.id),
   });
   const spend = useQuery({
     queryKey: ['marketing', 'spend', campaign.id],
@@ -107,6 +111,21 @@ export function CampaignResults({ campaign }: { campaign: Campaign }) {
             value={sar(totalSpend)}
             tone={campaign.budget != null && totalSpend > campaign.budget ? 'danger' : 'warning'}
             {...(campaign.budget != null ? { hint: `من ميزانية ${sar(campaign.budget)}` } : {})}
+          />
+        </div>
+      )}
+      {sum.data && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <StatTile
+            label="مرات استخدام الخصم"
+            value={sum.data.redemptions}
+            hint={`قيمة الخصومات ${sar(sum.data.discount_total)} ر.س`}
+          />
+          <StatTile label="العملاء" value={sum.data.customers} />
+          <StatTile
+            label="العقود المرتبطة (حملة أو كوبون)"
+            value={sum.data.contracts}
+            hint={`قيمتها ${sar(sum.data.contracts_value)} ر.س`}
           />
         </div>
       )}

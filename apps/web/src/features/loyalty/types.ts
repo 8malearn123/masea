@@ -39,6 +39,8 @@ export interface Campaign {
   owner_name?: string | null;
   /** تمديد معتمد لنهاية الحملة (0099/0102) */
   extended_until?: string | null;
+  /** مسودة لم تُفعَّل بعد (0103) */
+  is_draft?: boolean;
 }
 
 /** بيانات إنشاء/تعديل حملة (المعرّف وعدّاد الاستخدام يُدارَان تلقائياً). */

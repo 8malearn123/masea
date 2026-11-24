@@ -166,7 +166,7 @@ export function generateCampaignCoupon(type: CampaignType, discountPct: number):
 // With Supabase the campaigns live in `campaigns` (0005 + 0066); the store above
 // is the demo fallback (localStorage).
 const CAMPAIGN_COLUMNS =
-  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes, platform_code, budget, owner_id, extended_until, branches(city)';
+  'id, name, type, discount_pct, start_at, end_at, is_active, usage_count, coupon_code, description, service_codes, platform_code, budget, owner_id, extended_until, is_draft, branches(city)';
 
 function fromCampaignRow(r: Record<string, unknown>): Campaign {
   return {
@@ -186,6 +186,7 @@ function fromCampaignRow(r: Record<string, unknown>): Campaign {
     budget: r.budget === null || r.budget === undefined ? null : Number(r.budget),
     owner_id: (r.owner_id as string | null) ?? null,
     extended_until: (r.extended_until as string | null) ?? null,
+    is_draft: Boolean(r.is_draft),
   };
 }
 
@@ -217,6 +218,8 @@ async function campaignRow(input: Partial<CampaignInput>) {
 }
 
 export async function addCampaign(input: CampaignInput): Promise<Campaign> {
+  // الحملة الجديدة تبدأ «مسودة» حتى تُفعَّل (0103)
+  input = { ...input, is_draft: true };
   if (!isDemoMode()) {
     const { data, error } = await supabase
       .from('campaigns')
@@ -249,12 +252,31 @@ export async function updateCampaign(id: string, patch: Partial<CampaignInput>):
   persistCampaigns();
   // the campaign's coupons follow its state and window (evaluate_promotion, 0066)
   syncCampaignCouponsLocal(id, {
-    is_active: campaign.is_active,
+    // مسودة = كوبون غير مقبول؛ النهاية تشمل التمديد (0103)
+    is_active: campaign.is_active && !campaign.is_draft,
     start_at: campaign.start_at || null,
-    end_at: campaign.end_at || null,
+    end_at: campaign.extended_until || campaign.end_at || null,
     ...(campaign.service_codes ? { service_codes: campaign.service_codes } : {}),
   });
   return { ...campaign };
+}
+
+/** تفعيل حملة مسودة (publish_campaign — 0103). */
+export async function publishCampaign(id: string): Promise<void> {
+  if (!isDemoMode() && !isDemoId(id)) {
+    const { error } = await supabase.rpc('publish_campaign', { p_campaign: id });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  const c = CAMPAIGNS.find((x) => x.id === id);
+  if (!c?.is_draft) throw new Error('الحملة ليست مسودة');
+  c.is_draft = false;
+  persistCampaigns();
+  syncCampaignCouponsLocal(id, {
+    is_active: c.is_active,
+    start_at: c.start_at || null,
+    end_at: c.extended_until || c.end_at || null,
+  });
 }
 
 export async function removeCampaign(id: string): Promise<Campaign> {
@@ -304,7 +326,7 @@ export async function syncCampaignCoupon(c: Campaign, previousCode?: string | nu
     starts_at: c.start_at || null,
     ends_at: c.end_at || null,
     usage_limit: null,
-    is_active: c.is_active,
+    is_active: c.is_active && !c.is_draft,
     requires_code: true,
     campaign_id: isDemoId(c.id) && !isDemoMode() ? null : c.id,
   });

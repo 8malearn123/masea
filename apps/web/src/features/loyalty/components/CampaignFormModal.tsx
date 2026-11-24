@@ -15,8 +15,11 @@ const TYPE_OPTS = (Object.entries(CAMPAIGN_TYPE_LABEL) as [CampaignType, string]
 );
 
 /** ISO ↔ حقل تاريخ (YYYY-MM-DD). */
-const toDateInput = (iso: string): string => (iso ? iso.slice(0, 10) : '');
-const toIso = (d: string): string => (d ? `${d}T00:00:00Z` : '');
+// التواريخ بتوقيت الرياض (UTC+3 بلا توقيت صيفي): البداية 00:00 والنهاية 23:59:59 (0103)
+const toDateInput = (iso: string): string =>
+  iso ? new Date(new Date(iso).getTime() + 3 * 3600000).toISOString().slice(0, 10) : '';
+const toStartIso = (d: string): string => (d ? new Date(`${d}T00:00:00+03:00`).toISOString() : '');
+const toEndIso = (d: string): string => (d ? new Date(`${d}T23:59:59+03:00`).toISOString() : '');
 
 const schema = z
   .object({
@@ -80,8 +83,8 @@ export function CampaignFormModal({
       name: name.trim(),
       type,
       discount_pct: Number(discount) || 0,
-      start_at: toIso(startAt),
-      end_at: toIso(endAt),
+      start_at: toStartIso(startAt),
+      end_at: toEndIso(endAt),
       is_active: isActive,
       coupon_code: coupon.trim() ? coupon.trim() : null,
       description: description.trim() || null,

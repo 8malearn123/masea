@@ -622,8 +622,13 @@ export default function ContractWizard() {
       toast.error(termError);
       return;
     }
-    if (promotion && !promoCheck?.ok) {
-      toast.error(`لا يمكن تطبيق الخصم: ${promoCheck?.reason ?? 'غير مؤهل'}`);
+    // تحقق جديد لحظة الحفظ (لو انتهى العرض والصفحة مفتوحة) — والخادم يتحقق مرة أخرى
+    const freshCheck =
+      promotion && listPrice
+        ? evaluatePromotion(promotion, service, listPrice.base, new Date(), d.promotionCode)
+        : null;
+    if (promotion && !freshCheck?.ok) {
+      toast.error(freshCheck?.reason ?? 'لا يمكن تطبيق الخصم');
       return;
     }
     const parsed = createContractInputSchema.safeParse({
