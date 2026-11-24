@@ -2,6 +2,10 @@ import { useState } from 'react';
 import { z } from 'zod';
 import { Ticket } from 'lucide-react';
 import { Button, Input, Modal, Select } from '@/shared/ui';
+import { useServices } from '@/hooks/useServices';
+import { useConfig } from '@/features/settings/hooks/useSettings';
+import { configValue } from '@/features/settings/api/settings.api';
+import { prizeRuleError } from '@/features/marketing/api/wheel.api';
 import { useAddWheelPrize, useUpdateWheelPrize } from '@/features/loyalty/hooks/useLoyalty';
 import { generateCouponCode } from '@/features/loyalty/data/engine';
 import { PRIZE_TYPE_LABEL, type PrizeType, type WheelPrize } from '@/features/loyalty/types';
@@ -17,6 +21,9 @@ const schema = z.object({
   probability: z.number().min(0, 'النسبة غير صالحة').max(100, 'النسبة لا تتجاوز 100'),
   active: z.boolean(),
   coupon_code: z.string().nullable(),
+  service_codes: z.array(z.string()),
+  max_discount_amount: z.number().positive('الحد الأعلى أكبر من صفر').nullable(),
+  coupon_valid_days: z.number().int().min(1, 'صلاحية يوم على الأقل').max(365).nullable(),
 });
 
 /** أنواع تستفيد من كوبون مباشر. */
@@ -43,6 +50,16 @@ export function WheelPrizeFormModal({
   const [coupon, setCoupon] = useState(prize?.coupon_code ?? '');
   const [error, setError] = useState<string | null>(null);
 
+  const [services, setServices] = useState<string[]>(prize?.service_codes ?? []);
+  const [maxAmount, setMaxAmount] = useState(
+    prize?.max_discount_amount == null ? '' : String(prize.max_discount_amount),
+  );
+  const [validDays, setValidDays] = useState(
+    prize?.coupon_valid_days == null ? '30' : String(prize.coupon_valid_days),
+  );
+  const { data: serviceList = [] } = useServices();
+  const { data: config = [] } = useConfig();
+  const openMax = configValue(config, 'wheel_open_discount_max_pct', 10);
   const busy = add.isPending || update.isPending;
   const canCoupon = COUPON_TYPES.includes(prizeType);
 
@@ -54,7 +71,15 @@ export function WheelPrizeFormModal({
       probability: Number(probability) || 0,
       active,
       coupon_code: coupon.trim() ? coupon.trim() : null,
+      service_codes: services,
+      max_discount_amount: maxAmount.trim() === '' ? null : Number(maxAmount),
+      coupon_valid_days: validDays.trim() === '' ? null : Number(validDays),
     });
+    const rule = parsed.success ? prizeRuleError(parsed.data, openMax) : null;
+    if (rule) {
+      setError(rule);
+      return;
+    }
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'تحقّق من الحقول');
       return;
@@ -144,6 +169,46 @@ export function WheelPrizeFormModal({
           </div>
         )}
 
+        {prizeType === 'discount' && (
+          <div className="space-y-3 rounded-xl border border-navy-100 p-3">
+            <fieldset>
+              <legend className="mb-1 text-xs font-medium text-navy-900">
+                الخدمات المشمولة (إلزامي لخصم أكبر من {openMax}٪)
+              </legend>
+              <div className="flex flex-wrap gap-3">
+                {serviceList.map((sv) => (
+                  <label key={sv.code} className="flex items-center gap-1.5 text-sm text-navy">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-navy"
+                      checked={services.includes(sv.code)}
+                      onChange={(e) =>
+                        setServices((all) =>
+                          e.target.checked ? [...all, sv.code] : all.filter((c) => c !== sv.code),
+                        )
+                      }
+                    />
+                    {sv.name_ar}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="الحد الأعلى للخصم (ر.س)"
+                inputMode="decimal"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+              />
+              <Input
+                label="صلاحية الكوبون (يوم)"
+                inputMode="numeric"
+                value={validDays}
+                onChange={(e) => setValidDays(e.target.value)}
+              />
+            </div>
+          </div>
+        )}
         {error && <p className="text-xs font-medium text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-1">
