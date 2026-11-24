@@ -1,6 +1,7 @@
 import { CustomerSourceCard } from '@/features/marketing/components/CustomerSourceCard';
 import { ConsentCard } from '@/features/marketing/components/ConsentCard';
 import { WheelLinkCard } from '@/features/marketing/components/WheelLinkCard';
+import { CustomerWheelPrizesCard } from '@/features/marketing/components/CustomerWheelPrizesCard';
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowRight, MessageCircle, Pencil, Phone, Power } from 'lucide-react';
@@ -279,7 +280,8 @@ function Body({ customer }: { customer: CustomerRecord }) {
 
       <CustomerSourceCard customerId={customer.id} />
       <ConsentCard customerId={customer.id} />
-      <WheelLinkCard customerId={customer.id} fullName={customer.full_name} />
+      <WheelLinkCard customer={customer} />
+      <CustomerWheelPrizesCard customerId={customer.id} />
       <Interactions customerId={customer.id} />
 
       <CustomerFormModal open={editing} onClose={() => setEditing(false)} customer={customer} />

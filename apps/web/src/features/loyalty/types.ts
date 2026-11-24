@@ -41,6 +41,8 @@ export interface Campaign {
   extended_until?: string | null;
   /** مسودة لم تُفعَّل بعد (0103) */
   is_draft?: boolean;
+  /** شروط المشاركة الظاهرة للعميل (عجلة الحظ — 0104) */
+  terms?: string | null;
 }
 
 /** بيانات إنشاء/تعديل حملة (المعرّف وعدّاد الاستخدام يُدارَان تلقائياً). */
@@ -143,6 +145,12 @@ export interface WheelPrize {
   max_discount_amount?: number | null;
   /** صلاحية كوبون الجائزة بالأيام */
   coupon_valid_days?: number | null;
+  /** عدد مرات استخدام الجائزة الواحدة (0104) */
+  usage_limit?: number;
+  /** العدد الأقصى للجوائز الممنوحة؛ null = بلا حد (0104) */
+  max_awards?: number | null;
+  /** تعريف الجائزة وشروطها الظاهرة للعميل (0104) */
+  terms?: string | null;
 }
 
 /** بيانات إنشاء/تعديل جائزة (بدون المعرّف). */

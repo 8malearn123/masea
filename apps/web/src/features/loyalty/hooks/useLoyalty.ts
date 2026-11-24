@@ -13,15 +13,12 @@ import {
   updateCampaign,
 } from '@/features/loyalty/api/loyalty.api';
 import {
-  addWheelPrize,
   getAccount,
   listLoyaltyCustomers,
-  listWheelPrizes,
   redeemPoints,
-  removeWheelPrize,
   spinWheel,
-  updateWheelPrize,
 } from '@/features/loyalty/data/engine';
+import { addPrize, listPrizes, removePrize, updatePrize } from '@/features/marketing/api/wheel.api';
 import {
   getLoyaltyConfig,
   listPackages,
@@ -174,14 +171,14 @@ export function useSpinWheel(customerId?: string) {
 
 // --------------------------- wheel prize admin ---------------------------
 export function useWheelPrizes() {
-  return useQuery({ queryKey: PRIZES_KEY, queryFn: async () => listWheelPrizes(), staleTime: 0 });
+  return useQuery({ queryKey: PRIZES_KEY, queryFn: listPrizes, staleTime: 0 });
 }
 
 export function useAddWheelPrize() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<WheelPrize, Error, WheelPrizeInput>({
-    mutationFn: async (input) => addWheelPrize(input),
+    mutationFn: addPrize,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: PRIZES_KEY });
       toast.success('تمت إضافة الجائزة');
@@ -194,7 +191,7 @@ export function useUpdateWheelPrize() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<WheelPrize, Error, { id: string; patch: Partial<WheelPrizeInput> }>({
-    mutationFn: async ({ id, patch }) => updateWheelPrize(id, patch),
+    mutationFn: ({ id, patch }) => updatePrize(id, patch),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: PRIZES_KEY });
     },
@@ -206,7 +203,7 @@ export function useRemoveWheelPrize() {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation<void, Error, string>({
-    mutationFn: async (id) => removeWheelPrize(id),
+    mutationFn: removePrize,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: PRIZES_KEY });
       toast.success('تم حذف الجائزة');

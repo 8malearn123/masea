@@ -22,10 +22,15 @@ export function WhatsAppOfferModal({
   customers,
   onClose,
   onSent,
+  initialOffer,
+  initialCampaignId,
 }: {
   customers: { id: string; full_name: string }[];
   onClose: () => void;
   onSent: () => void;
+  /** نص عرض جاهز (مثل رابط عجلة الحظ) — يُرسل داخل القالب المعتمد */
+  initialOffer?: string;
+  initialCampaignId?: string;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -38,11 +43,11 @@ export function WhatsAppOfferModal({
   });
   const active = campaigns.filter((c) => campaignStatus(c) === 'active');
   const approved = (tpl.data ?? []).filter((t) => t.meta_status === 'approved' && t.is_active);
-  const [picked, setPicked] = useState('');
+  const [picked, setPicked] = useState(initialCampaignId ?? '');
   // الحملات تُحمَّل بعد فتح النافذة — الافتراضي أول حملة نشطة
   const campaignId = picked || active[0]?.id || '';
   const campaign = campaigns.find((c) => c.id === campaignId);
-  const [offer, setOffer] = useState('');
+  const [offer, setOffer] = useState(initialOffer ?? '');
   const [templateId, setTemplateId] = useState('');
   const defaultExpiry = (campaign?.extended_until || campaign?.end_at || '').slice(0, 10);
   const [expires, setExpires] = useState('');

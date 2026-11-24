@@ -40,9 +40,9 @@ export const TIERS: TierInfo[] = [
 const DEFAULT_WHEEL_PRIZES: WheelPrize[] = [
   { id: 'w1', label: '100 نقطة', prize_type: 'points', value: 100, probability: 30, active: true, coupon_code: null }, // prettier-ignore
   { id: 'w2', label: '20 ريال محفظة', prize_type: 'wallet', value: 20, probability: 20, active: true, coupon_code: null }, // prettier-ignore
-  { id: 'w3', label: 'خصم 10٪', prize_type: 'discount', value: 10, probability: 20, active: true, coupon_code: 'MAS-DISC10-7K2A' }, // prettier-ignore
+  { id: 'w3', label: 'خصم 10٪', prize_type: 'discount', value: 10, probability: 20, active: false, coupon_code: 'MAS-DISC10-7K2A' }, // prettier-ignore
   { id: 'w4', label: '500 نقطة', prize_type: 'points', value: 500, probability: 10, active: true, coupon_code: null }, // prettier-ignore
-  { id: 'w5', label: 'تأجيل مجاني', prize_type: 'free_service', value: 1, probability: 8, active: true, coupon_code: 'MAS-FREE-3M9X' }, // prettier-ignore
+  { id: 'w5', label: 'تأجيل مجاني', prize_type: 'free_service', value: 1, probability: 8, active: false, coupon_code: 'MAS-FREE-3M9X' }, // prettier-ignore
   { id: 'w6', label: '50 ريال محفظة', prize_type: 'wallet', value: 50, probability: 5, active: true, coupon_code: null }, // prettier-ignore
   { id: 'w7', label: 'حظ أوفر', prize_type: 'none', value: 0, probability: 7, active: true, coupon_code: null }, // prettier-ignore
 ];
@@ -60,13 +60,27 @@ export const WHEEL_COLORS = [
 
 const PRIZES_LS_KEY = 'masea_wheel_prizes';
 
+/**
+ * جائزة غير معرّفة لا تبقى مفعّلة (مرآة wheel_prizes_guard — 0104): خصم بلا خدمات وحد أعلى،
+ * أو خدمة مجانية بلا تعريف وشروط وخدمات ومدة. لا تتغيّر النسب.
+ */
+function enforceDefinition(p: WheelPrize): WheelPrize {
+  const services = (p.service_codes ?? []).length;
+  const undefinedDiscount =
+    p.prize_type === 'discount' && (services === 0 || p.max_discount_amount == null);
+  const undefinedService =
+    p.prize_type === 'free_service' &&
+    ((p.terms ?? '').trim().length < 10 || services === 0 || p.coupon_valid_days == null);
+  return p.active && (undefinedDiscount || undefinedService) ? { ...p, active: false } : p;
+}
+
 function loadWheelPrizes(): WheelPrize[] {
   try {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(PRIZES_LS_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as WheelPrize[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(enforceDefinition);
       }
     }
   } catch {
@@ -397,6 +411,9 @@ export function spinWheel(customerId: string = PRIMARY_ID): WheelPrize {
   const pool = WHEEL_PRIZES.filter((p) => p.active);
   if (pool.length === 0) throw new Error('لا توجد جوائز مفعّلة على العجلة');
   const total = pool.reduce((s, p) => s + p.probability, 0);
+  // العجلة لا تعمل قبل اعتماد الإدارة لاحتمالات مجموعها 100٪ (0104)
+  if (Math.round(total * 100) !== 10000)
+    throw new Error('إعدادات العجلة غير مكتملة: مجموع احتمالات الجوائز المفعّلة يجب أن يساوي 100٪');
   let r = Math.random() * total;
   let prize = pool[pool.length - 1]!;
   for (const p of pool) {

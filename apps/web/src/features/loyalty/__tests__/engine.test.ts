@@ -34,7 +34,16 @@ describe('loyalty engine (ledger mirror of 0020)', () => {
     expect(getAccount().points_balance).toBe(29500);
   });
 
+  it('wheel refuses to spin until the active probabilities total 100% (0104)', () => {
+    // الافتراضي بعد تعطيل الجائزتين غير المعرّفتين = 72٪ — لا تُعدَّل النسب تلقائياً
+    expect(WHEEL_PRIZES.filter((p) => p.active).reduce((s, p) => s + p.probability, 0)).toBe(72);
+    expect(() => spinWheel()).toThrow('100٪');
+  });
+
   it('wheel returns a valid prize then enforces the per-customer limit', () => {
+    // الإدارة تعيد ضبط الاحتمالات (هنا: «حظ أوفر» يأخذ الباقي)
+    const luck = WHEEL_PRIZES.find((p) => p.prize_type === 'none')!;
+    luck.probability += 28;
     const prize = spinWheel();
     expect(WHEEL_PRIZES.some((p) => p.id === prize.id)).toBe(true);
     expect(() => spinWheel()).toThrow(); // wheel_spins_per_customer = 1
