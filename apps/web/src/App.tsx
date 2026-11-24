@@ -27,9 +27,6 @@ const ContractOpsDashboard = lazy(
 );
 const TrialsBoard = lazy(() => import('@/features/contracts/components/TrialsBoard'));
 const TrialAcceptPage = lazy(() => import('@/features/contracts/components/TrialAcceptPage'));
-const RentalTemplateReview = lazy(
-  () => import('@/features/contracts/components/RentalTemplateReview'),
-);
 const PipelineBoard = lazy(() => import('@/features/crm/components/PipelineBoard'));
 const LeadCreatePage = lazy(() => import('@/features/crm/components/LeadCreatePage'));
 const LeadProfile = lazy(() => import('@/features/crm/components/LeadProfile'));
@@ -168,13 +165,10 @@ export default function App() {
                 </RequirePerm>
               }
             />
+            {/* قالب عقد التأجير صار داخل «عقد جديد» — الرابط القديم يحوّل إليه */}
             <Route
               path="contracts/templates/rental"
-              element={
-                <RequirePerm module="contracts">
-                  <RentalTemplateReview />
-                </RequirePerm>
-              }
+              element={<Navigate to="/contracts/new" replace />}
             />
             <Route
               path="contracts/:id"

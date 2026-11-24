@@ -8,19 +8,16 @@ import {
   FileText,
   Plus,
   RefreshCw,
-  ScrollText,
   Search,
   Wallet,
   FlaskConical,
   Gauge,
   Ban,
   CalendarX,
-  Download,
   Repeat,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Badge, Card, Input, Select, Table, type Column } from '@/shared/ui';
-import { exportExcel } from '@/shared/lib/exportTable';
 import { listReplacements, listReturns } from '@/features/contracts/api/contractOps.api';
 import { sar, dateAr } from '@/shared/lib/format';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -229,12 +226,6 @@ function EnhancedContractsList() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            to="/contracts/templates/rental"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
-          >
-            <ScrollText size={16} /> إدارة قوالب العقود
-          </Link>
-          <Link
             to="/contracts/operations"
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
@@ -244,18 +235,8 @@ function EnhancedContractsList() {
             to="/contracts/trials"
             className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50"
           >
-            <FlaskConical size={16} /> عقود التجربة
+            <FlaskConical size={16} /> تجارب نقل الخدمات
           </Link>
-          {can('contracts', 'export') && (
-            <button
-              type="button"
-              onClick={() => exportContracts(visible, now)}
-              disabled={visible.length === 0}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-navy px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy-50 disabled:opacity-50"
-            >
-              <Download size={16} /> تصدير
-            </button>
-          )}
           {can('contracts', 'create') && (
             <Link to="/contracts/new" className="btn-primary">
               <Plus size={16} /> عقد جديد
@@ -801,42 +782,5 @@ function OfficeContractsList() {
         </div>
       )}
     </div>
-  );
-}
-
-/** تصدير العقود المعروضة (بالفلاتر الحالية) — بصلاحية contracts.export. */
-function exportContracts(rows: ContractListItem[], now: Date): void {
-  exportExcel(
-    {
-      title: 'العقود',
-      subtitle: `تاريخ التصدير ${dateAr(now.toISOString())} · ${rows.length} عقد`,
-      headers: [
-        'رقم العقد',
-        'العميل',
-        'الخدمة',
-        'العاملة',
-        'الفرع',
-        'البداية',
-        'النهاية',
-        'الإجمالي',
-        'المدفوع',
-        'المتبقي',
-        'الحالة',
-      ],
-      rows: rows.map((r) => [
-        r.contract_no ?? '',
-        r.customer_name ?? '',
-        r.service_code ? SERVICE_LABEL[r.service_code] : '',
-        r.worker_name ?? '',
-        branchLabel(r),
-        r.start_date ?? '',
-        r.end_date ?? '',
-        r.total_amount,
-        r.amount_paid,
-        contractInsight(r, now).remaining,
-        CONTRACT_STATUS_LABEL[r.status],
-      ]),
-    },
-    `contracts-${now.toISOString().slice(0, 10)}`,
   );
 }
