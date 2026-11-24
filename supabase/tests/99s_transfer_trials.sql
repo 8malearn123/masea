@@ -50,10 +50,18 @@ create or replace function pg_temp.ctx(p_k text) returns text language sql as $$
 grant execute on all functions in schema pg_temp to authenticated, anon;
 
 -- ---------- terms must exist and be approved first ----------
+-- 0106: the company's contract (contract_final_black.pdf) is the approved version from the start;
+-- without an approved version no trial is created (checked with it retired, then rolled back)
+select pg_temp.check((select count(*) from contract_templates where template_code = 'transfer_trial_terms'
+                        and status = 'approved' and doc->>'layout' = 'trial_contract_black_v1') = 1,
+                     'official trial contract approved');
+begin;
+update contract_templates set status = 'retired' where template_code = 'transfer_trial_terms' and status = 'approved';
 select pg_temp.login('a9200000-0000-0000-0000-000000000001');
 select pg_temp.rejects($$select create_trial_agreement('c9200000-0000-0000-0000-000000000001',
                           'f9200000-0000-0000-0000-000000000001', 'نجران', 1500, 10, current_date)$$,
   'شروط تجربة معتمدة', 'no trial without approved terms');
+rollback;
 select pg_temp.logout();
 
 select pg_temp.login('a9200000-0000-0000-0000-000000000002');
@@ -75,7 +83,8 @@ insert into t_ctx values ('trial', (select id::text from create_trial_agreement(
   'f9200000-0000-0000-0000-000000000001', 'نجران', 1500, 10, current_date)));
 select pg_temp.check((select t.status = 'draft' and t.end_date = current_date + 9 and t.total_amount = 1725
                          and c.service_code = 'transfer_trial' and c.worker_profile_id = t.worker_profile_id
-                         and c.template_version = 1
+                         and c.template_version = (select version from contract_templates
+                              where template_code = 'transfer_trial_terms' and status = 'approved')
                         from trial_agreements t join contracts c on c.id = t.contract_id
                        where t.id = pg_temp.ctx('trial')::uuid),
   'trial + its contract (price 1,500 + VAT, 10 days, pinned terms v1)');

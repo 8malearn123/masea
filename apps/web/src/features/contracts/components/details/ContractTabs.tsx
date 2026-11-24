@@ -359,6 +359,11 @@ export function DocumentsTab({
           {docQ.data?.kind === 'rental_template' && (
             <Badge tone="navy">القالب المعتمد — النسخة {docQ.data.templateVersion}</Badge>
           )}
+          {docQ.data?.kind === 'trial_contract' && (
+            <Badge tone="navy">
+              عقد تجربة — القالب المعتمد (النسخة {docQ.data.templateVersion})
+            </Badge>
+          )}
           {docQ.data?.kind === 'stored_clauses' && (
             <Badge tone="neutral">البنود المحفوظة مع العقد</Badge>
           )}

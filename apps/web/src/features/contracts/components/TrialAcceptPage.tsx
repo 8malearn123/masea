@@ -10,6 +10,8 @@ import {
   type TrialDocument,
 } from '@/features/contracts/api/trials.api';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
+import { trialDocumentHtml } from '@/features/contracts/lib/trialContract/document';
+import { TrialDocFrame } from '@/features/contracts/components/TrialDocFrame';
 
 function esc(s: string | number): string {
   return String(s).replace(
@@ -112,11 +114,19 @@ export default function TrialAcceptPage() {
                 variant="outline"
                 onClick={() =>
                   openContractPrint(
-                    acceptedHtml(
-                      result.document!,
-                      result.reference ?? '',
-                      result.accepted_at ?? '',
-                    ),
+                    // عقد التجربة الرسمي بنفس تصميمه + ختم القبول؛ التجارب الأقدم بعرضها السابق
+                    trialDocumentHtml(result.document!, {
+                      autoPrint: true,
+                      acceptance: {
+                        reference: result.reference ?? '',
+                        at: dateTimeAr(result.accepted_at ?? ''),
+                      },
+                    }) ??
+                      acceptedHtml(
+                        result.document!,
+                        result.reference ?? '',
+                        result.accepted_at ?? '',
+                      ),
                   )
                 }
               >
@@ -126,49 +136,60 @@ export default function TrialAcceptPage() {
           </Card>
         ) : (
           <>
-            <Card>
-              <h1 className="mb-3 text-base font-bold text-navy">
-                {v.terms_title} · <span className="num">{v.trial_no}</span>
-              </h1>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[
-                  ['السعر شامل الضريبة', `${sar(v.total_amount)} ر.س`],
-                  ['عدد أيام التجربة', String(v.trial_days)],
-                  ['تاريخ استلام العاملة', dateAr(v.receipt_date)],
-                  ['نهاية التجربة', dateAr(v.end_date)],
-                ].map(([k, val]) => (
-                  <div key={k} className="rounded-xl bg-navy-50 p-3 text-center">
-                    <p className="text-[11px] text-purple">{k}</p>
-                    <p className="num text-base font-bold text-navy">{val}</p>
+            {trialDocumentHtml(v) ? (
+              <Card className="p-2">
+                <TrialDocFrame
+                  title={v.terms_title}
+                  testId="trial-accept-document"
+                  html={trialDocumentHtml(v) ?? ''}
+                />
+                <p className="mt-2 rounded-lg bg-gold-100 p-2 text-xs text-navy">{v.notice}</p>
+              </Card>
+            ) : (
+              <Card>
+                <h1 className="mb-3 text-base font-bold text-navy">
+                  {v.terms_title} · <span className="num">{v.trial_no}</span>
+                </h1>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    ['السعر شامل الضريبة', `${sar(v.total_amount)} ر.س`],
+                    ['عدد أيام التجربة', String(v.trial_days)],
+                    ['تاريخ استلام العاملة', dateAr(v.receipt_date)],
+                    ['نهاية التجربة', dateAr(v.end_date)],
+                  ].map(([k, val]) => (
+                    <div key={k} className="rounded-xl bg-navy-50 p-3 text-center">
+                      <p className="text-[11px] text-purple">{k}</p>
+                      <p className="num text-base font-bold text-navy">{val}</p>
+                    </div>
+                  ))}
+                </div>
+                <dl className="mt-3 space-y-1 text-sm">
+                  <div>
+                    <dt className="inline text-purple">العميل: </dt>
+                    <dd className="inline">{v.customer_name}</dd>
                   </div>
-                ))}
-              </div>
-              <dl className="mt-3 space-y-1 text-sm">
-                <div>
-                  <dt className="inline text-purple">العميل: </dt>
-                  <dd className="inline">{v.customer_name}</dd>
-                </div>
-                <div>
-                  <dt className="inline text-purple">العاملة: </dt>
-                  <dd className="inline">
-                    {v.worker_name}
-                    {v.nationality ? ` · ${v.nationality}` : ''}
-                    {v.profession ? ` · ${v.profession}` : ''}
-                  </dd>
-                </div>
-              </dl>
-              <h2 className="mb-2 mt-4 text-sm font-bold text-navy">
-                شروط التجربة المعتمدة (النسخة {v.terms_version})
-              </h2>
-              <ol className="space-y-2 text-sm leading-7">
-                {v.terms.map((t, i) => (
-                  <li key={i}>
-                    <span className="num font-bold text-gold-600">{i + 1}.</span> {t}
-                  </li>
-                ))}
-              </ol>
-              <p className="mt-3 rounded-lg bg-gold-100 p-2 text-xs text-navy">{v.notice}</p>
-            </Card>
+                  <div>
+                    <dt className="inline text-purple">العاملة: </dt>
+                    <dd className="inline">
+                      {v.worker_name}
+                      {v.nationality ? ` · ${v.nationality}` : ''}
+                      {v.profession ? ` · ${v.profession}` : ''}
+                    </dd>
+                  </div>
+                </dl>
+                <h2 className="mb-2 mt-4 text-sm font-bold text-navy">
+                  شروط التجربة المعتمدة (النسخة {v.terms_version})
+                </h2>
+                <ol className="space-y-2 text-sm leading-7">
+                  {v.terms.map((t, i) => (
+                    <li key={i}>
+                      <span className="num font-bold text-gold-600">{i + 1}.</span> {t}
+                    </li>
+                  ))}
+                </ol>
+                <p className="mt-3 rounded-lg bg-gold-100 p-2 text-xs text-navy">{v.notice}</p>
+              </Card>
+            )}
 
             <Card>
               {v.link_state !== 'open' || v.status !== 'awaiting_acceptance' ? (
