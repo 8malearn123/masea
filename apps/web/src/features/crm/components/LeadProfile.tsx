@@ -141,7 +141,7 @@ function LeadProfileBody({ lead }: { lead: Lead }) {
                 label="الخدمة المطلوبة"
                 value={lead.service_code ? SERVICE_LABEL[lead.service_code] : '—'}
               />
-              <Info label="المصدر" value={sourceLabel(lead.source_code) || '—'} />
+              <Info label="مصدر العميل" value={sourceLabel(lead.source_code) || 'غير محدد'} />
               <Info label="الفرع" value={lead.branch ?? '—'} />
               <Info
                 label="القيمة المتوقعة"

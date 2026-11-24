@@ -15,6 +15,19 @@ import {
 import { Button, Card, Input, Modal, Select, useToast } from '@/shared/ui';
 import { RentalTemplatePanel } from '@/features/contracts/components/RentalTemplateReview';
 import { openContractPrint } from '@/features/contracts/lib/contractHtml';
+import {
+  EMPTY_MARKETING,
+  MarketingSection,
+  marketingError,
+  useCustomerAcquisition,
+  type MarketingDraft,
+} from '@/features/marketing/components/MarketingSection';
+import {
+  noteRequired,
+  setContractMarketing,
+  setCustomerAcquisition,
+} from '@/features/marketing/api/attribution.api';
+import { useSources } from '@/features/settings/hooks/useSettings';
 import { dateAr, sar } from '@/shared/lib/format';
 import { packagesFor } from '@/features/pricing/lib/engine';
 import { buildSchedule, setInstallments } from '@/features/contracts/api/contractPayments.api';
@@ -105,6 +118,8 @@ interface Draft {
   packageId?: string | undefined;
   /** خطة السداد: عدد الأقساط الشهرية (1 = دفعة واحدة) */
   installments?: number | undefined;
+  /** البيانات التسويقية (0098) — لا تدخل نص العقد */
+  mkt?: MarketingDraft | undefined;
 }
 
 const EMPTY: Draft = {
@@ -269,6 +284,8 @@ export default function ContractWizard() {
   }, [dirty]);
 
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
+  const acqQ = useCustomerAcquisition(d.customer?.id);
+  const { data: sourceRows = [] } = useSources();
   // مساند: العقد يُنشأ ويُوقّع على منصة مساند — لا بنود ولا توقيع داخلي.
   const musaned = isMusaned(origins, d.service || null);
   // 0094: الشهري واليومي وبالساعة على قالب «عقد تأجير خدمات عمالية» الموحّد
@@ -475,7 +492,11 @@ export default function ContractWizard() {
       }
       return null;
     }
-    if (current === 'customer') return d.customer ? null : 'اختر العميل';
+    if (current === 'customer') {
+      if (!d.customer) return 'اختر العميل';
+      if (acqQ.isLoading) return 'جارٍ تحميل مصدر العميل…';
+      return marketingError(d.mkt ?? EMPTY_MARKETING, acqQ.data ?? null, sourceRows);
+    }
     if (current === 'pricing') {
       if (priceLoading) return 'جارٍ احتساب السعر…';
       if (!listPrice || listPrice.base <= 0) return 'لا توجد قاعدة تسعير لهذه الخدمة';
@@ -517,6 +538,27 @@ export default function ContractWizard() {
       toast.error(`أُنشئ العقد دون مهمة التوصيل: ${e instanceof Error ? e.message : ''}`),
     );
   }
+  /** الحجز بالساعة يُنشئ العقد في الخادم — تُسجَّل بياناته التسويقية بعده (0098). */
+  async function saveMarketing(contractId: string) {
+    if (!d.customer) return;
+    const m = d.mkt ?? EMPTY_MARKETING;
+    try {
+      if (!acqQ.data && m.acquisition_source_code)
+        await setCustomerAcquisition(d.customer.id, {
+          source_code: m.acquisition_source_code,
+          source_note: m.acquisition_source_note || null,
+          campaign_id: null,
+          first_contact_at: m.first_contact_at || null,
+        });
+      await setContractMarketing(contractId, {
+        source_code: m.source_code,
+        source_note: m.source_note || null,
+        campaign_id: m.campaign_id || null,
+      });
+    } catch (e) {
+      toast.error(`حُجز العقد دون البيانات التسويقية: ${e instanceof Error ? e.message : ''}`);
+    }
+  }
   /** التأجير بالساعة: الحجز القائم (book_hourly) ينشئ الحجز والطلب والعقد على القالب الموحّد. */
   async function saveHourly() {
     if (!d.customer || !d.worker || !rentalDocFields) return;
@@ -548,6 +590,7 @@ export default function ContractWizard() {
         worker: rentalDocFields.worker ? { ...rentalDocFields.worker, ...(doc ?? {}) } : null,
       });
       await scheduleDelivery(b.contract_id);
+      await saveMarketing(b.contract_id);
       clearDraft(uid);
       void qc.invalidateQueries({ queryKey: ['contracts'] });
       void qc.invalidateQueries({ queryKey: ['hourly'] });
@@ -599,6 +642,15 @@ export default function ContractWizard() {
       promotion_id: promotion?.id ?? null,
       promotion_code: d.promotionCode,
       package_id: activePkg?.id ?? null,
+      marketing: {
+        acquisition_source_code: acqQ.data ? null : d.mkt?.acquisition_source_code || null,
+        acquisition_source_note: acqQ.data ? null : d.mkt?.acquisition_source_note || null,
+        first_contact_at: acqQ.data ? null : d.mkt?.first_contact_at || null,
+        source_code: d.mkt?.source_code ?? '',
+        source_note: d.mkt?.source_note || null,
+        campaign_id: d.mkt?.campaign_id || null,
+        lead_id: quote?.lead_id && !quote.lead_id.startsWith('lead-') ? quote.lead_id : null,
+      },
       // Musaned contracts carry no in-system clauses — the paperwork is on مساند.
       clauses: musaned ? [] : rentalTpl ? legalClausesOf(rentalTpl.doc) : clausePreview,
       musaned_contract_no: musaned ? d.musanedNo.trim() || undefined : undefined,
@@ -1019,15 +1071,27 @@ export default function ContractWizard() {
         )}
 
         {current === 'customer' && (
-          <CustomerStep
-            selected={d.customer}
-            onSelect={(c) => set({ customer: c })}
-            suggested={
-              quote?.customer_name
-                ? { full_name: quote.customer_name, phone: quote.customer_phone ?? '' }
-                : null
-            }
-          />
+          <>
+            <CustomerStep
+              selected={d.customer}
+              onSelect={(c) =>
+                set({ customer: c, ...(c.id !== d.customer?.id ? { mkt: EMPTY_MARKETING } : {}) })
+              }
+              suggested={
+                quote?.customer_name
+                  ? { full_name: quote.customer_name, phone: quote.customer_phone ?? '' }
+                  : null
+              }
+            />
+            {d.customer && (
+              <MarketingSection
+                customerId={d.customer.id}
+                branch={d.branch}
+                value={d.mkt ?? EMPTY_MARKETING}
+                onChange={(m) => set({ mkt: m })}
+              />
+            )}
+          </>
         )}
 
         {current === 'pricing' && (
@@ -1286,16 +1350,36 @@ function CustomerStep({
     phone: suggested?.phone ?? '',
     city: '',
   });
+  // مصدر العميل يُسجَّل مع إنشائه من شاشة العقود (0098)
+  const { data: sourceList = [] } = useSources();
+  const [src, setSrc] = useState('');
+  const [srcNote, setSrcNote] = useState('');
+  const [firstContact, setFirstContact] = useState(new Date().toISOString().slice(0, 10));
+  const srcNeedsNote = noteRequired(sourceList, src);
+  const srcError = !src
+    ? 'حدّد مصدر العميل'
+    : srcNeedsNote && srcNote.trim().length < 2
+      ? 'وضّح المصدر'
+      : null;
   const { data: results = [] } = useCustomerSearch(q);
   const createCustomer = useCreateCustomer();
 
   function submitNew() {
-    createCustomer.mutate(form, {
-      onSuccess: (c) => {
-        onSelect(c);
-        setCreating(false);
+    if (srcError) return;
+    const acquisition = {
+      source_code: src,
+      source_note: srcNeedsNote ? srcNote.trim() : null,
+      first_contact_at: firstContact || null,
+    };
+    createCustomer.mutate(
+      { ...form, acquisition },
+      {
+        onSuccess: (c) => {
+          onSelect(c);
+          setCreating(false);
+        },
       },
-    });
+    );
   }
 
   return (
@@ -1347,8 +1431,38 @@ function CustomerStep({
             value={form.city}
             onChange={(e) => setForm({ ...form, city: e.target.value })}
           />
+          <Select
+            label="مصدر العميل (إلزامي)"
+            value={src}
+            onChange={(e) => setSrc(e.target.value)}
+            options={[
+              { value: '', label: 'كيف عرف العميل الشركة؟' },
+              ...sourceList
+                .filter((s) => s.is_active)
+                .map((s) => ({ value: s.code, label: s.name_ar })),
+            ]}
+          />
+          {srcNeedsNote && (
+            <Input
+              label="توضيح المصدر"
+              value={srcNote}
+              onChange={(e) => setSrcNote(e.target.value)}
+            />
+          )}
+          <Input
+            label="تاريخ أول تواصل"
+            type="date"
+            max={new Date().toISOString().slice(0, 10)}
+            value={firstContact}
+            onChange={(e) => setFirstContact(e.target.value)}
+          />
+          {srcError && <p className="text-[11px] text-gold-600 sm:col-span-2">{srcError}</p>}
           <div className="flex items-end gap-2">
-            <Button onClick={submitNew} loading={createCustomer.isPending}>
+            <Button
+              onClick={submitNew}
+              loading={createCustomer.isPending}
+              disabled={Boolean(srcError)}
+            >
               حفظ
             </Button>
             <Button variant="ghost" onClick={() => setCreating(false)}>

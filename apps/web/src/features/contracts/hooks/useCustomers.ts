@@ -17,7 +17,7 @@ export function useCustomerSearch(q: string) {
 export function useCreateCustomer() {
   const qc = useQueryClient();
   const toast = useToast();
-  return useMutation<CustomerLite, Error, { full_name: string; phone: string; city: string }>({
+  return useMutation<CustomerLite, Error, Parameters<typeof createCustomer>[0]>({
     mutationFn: (input) => createCustomer(input),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['customers'] });

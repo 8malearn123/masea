@@ -1,3 +1,5 @@
+import { useCampaigns } from '@/features/loyalty/hooks/useLoyalty';
+import { noteRequired } from '@/features/marketing/api/attribution.api';
 import { useState } from 'react';
 import { Button, Input, Modal, Select } from '@/shared/ui';
 import { useCreateLead, useUpdateLead } from '@/features/crm/hooks/useCrm';
@@ -55,7 +57,14 @@ export function LeadForm({
 
   const [fullName, setFullName] = useState(lead?.full_name ?? '');
   const [phone, setPhone] = useState(lead?.phone ?? '');
-  const [source, setSource] = useState<LeadSourceCode>(lead?.source_code ?? 'website');
+  const [source, setSource] = useState<LeadSourceCode>(lead?.source_code ?? '');
+  const [sourceNote, setSourceNote] = useState(lead?.source_note ?? '');
+  const [campaignId, setCampaignId] = useState(lead?.campaign_id ?? '');
+  const [firstContact, setFirstContact] = useState(
+    lead?.first_contact_at ?? new Date().toISOString().slice(0, 10),
+  );
+  const { data: campaigns = [] } = useCampaigns();
+  const needsNote = noteRequired(sources, source);
   const [service, setService] = useState<ServiceCode>(lead?.service_code ?? 'recruitment');
   const [stage, setStage] = useState<LeadStageCode>(lead?.stage_code ?? defaultStage);
   const [estValue, setEstValue] = useState(String(lead?.est_value ?? 0));
@@ -68,13 +77,18 @@ export function LeadForm({
     full_name: fullName,
     phone: phone.trim() ? phone.trim() : null,
     source_code: source,
+    source_note: needsNote ? sourceNote.trim() || null : null,
+    campaign_id: campaignId || null,
+    first_contact_at: firstContact || null,
     service_code: service,
     stage_code: stage,
     // حقل فارغ = 0؛ نص غير رقمي يُرفض برسالة بدل أن يصير 0 بصمت
     est_value: estValue.trim() === '' ? 0 : Number(estValue),
     notes: notes.trim() ? notes.trim() : null,
   };
-  const error = leadInputError(input);
+  const error =
+    leadInputError(input) ??
+    (needsNote && sourceNote.trim().length < 2 ? 'وضّح المصدر عند اختيار «أخرى»' : null);
   const fieldError = (needle: string) => (touched && error?.includes(needle) ? { error } : {});
 
   function submit() {
@@ -120,10 +134,35 @@ export function LeadForm({
           {...fieldError('القيمة')}
         />
         <Select
-          label="المصدر"
+          label="مصدر العميل"
           value={source}
           onChange={(e) => setSource(e.target.value as LeadSourceCode)}
-          options={sourceOpts}
+          options={[{ value: '', label: 'اختر المصدر…' }, ...sourceOpts]}
+          {...fieldError('مصدر')}
+        />
+        {needsNote && (
+          <Input
+            label="توضيح المصدر"
+            value={sourceNote}
+            onChange={(e) => setSourceNote(e.target.value)}
+            {...fieldError('وضّح')}
+          />
+        )}
+        <Select
+          label="الحملة التسويقية (إن وُجدت)"
+          value={campaignId}
+          onChange={(e) => setCampaignId(e.target.value)}
+          options={[
+            { value: '', label: 'بدون حملة' },
+            ...campaigns.map((c) => ({ value: c.id, label: c.name })),
+          ]}
+        />
+        <Input
+          label="تاريخ أول تواصل"
+          type="date"
+          value={firstContact}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setFirstContact(e.target.value)}
         />
         <Select
           label="الخدمة"

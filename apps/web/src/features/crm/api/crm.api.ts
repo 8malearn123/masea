@@ -8,6 +8,7 @@ import {
   type QuoteRecord,
 } from '@/shared/lib/quotesLedger';
 import { isDemoId, isDemoMode } from '@/shared/lib/demoBackend';
+import { demoRecordAcquisition } from '@/features/marketing/api/attribution.api';
 import { useAuth } from '@/store/auth';
 import { listEmployees } from '@/features/hr/api/hr.api';
 import { targetBoard } from '@/features/hr/api/performance.api';
@@ -235,7 +236,7 @@ export async function listLeads(): Promise<Lead[]> {
   const { data, error } = await supabase
     .from('leads')
     .select(
-      'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
+      'id, full_name, phone, source_code, source_note, campaign_id, first_contact_at, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
     )
     .order('updated_at', { ascending: false });
   if (error) throw new Error(`تعذّر تحميل العملاء المحتملين: ${error.message}`);
@@ -366,6 +367,9 @@ export interface LeadInput {
   full_name: string;
   phone: string | null;
   source_code: Lead['source_code'];
+  source_note?: string | null;
+  campaign_id?: string | null;
+  first_contact_at?: string | null;
   service_code: Lead['service_code'];
   stage_code: LeadStageCode;
   est_value: number;
@@ -380,7 +384,7 @@ export async function createLead(input: LeadInput): Promise<Lead> {
       .from('leads')
       .insert(clean)
       .select(
-        'id, full_name, phone, source_code, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
+        'id, full_name, phone, source_code, source_note, campaign_id, first_contact_at, service_code, stage_code, est_value, notes, customer_id, created_at, updated_at, city, email, branches(city)',
       )
       .single();
     if (error) throw new Error(leadError(error.message));
@@ -524,6 +528,14 @@ export async function convertLead(leadId: string): Promise<void> {
   if (lead) {
     lead.customer_id = lead.customer_id ?? `cust-${++seq}`;
     lead.updated_at = new Date().toISOString();
+    // المصدر ينتقل مع التحويل (مرآة convert_lead_to_customer — 0098)
+    if (lead.source_code)
+      demoRecordAcquisition(lead.customer_id, {
+        source_code: lead.source_code,
+        source_note: lead.source_note ?? null,
+        campaign_id: lead.campaign_id ?? null,
+        first_contact_at: lead.first_contact_at ?? lead.created_at.slice(0, 10),
+      });
   }
 }
 

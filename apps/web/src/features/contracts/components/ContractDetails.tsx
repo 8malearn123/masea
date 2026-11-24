@@ -1,3 +1,4 @@
+import { ContractMarketingCard } from '@/features/marketing/components/ContractMarketingCard';
 import { getQuoteRecord } from '@/shared/lib/quotesLedger';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -418,7 +419,7 @@ export default function ContractDetails() {
             <h2 className="mb-2 text-sm font-bold text-navy">بيانات العقد</h2>
             <Row label="العميل">{contract.customer_name ?? '—'}</Row>
             {contract.worker_name && <Row label="العاملة">{contract.worker_name}</Row>}
-            <Row label="مصدر العقد">
+            <Row label="طريقة الإنشاء">
               {musaned ? (
                 <span className="inline-flex items-center gap-1 text-navy">
                   <ExternalLink size={13} /> منصة مساند
@@ -492,6 +493,7 @@ export default function ContractDetails() {
             </Row>
             {contract.signed_at && <Row label="تاريخ التوقيع">{dateAr(contract.signed_at)}</Row>}
           </Card>
+          <ContractMarketingCard contract={contract} />
 
           {/* نسخة التجديد بمدة الأصل وسعره — لا تُعدَّل مدتها هنا (السعر مرتبط بالمدة) */}
           {contract.status === 'draft' &&

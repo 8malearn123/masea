@@ -18,7 +18,10 @@ export const leadInputSchema = z.object({
     .string()
     .regex(/^05\d{8}$/, 'الجوال بصيغة 05xxxxxxxx')
     .nullable(),
-  source_code: z.string().nullable(),
+  source_code: z.string({ error: 'حدّد مصدر العميل' }).min(1, 'حدّد مصدر العميل'),
+  source_note: z.string().max(120).nullable().optional(),
+  campaign_id: z.string().nullable().optional(),
+  first_contact_at: z.string().nullable().optional(),
   service_code: z.string().nullable(),
   stage_code: z.string().min(1, 'اختر المرحلة'),
   est_value: z
@@ -33,6 +36,9 @@ const clean = <T extends Partial<LeadInput>>(input: T): T => ({
   ...('full_name' in input ? { full_name: input.full_name?.trim() } : {}),
   ...('phone' in input ? { phone: normalizeSaudiPhone(input.phone) } : {}),
   ...('notes' in input ? { notes: input.notes?.trim() || null } : {}),
+  ...('source_note' in input
+    ? { source_note: (input.source_note as string | null | undefined)?.trim() || null }
+    : {}),
 });
 
 /** أول خطأ في بيانات العميل المحتمل، أو `null`. */
