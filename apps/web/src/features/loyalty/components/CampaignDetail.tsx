@@ -23,6 +23,7 @@ import { configValue } from '@/features/settings/api/settings.api';
 import { useCampaigns } from '@/features/loyalty/hooks/useLoyalty';
 import { CampaignResults } from '@/features/marketing/components/CampaignResults';
 import { OffersPanel } from '@/features/marketing/components/OffersPanel';
+import { CampaignExtendButton } from '@/features/marketing/components/CampaignExtendButton';
 import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
 
 const STATUS_TONE = {
@@ -190,6 +191,7 @@ function Body({ campaign }: { campaign: Campaign }) {
                 {CAMPAIGN_STATUS_LABEL[campaignStatus(campaign)]}
               </Badge>
               <Badge tone="navy">{CAMPAIGN_TYPE_LABEL[campaign.type]}</Badge>
+              <CampaignExtendButton campaign={campaign} />
             </div>
             {campaign.description && (
               <p className="mt-1 text-sm text-navy/80">{campaign.description}</p>

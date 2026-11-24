@@ -28,6 +28,7 @@ const ContractOpsDashboard = lazy(
 const TrialsBoard = lazy(() => import('@/features/contracts/components/TrialsBoard'));
 const MarketingAnalytics = lazy(() => import('@/features/marketing/components/MarketingAnalytics'));
 const TrialAcceptPage = lazy(() => import('@/features/contracts/components/TrialAcceptPage'));
+const WheelPlayPage = lazy(() => import('@/features/marketing/components/WheelPlayPage'));
 const PipelineBoard = lazy(() => import('@/features/crm/components/PipelineBoard'));
 const LeadCreatePage = lazy(() => import('@/features/crm/components/LeadCreatePage'));
 const LeadProfile = lazy(() => import('@/features/crm/components/LeadProfile'));
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="/order/track" element={<OrderTracking />} />
           <Route path="/order/request/:requestNo" element={<RequestSummary />} />
           <Route path="/t/:token" element={<TrialAcceptPage />} />
+          <Route path="/w/:token" element={<WheelPlayPage />} />
           <Route path="/login" element={<Login />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -127,6 +129,7 @@ export default function App() {
           <Route path="/order/track" element={<OrderTracking />} />
           <Route path="/order/request/:requestNo" element={<RequestSummary />} />
           <Route path="/t/:token" element={<TrialAcceptPage />} />
+          <Route path="/w/:token" element={<WheelPlayPage />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
 
           <Route element={<Layout />}>

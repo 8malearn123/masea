@@ -1,3 +1,4 @@
+import { WheelReportCard } from '@/features/marketing/components/WheelReportCard';
 import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
@@ -347,6 +348,14 @@ export default function LoyaltyBoard() {
             customerId={activeCustomerId}
             spinsLeft={acc?.spins_left ?? 0}
           />
+          <p className="mt-3 text-center text-[11px] text-purple">
+            لإرسال العجلة للعميل على جواله: ملف العميل ← «رابط عجلة الحظ للعميل».
+          </p>
+        </div>
+      )}
+      {tab === 'wheel' && (
+        <div className="mt-4">
+          <WheelReportCard />
         </div>
       )}
       {tab === 'marketing' && <MarketingView />}
