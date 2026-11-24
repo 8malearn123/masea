@@ -21,6 +21,15 @@ import { useServices } from '@/hooks/useServices';
 import { useConfig } from '@/features/settings/hooks/useSettings';
 import { configValue } from '@/features/settings/api/settings.api';
 import { useCampaigns } from '@/features/loyalty/hooks/useLoyalty';
+import { CampaignResults } from '@/features/marketing/components/CampaignResults';
+import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
+
+const STATUS_TONE = {
+  active: 'success',
+  scheduled: 'gold',
+  paused: 'neutral',
+  ended: 'neutral',
+} as const;
 import { useCustomerInsights } from '@/features/customers/hooks/useCrmCustomers';
 import {
   campaignPerformance,
@@ -176,8 +185,8 @@ function Body({ campaign }: { campaign: Campaign }) {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold text-navy">{campaign.name}</h1>
-              <Badge tone={campaign.is_active ? 'success' : 'neutral'}>
-                {campaign.is_active ? 'نشطة' : 'متوقّفة'}
+              <Badge tone={STATUS_TONE[campaignStatus(campaign)]}>
+                {CAMPAIGN_STATUS_LABEL[campaignStatus(campaign)]}
               </Badge>
               <Badge tone="navy">{CAMPAIGN_TYPE_LABEL[campaign.type]}</Badge>
             </div>
@@ -202,6 +211,8 @@ function Body({ campaign }: { campaign: Campaign }) {
           tone="success"
         />
       </div>
+
+      <CampaignResults campaign={campaign} />
 
       {canIssue && <IssueForm campaign={campaign} />}
 

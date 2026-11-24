@@ -144,6 +144,9 @@ export async function changeCustomerAcquisition(
 export function demoRecordAcquisition(customerId: string, a: Acquisition): void {
   if (!DEMO_ACQ[customerId]) DEMO_ACQ[customerId] = { ...a };
 }
+export function demoAcquisitions(): (Acquisition & { customer_id: string })[] {
+  return Object.entries(DEMO_ACQ).map(([customer_id, a]) => ({ customer_id, ...a }));
+}
 export function demoAcquisition(customerId: string): Acquisition | null {
   return DEMO_ACQ[customerId] ? { ...DEMO_ACQ[customerId] } : null;
 }

@@ -1,3 +1,4 @@
+import { CAMPAIGN_STATUS_LABEL, campaignStatus } from '@/features/marketing/api/analytics.api';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import {
@@ -80,7 +81,8 @@ function MarketingView() {
   const redeemed = txns
     .filter((t) => t.type === 'redeem')
     .reduce((s, t) => s + Math.abs(t.points), 0);
-  const activeCampaigns = campaigns.filter((c) => c.is_active).length;
+  // الحالة من التفعيل والتواريخ — الحملة المنتهية لا تُعدّ نشطة
+  const activeCampaigns = campaigns.filter((c) => campaignStatus(c) === 'active').length;
   const pendingCommission = referrals
     .filter((r) => !r.is_paid)
     .reduce((s, r) => s + r.commission_amount, 0);
@@ -147,8 +149,16 @@ function MarketingView() {
               <div className="flex items-center justify-between gap-2">
                 <p className="min-w-0 truncate text-sm font-bold text-navy">{c.name}</p>
                 <div className="flex shrink-0 items-center gap-1">
-                  <Badge tone={c.is_active ? 'success' : 'neutral'}>
-                    {c.is_active ? 'نشطة' : 'متوقّفة'}
+                  <Badge
+                    tone={
+                      campaignStatus(c) === 'active'
+                        ? 'success'
+                        : campaignStatus(c) === 'scheduled'
+                          ? 'gold'
+                          : 'neutral'
+                    }
+                  >
+                    {CAMPAIGN_STATUS_LABEL[campaignStatus(c)]}
                   </Badge>
                   {manage && (
                     <>

@@ -28,6 +28,17 @@ export interface Campaign {
   description?: string | null;
   /** الخدمات المشمولة بالعرض — فارغة = كل الخدمات (0066). */
   service_codes?: string[];
+  /** المنصة التسويقية (رمز من مصادر العملاء — 0099) */
+  platform_code?: string | null;
+  /** الفرع المستهدف (اسمه)؛ null = كل الفروع */
+  branch?: string | null;
+  /** الميزانية المعتمدة (ر.س) */
+  budget?: number | null;
+  /** المسؤول عن الحملة (حساب المستخدم) */
+  owner_id?: string | null;
+  owner_name?: string | null;
+  /** تمديد معتمد لنهاية الحملة (0099/0102) */
+  extended_until?: string | null;
 }
 
 /** بيانات إنشاء/تعديل حملة (المعرّف وعدّاد الاستخدام يُدارَان تلقائياً). */
