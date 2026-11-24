@@ -82,6 +82,28 @@ import { bookHourly, getHourlyConfig, listBusySlots } from '@/features/hourly/ap
 import { conflictFor, hoursBetween, validateHours } from '@/features/hourly/lib/hourly';
 import { useAuth } from '@/store/auth';
 import { WorkerPicker } from '@/features/contracts/components/WorkerPicker';
+import {
+  EMPTY_TRIAL,
+  TrialCustomerFields,
+  TrialDetailsFields,
+  TrialPricing,
+  TrialReview,
+  prefillFromCustomer,
+  trialEndDate,
+  trialFieldsOf,
+  trialPreviewData,
+  trialStepError,
+  trialTotals,
+  workerKindFor,
+  type TrialDraft,
+} from '@/features/contracts/components/TransferTrialSteps';
+import {
+  createTrialSchema,
+  createTrial,
+  issueTrialLink,
+  listTrialTerms,
+  trialLinkUrl,
+} from '@/features/contracts/api/trials.api';
 import { configValue, listConfig } from '@/features/settings/api/settings.api';
 import {
   createDriverTask,
@@ -120,6 +142,8 @@ interface Draft {
   installments?: number | undefined;
   /** البيانات التسويقية (0098) — لا تدخل نص العقد */
   mkt?: MarketingDraft | undefined;
+  /** نقل كفالة: بيانات عقد التجربة الرسمي (0106) */
+  trial?: TrialDraft | undefined;
 }
 
 const EMPTY: Draft = {
@@ -286,12 +310,18 @@ export default function ContractWizard() {
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   const acqQ = useCustomerAcquisition(d.customer?.id);
   const { data: sourceRows = [] } = useSources();
+  // نقل كفالة: يبدأ بعقد التجربة الرسمي (القالب المعتمد — 0106)، ونقل الخدمات نفسه عبر مساند
+  // بعد انتهاء التجربة من مسارها القائم — قبول عقد التجربة لا يغني عنه.
+  const isTrial = d.service === 'sponsorship_transfer';
+  const tr = d.trial ?? EMPTY_TRIAL;
+  const setTrial = (p: Partial<TrialDraft>) =>
+    setD((x) => ({ ...x, trial: { ...(x.trial ?? EMPTY_TRIAL), ...p } }));
   // مساند: العقد يُنشأ ويُوقّع على منصة مساند — لا بنود ولا توقيع داخلي.
-  const musaned = isMusaned(origins, d.service || null);
+  const musaned = !isTrial && isMusaned(origins, d.service || null);
   // 0094: الشهري واليومي وبالساعة على قالب «عقد تأجير خدمات عمالية» الموحّد
   const isRental = isRentalService(d.service);
   const isHourly = d.service === 'hourly_rental';
-  const needsWorker = d.service === 'recruitment' || isRental;
+  const needsWorker = d.service === 'recruitment' || isRental || isTrial;
   const hours = isHourly ? hoursBetween(d.startTime, d.endTime) : 0;
   const { data: hourlyCfg } = useQuery({
     queryKey: ['hourly', 'config'],
@@ -329,9 +359,11 @@ export default function ContractWizard() {
       : activePkg
         ? Math.max(activePkg.duration_count ?? 1, 1)
         : d.quantity;
-  const endDate = isHourly
-    ? d.start_date || null
-    : contractEndDate(d.service || null, d.start_date, termCount);
+  const endDate = isTrial
+    ? trialEndDate(d.start_date, tr.days)
+    : isHourly
+      ? d.start_date || null
+      : contractEndDate(d.service || null, d.start_date, termCount);
   const termLabel = contractTermLabel({
     service_code: d.service || null,
     start_date: d.start_date,
@@ -465,13 +497,64 @@ export default function ContractWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild on the inputs that change the text
   }, [current, rentalTpl, JSON.stringify(rentalSource)]);
 
+  // عقد التجربة: القالب المعتمد، الحد الأقصى للأيام، الإجماليات، المعاينة
+  const trialTerms = useQuery({
+    queryKey: ['contracts', 'trial-terms'],
+    queryFn: listTrialTerms,
+    enabled: isTrial,
+  });
+  const trialTpl = trialTerms.data?.find((x) => x.status === 'approved')?.doc ?? null;
+  const { data: cfgRows = [] } = useQuery({
+    queryKey: ['settings', 'config'],
+    queryFn: listConfig,
+    enabled: isTrial,
+  });
+  const trialMaxDays = configValue(cfgRows, 'trial_max_days', 90);
+  const trialTot = isTrial ? trialTotals(tr, pricingCfg) : null;
+  const trialData = useMemo(
+    () =>
+      trialPreviewData(tr, {
+        customerName: d.customer?.full_name ?? '',
+        workerName: d.worker?.full_name ?? '',
+        workerNationality: d.worker?.nationality ?? '',
+        totals: trialTot,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recompute on the draft's text
+    [
+      JSON.stringify(tr),
+      d.customer?.full_name,
+      d.worker?.full_name,
+      d.worker?.nationality,
+      JSON.stringify(trialTot),
+    ],
+  );
+  // بيانات العميل في القالب تُكمَّل من ملفه عند اختياره (لا تستبدل ما أُدخل)
+  useEffect(() => {
+    if (!isTrial || !d.customer) return;
+    const p = prefillFromCustomer(d.trial ?? EMPTY_TRIAL, d.customer);
+    if (Object.keys(p).length) setTrial(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on customer change only
+  }, [isTrial, d.customer?.id]);
+
   function stepError(): string | null {
     if (current === 'service') {
       if (!d.service) return 'اختر نوع الخدمة';
+      if (isTrial && trialTerms.isLoading) return 'جارٍ تحميل قالب عقد التجربة…';
+      if (isTrial && !trialTpl)
+        return 'قالب «عقد تجربة» المعتمد غير متاح — لا يُنشأ عقد تجربة دونه';
       if (isRental && !rentalTpl) {
         return 'قالب «عقد تأجير خدمات عمالية» لم يُعتمد بعد — لا يُنشأ عقد تأجير قبل اعتماده';
       }
       return null;
+    }
+    if (isTrial && (current === 'details' || current === 'pricing')) {
+      return trialStepError(current, tr, {
+        hasWorker: Boolean(d.worker),
+        receipt: d.start_date,
+        branch: d.branch,
+        maxDays: trialMaxDays,
+        totals: trialTot,
+      });
     }
     if (current === 'details') {
       if (needsWorker && !d.worker) return 'اختر العاملة';
@@ -495,6 +578,16 @@ export default function ContractWizard() {
     if (current === 'customer') {
       if (!d.customer) return 'اختر العميل';
       if (acqQ.isLoading) return 'جارٍ تحميل مصدر العميل…';
+      if (isTrial) {
+        const e = trialStepError('customer', tr, {
+          hasWorker: true,
+          receipt: d.start_date,
+          branch: d.branch,
+          maxDays: trialMaxDays,
+          totals: trialTot,
+        });
+        if (e) return e;
+      }
       return marketingError(d.mkt ?? EMPTY_MARKETING, acqQ.data ?? null, sourceRows);
     }
     if (current === 'pricing') {
@@ -514,6 +607,60 @@ export default function ContractWizard() {
 
   function pickWorker(w: WorkerProfile) {
     set({ worker: w, nationality: w.nationality, profession: w.profession });
+    if (isTrial && !tr.workerKind) setTrial({ workerKind: workerKindFor(w.profession) });
+  }
+
+  /** نقل كفالة: حفظ عقد التجربة (create_trial_agreement مع حقول القالب) ثم إرساله للقبول اختيارياً. */
+  const [sentLink, setSentLink] = useState<{
+    url: string;
+    expires: string;
+    contractId: string;
+  } | null>(null);
+  async function saveTrial(sendLink: boolean) {
+    if (!d.customer || !d.worker) return;
+    const parsed = createTrialSchema.safeParse({
+      customerId: d.customer.id,
+      customerName: d.customer.full_name,
+      workerId: d.worker.id,
+      workerName: d.worker.full_name,
+      workerNationality: d.worker.nationality,
+      branch: d.branch,
+      price: Number(tr.price),
+      days: tr.days,
+      receiptDate: d.start_date,
+      fields: trialFieldsOf(tr),
+    });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? 'بيانات عقد التجربة غير مكتملة');
+      return;
+    }
+    setBooking(true);
+    try {
+      const t = await createTrial(parsed.data);
+      await saveMarketing(t.contract_id);
+      clearDraft(uid);
+      void qc.invalidateQueries({ queryKey: ['contracts'] });
+      void qc.invalidateQueries({ queryKey: ['trials'] });
+      if (sendLink) {
+        try {
+          const l = await issueTrialLink(t);
+          setSentLink({
+            url: trialLinkUrl(l.token),
+            expires: l.expires_at,
+            contractId: t.contract_id,
+          });
+          toast.success('حُفظ عقد التجربة وأُنشئ رابط القبول');
+          return;
+        } catch (e) {
+          toast.error(`حُفظ العقد دون رابط القبول: ${e instanceof Error ? e.message : ''}`);
+        }
+      } else toast.success('حُفظ عقد التجربة — يُرسل للعميل للقبول من صفحة العقد');
+      navigate(`/contracts/${t.contract_id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'تعذّر حفظ عقد التجربة');
+    } finally {
+      setBooking(false);
+    }
   }
 
   const [booking, setBooking] = useState(false);
@@ -798,6 +945,50 @@ export default function ContractWizard() {
         </Card>
       )}
 
+      {sentLink && (
+        <Modal
+          open
+          onClose={() => navigate(`/contracts/${sentLink.contractId}`)}
+          title="رابط قبول عقد التجربة"
+        >
+          <div className="space-y-3 text-sm">
+            <p className="text-navy-900">
+              أرسل الرابط للعميل — يراجع العقد ويقبله بعد التحقق من آخر 4 أرقام من هويته وجواله.
+              يظهر الرابط مرة واحدة.
+            </p>
+            <div className="flex items-center gap-2 rounded-xl bg-navy-50 p-2">
+              <span
+                className="num min-w-0 flex-1 truncate text-xs"
+                dir="ltr"
+                data-testid="trial-link"
+              >
+                {sentLink.url}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  void navigator.clipboard
+                    ?.writeText(sentLink.url)
+                    .then(() => toast.success('نُسخ الرابط'))
+                }
+              >
+                نسخ
+              </Button>
+            </div>
+            <p className="text-[11px] text-purple">
+              صالح حتى <span className="num">{dateAr(sentLink.expires)}</span>. قبول عقد التجربة لا
+              يُعد نقلاً للخدمات ولا يغني عن إجراءات منصة مساند.
+            </p>
+            <div className="flex justify-end">
+              <Button onClick={() => navigate(`/contracts/${sentLink.contractId}`)}>
+                فتح العقد
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {templateOpen && (
         <Modal open onClose={() => setTemplateOpen(false)} title="قالب عقد التأجير" size="xl">
           <RentalTemplatePanel />
@@ -828,6 +1019,11 @@ export default function ContractWizard() {
                     على قالب «عقد تأجير خدمات عمالية» المعتمد
                   </span>
                 )}
+                {code === 'sponsorship_transfer' && (
+                  <span className="mt-1 block text-[11px] text-purple">
+                    يبدأ بعقد التجربة المعتمد، ونقل الخدمات بعدها عبر منصة مساند
+                  </span>
+                )}
               </button>
             ))}
             {isRental && !rentalTpl && (
@@ -851,7 +1047,28 @@ export default function ContractWizard() {
           </div>
         )}
 
-        {current === 'details' && (
+        {current === 'details' && isTrial && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TrialDetailsFields
+              t={tr}
+              set={setTrial}
+              receipt={d.start_date}
+              onReceipt={(v) => set({ start_date: v, worker: null })}
+              workerNationality={d.worker?.nationality ?? null}
+              maxDays={trialMaxDays}
+            />
+            <Select
+              label="الفرع"
+              value={d.branch}
+              onChange={(e) => set({ branch: e.target.value })}
+              options={branchOptions.map((b) => ({ value: b, label: b }))}
+              placeholder="اختر الفرع"
+              disabled={Boolean(ownBranch)}
+            />
+          </div>
+        )}
+
+        {current === 'details' && !isTrial && (
           <div className="grid gap-4 sm:grid-cols-2">
             {d.worker && (
               <div className="rounded-xl bg-navy-50 p-3 text-sm sm:col-span-2">
@@ -1089,6 +1306,9 @@ export default function ContractWizard() {
                   : null
               }
             />
+            {d.customer && isTrial && (
+              <TrialCustomerFields t={tr} set={setTrial} customer={d.customer} />
+            )}
             {d.customer && (
               <MarketingSection
                 customerId={d.customer.id}
@@ -1100,7 +1320,11 @@ export default function ContractWizard() {
           </>
         )}
 
-        {current === 'pricing' && (
+        {current === 'pricing' && isTrial && (
+          <TrialPricing t={tr} set={setTrial} totals={trialTot} />
+        )}
+
+        {current === 'pricing' && !isTrial && (
           <div className="grid gap-4 lg:grid-cols-2">
             <div>
               <PromotionPicker
@@ -1162,7 +1386,9 @@ export default function ContractWizard() {
           </div>
         )}
 
-        {current === 'review' && (
+        {current === 'review' && isTrial && <TrialReview template={trialTpl} data={trialData} />}
+
+        {current === 'review' && !isTrial && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <Card className="bg-navy-50">
@@ -1281,6 +1507,20 @@ export default function ContractWizard() {
             <Button onClick={() => !err && setStep((s) => s + 1)} disabled={Boolean(err)}>
               التالي
             </Button>
+          ) : isTrial ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void saveTrial(false)}
+                loading={booking}
+                disabled={!trialTpl}
+              >
+                <Check size={16} /> حفظ عقد التجربة
+              </Button>
+              <Button onClick={() => void saveTrial(true)} loading={booking} disabled={!trialTpl}>
+                <Check size={16} /> حفظ وإرسال للعميل للقبول
+              </Button>
+            </div>
           ) : (
             <Button
               onClick={save}

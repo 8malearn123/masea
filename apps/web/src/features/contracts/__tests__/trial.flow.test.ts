@@ -51,8 +51,10 @@ async function approvedTerms() {
 }
 
 describe('transfer trial (demo mirror of 0092)', () => {
-  it('requires approved terms and respects the 90-day limit', async () => {
-    await expect(createTrial(input)).rejects.toThrow('شروط تجربة معتمدة');
+  it('the official trial contract is the approved terms (0106) and the 90-day limit holds', async () => {
+    const official = (await listTrialTerms()).find((x) => x.status === 'approved');
+    expect(official?.doc?.layout).toBe('trial_contract_black_v1');
+    expect(official?.clauses).toHaveLength(10);
     await approvedTerms();
     await expect(createTrial({ ...input, days: 91 })).rejects.toThrow('المادة التاسعة');
   });

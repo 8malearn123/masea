@@ -11,6 +11,12 @@ import { useAuth } from '@/store/auth';
 import { configValue, listConfig } from '@/features/settings/api/settings.api';
 import { demoLogOp, listLookups } from '@/features/contracts/api/contractOps.api';
 import { createTrialContract, demoMutateContract } from '@/features/contracts/api/contracts.api';
+import {
+  TRIAL_CONTRACT_V1,
+  isTrialContractDoc,
+  type TrialDocFields,
+  type TrialTemplateDoc,
+} from '@/features/contracts/lib/trialContract/template';
 
 export type TrialStatus =
   | 'draft'
@@ -50,6 +56,8 @@ export interface TrialTerms {
   status: 'draft' | 'pending_review' | 'approved' | 'retired';
   content_sha256: string | null;
   approved_at: string | null;
+  /** القالب الكامل (عقد التجربة الرسمي — 0106) */
+  doc?: TrialTemplateDoc | undefined;
 }
 
 export interface Trial {
@@ -67,7 +75,9 @@ export interface Trial {
   trial_days: number;
   receipt_date: string;
   end_date: string;
-  terms_snapshot: { title: string; version: number; clauses: string[] };
+  terms_snapshot: { title: string; version: number; clauses: string[] } | TrialTemplateDoc;
+  /** بيانات عقد التجربة غير الموجودة في الجداول (0106) */
+  document_fields?: Partial<TrialDocFields> | undefined;
   regulatory_checklist: Record<string, ChecklistItem>;
   status: TrialStatus;
   accepted_at: string | null;
@@ -92,6 +102,13 @@ export interface TrialDocument {
   terms_version: number;
   terms: string[];
   notice: string;
+  /** 0106 — عقد التجربة الرسمي */
+  contract_no?: string | null;
+  issued_on?: string | null;
+  customer_national_id?: string | null;
+  customer_phone?: string | null;
+  template?: unknown;
+  fields?: Partial<TrialDocFields> | null;
 }
 export interface TrialPublicView extends TrialDocument {
   status: TrialStatus;
@@ -130,6 +147,9 @@ interface DemoCustomer {
   name: string;
   national_id: string;
   phone: string;
+  /** رقم عقد التجربة وجنسية العاملة (العرض التجريبي) */
+  contract_no?: string;
+  worker_nationality?: string;
 }
 
 let termsVersions: TrialTerms[] = [];
@@ -161,6 +181,8 @@ function load(): void {
     ({ termsVersions, trials, links, acceptances, demoCustomers, seq } = d);
   } catch {
     /* storage unavailable — keep the in-memory store */
+  } finally {
+    ensureOfficialTemplate();
   }
 }
 function save(): void {
@@ -173,6 +195,23 @@ function save(): void {
   } catch {
     /* storage unavailable — the in-memory store still works in this tab */
   }
+}
+
+/** مرآة 0106: ملف الشركة هو النسخة المعتمدة من شروط التجربة (السابقة تُوقف). */
+function ensureOfficialTemplate(): void {
+  if (termsVersions.some((t) => isTrialContractDoc(t.doc))) return;
+  for (const t of termsVersions) if (t.status === 'approved') t.status = 'retired';
+  const version = Math.max(0, ...termsVersions.map((t) => t.version)) + 1;
+  termsVersions.unshift({
+    id: `tt-${version}`,
+    version,
+    title: TRIAL_CONTRACT_V1.title,
+    clauses: [...TRIAL_CONTRACT_V1.clauses],
+    status: 'approved',
+    content_sha256: null,
+    approved_at: nowIso(),
+    doc: { ...TRIAL_CONTRACT_V1, version },
+  });
 }
 
 export function resetTrialsDemo(): void {
@@ -237,6 +276,7 @@ export async function listTrialTerms(): Promise<TrialTerms[]> {
   return (data ?? []).map((r) => {
     const doc = (r.doc ?? {}) as { title?: string; clauses?: string[] };
     return {
+      ...(isTrialContractDoc(r.doc) ? { doc: r.doc } : {}),
       id: r.id as string,
       version: r.version as number,
       title: doc.title ?? (r.name as string),
@@ -348,12 +388,40 @@ export const createTrialSchema = z.object({
   customerPhone: z.string().nullable().optional(),
   workerId: z.string().min(1, { message: 'اختر العاملة' }),
   workerName: z.string().nullable().optional(),
+  /** جنسية العاملة/السائق (العرض التجريبي فقط — مع قاعدة البيانات من ملفها) */
+  workerNationality: z.string().nullable().optional(),
   branch: z.string().min(1, { message: 'اختر الفرع' }),
   price: z.number().positive({ message: 'حدّد سعر التجربة المتفق عليه' }),
   days: z.number().int().positive({ message: 'حدّد عدد أيام التجربة' }),
   receiptDate: z.string().min(1, { message: 'حدّد تاريخ استلام العاملة' }),
+  /** بيانات عقد التجربة الرسمي (نقل كفالة من «عقد جديد» — 0106) */
+  fields: z
+    .object({
+      customer_nationality: z.string().trim().min(1, { message: 'حدّد جنسية العميل' }),
+      id_kind: z.enum(['بطاقة', 'إقامة']),
+      id_number: z
+        .string()
+        .trim()
+        .regex(/^[12]\d{9}$/, { message: 'رقم الهوية/الإقامة 10 أرقام يبدأ بـ 1 أو 2' }),
+      id_issue_date: z.string().trim().min(1, { message: 'حدّد تاريخ إصدار الهوية' }),
+      id_issue_place: z.string().trim().min(1, { message: 'حدّد جهة إصدار الهوية' }),
+      worker_kind: z.enum(['العاملة', 'السائق']),
+      sponsor_name: z.string().trim().min(3, { message: 'اكتب اسم الكفيل الحالي' }),
+      city: z.string().trim().min(2, { message: 'حدّد مدينة العمل' }),
+      daily_wage: z.number().positive({ message: 'حدّد أجر اليوم أثناء التجربة' }),
+      paid_amount: z.number().min(0, { message: 'المبلغ المدفوع لا يكون سالباً' }),
+      address: z.string().trim().min(3, { message: 'اكتب عنوان العميل' }),
+      job: z.string().trim().min(2, { message: 'اكتب عمل العميل' }),
+      mobile: z
+        .string()
+        .trim()
+        .regex(/^05\d{8}$/, { message: 'رقم الجوال يبدأ بـ 05 ومكوّن من 10 أرقام' }),
+      customer_no: z.string().trim().nullable().optional(),
+    })
+    .optional(),
 });
 export type CreateTrialInput = z.infer<typeof createTrialSchema>;
+export type TrialFieldsInput = NonNullable<CreateTrialInput['fields']>;
 
 export async function createTrial(input: CreateTrialInput): Promise<Trial> {
   load();
@@ -366,6 +434,7 @@ export async function createTrial(input: CreateTrialInput): Promise<Trial> {
       p_price: p.price,
       p_days: p.days,
       p_receipt: p.receiptDate,
+      ...(p.fields ? { p_fields: p.fields } : {}),
     });
   }
   const cfg = await listConfig();
@@ -374,6 +443,11 @@ export async function createTrial(input: CreateTrialInput): Promise<Trial> {
     fail(`مدة التجربة بين يوم و${max} يوماً (لائحة العمالة المنزلية — المادة التاسعة)`);
   const terms = termsVersions.find((t) => t.status === 'approved');
   if (!terms) fail('لا توجد شروط تجربة معتمدة — تكتبها الشركة وتعتمدها من الإعدادات أولاً');
+  const priorCustomer = Object.entries(demoCustomers).find(
+    ([id]) => trials.find((x) => x.id === id)?.customer_id === p.customerId,
+  )?.[1];
+  if (p.fields && priorCustomer?.national_id && priorCustomer.national_id !== p.fields.id_number)
+    fail('رقم الهوية يختلف عن ملف العميل — صحّحه من ملف العميل');
   const end = addDays(p.receiptDate, p.days - 1);
   const contract = createTrialContract({
     customer_id: p.customerId,
@@ -401,7 +475,27 @@ export async function createTrial(input: CreateTrialInput): Promise<Trial> {
     trial_days: p.days,
     receipt_date: p.receiptDate,
     end_date: end,
-    terms_snapshot: { title: terms.title, version: terms.version, clauses: [...terms.clauses] },
+    terms_snapshot: terms.doc
+      ? { ...terms.doc }
+      : { title: terms.title, version: terms.version, clauses: [...terms.clauses] },
+    ...(p.fields
+      ? {
+          document_fields: {
+            customer_nationality: p.fields.customer_nationality,
+            id_kind: p.fields.id_kind,
+            id_issue_date: p.fields.id_issue_date,
+            id_issue_place: p.fields.id_issue_place,
+            worker_kind: p.fields.worker_kind,
+            sponsor_name: p.fields.sponsor_name,
+            city: p.fields.city,
+            daily_wage: p.fields.daily_wage,
+            paid_amount: p.fields.paid_amount,
+            address: p.fields.address,
+            job: p.fields.job,
+            customer_no: p.fields.customer_no || null,
+          },
+        }
+      : {}),
     regulatory_checklist: {},
     status: 'draft',
     accepted_at: null,
@@ -410,10 +504,16 @@ export async function createTrial(input: CreateTrialInput): Promise<Trial> {
     created_at: nowIso(),
   };
   trials.unshift(row);
+  if (p.fields && p.fields.paid_amount > contract.total_amount) {
+    trials.shift();
+    fail('المبلغ المدفوع أكبر من المبلغ الإجمالي');
+  }
   demoCustomers[row.id] = {
     name: p.customerName ?? '',
-    national_id: p.customerNationalId ?? '',
-    phone: p.customerPhone ?? '',
+    national_id: p.fields?.id_number ?? p.customerNationalId ?? '',
+    phone: p.fields?.mobile ?? p.customerPhone ?? '',
+    contract_no: contract.contract_no ?? '',
+    worker_nationality: p.workerNationality ?? '',
   };
   demoLogOp(contract.id, 'trial', row.id, 'create', null, 'draft', null);
   save();
@@ -464,7 +564,7 @@ function demoDocument(t: Trial): TrialDocument {
     trial_no: t.trial_no,
     customer_name: t.customer_name ?? '',
     worker_name: t.worker_name ?? '',
-    nationality: '',
+    nationality: demoCustomers[t.id]?.worker_nationality ?? '',
     profession: '',
     price: t.price,
     vat_amount: t.vat_amount,
@@ -476,7 +576,26 @@ function demoDocument(t: Trial): TrialDocument {
     terms_version: t.terms_snapshot.version,
     terms: t.terms_snapshot.clauses,
     notice: 'قبول هذه التجربة لا يُعد عقد نقل خدمات ولا يغني عن إجراءات منصة مساند الرسمية.',
+    contract_no: demoCustomers[t.id]?.contract_no ?? null,
+    issued_on: t.created_at,
+    customer_national_id: demoCustomers[t.id]?.national_id ?? null,
+    customer_phone: demoCustomers[t.id]?.phone ?? null,
+    template: t.terms_snapshot,
+    fields: t.document_fields ?? null,
   };
+}
+
+/** يُخفي إلا آخر 4 أرقام (الصفحة العامة — مرآة trial_public_view). */
+const maskTail = (v: string | null | undefined) =>
+  v && v.length > 4 ? '•'.repeat(v.length - 4) + v.slice(-4) : (v ?? null);
+
+/** مستند عقد التجربة كاملاً للموظف (معاينة/طباعة) — trial_document_for. */
+export async function getTrialDocument(trialId: string): Promise<TrialDocument> {
+  load();
+  if (!demo() && !isDemoId(trialId))
+    return rpc<TrialDocument>('trial_document_for', { p_trial: trialId });
+  const t = trials.find((x) => x.id === trialId) ?? fail('التجربة غير موجودة');
+  return demoDocument(t);
 }
 
 /** PUBLIC — opening the link only reads; it never accepts. */
@@ -487,8 +606,11 @@ export async function viewTrialByToken(token: string): Promise<TrialPublicView> 
   const t = trials.find((x) => x.id === l.trial_id) ?? fail('الرابط غير صحيح');
   const cfg = await listConfig();
   const maxAttempts = configValue(cfg, 'trial_link_max_attempts', 5);
+  const docView = demoDocument(t);
   return {
-    ...demoDocument(t),
+    ...docView,
+    customer_national_id: maskTail(docView.customer_national_id),
+    customer_phone: maskTail(docView.customer_phone),
     status: t.status,
     link_state: l.used_at
       ? 'used'
