@@ -25,6 +25,9 @@ import {
   updateRefundDetails,
 } from '@/features/contracts/api/contractOps.api';
 
+/** صورة توقيع بصيغة PNG (يتحقق منها التوقيع على الخادم — 0107). */
+const SIG_PNG = `data:image/png;base64,${'A'.repeat(300)}`;
+
 function as(role: AppRole): void {
   const acc = DEMO_ACCOUNTS.find((a) => a.role === role);
   if (!acc) throw new Error(`no demo ${role}`);
@@ -58,8 +61,8 @@ async function deliveredContract() {
   await transitionContract(c.id, 'approved');
   await transitionContract(c.id, 'awaiting_signature');
   await signContract(c.id, {
-    customer: 'data:,',
-    company: 'data:,',
+    customer: SIG_PNG,
+    company: SIG_PNG,
     customerName: 'محمد الأحمدي',
     nationalId: '1012345678',
     ipAddress: '10.0.0.1',
@@ -212,8 +215,8 @@ describe('return → settlement → refund (demo mirror of 0090)', () => {
     await transitionContract(c.id, 'approved');
     await transitionContract(c.id, 'awaiting_signature');
     await signContract(c.id, {
-      customer: 'data:,',
-      company: 'data:,',
+      customer: SIG_PNG,
+      company: SIG_PNG,
       customerName: 'فهد العنزي',
       nationalId: '1012345679',
       ipAddress: '10.0.0.2',

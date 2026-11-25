@@ -14,6 +14,7 @@ import {
   renewContract,
   setMusanedNo,
   signContract,
+  signCaptured,
   transitionContract,
   updateContractTerm,
   updateDraft,
@@ -268,6 +269,32 @@ export function useSignContract(id: string) {
       void qc.invalidateQueries({ queryKey: contractKeys.signatures(id) });
       void qc.invalidateQueries({ queryKey: LIST_KEY });
       toast.success('تم توقيع العقد');
+    },
+    onError: (e) => toast.error(e.message || 'تعذّر حفظ التوقيع'),
+  });
+}
+
+/**
+ * توقيع ما التُقط في نموذج التوقيع (طرف أو طرفان) — الحالة والسجل من الخادم بعد الحفظ.
+ */
+export function useSignContractParties(id: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation<
+    Awaited<ReturnType<typeof signCaptured>>,
+    Error,
+    Parameters<typeof signCaptured>[1]
+  >({
+    mutationFn: (c) => signCaptured(id, c),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: contractKeys.detail(id) });
+      void qc.invalidateQueries({ queryKey: contractKeys.history(id) });
+      void qc.invalidateQueries({ queryKey: contractKeys.signatures(id) });
+      void qc.invalidateQueries({ queryKey: LIST_KEY });
+      void qc.invalidateQueries({ queryKey: ['trials'] });
+      toast.success(
+        r?.complete ? 'اكتمل توقيع الطرفين — العقد موقّع' : 'حُفظ التوقيع — بانتظار الطرف الآخر',
+      );
     },
     onError: (e) => toast.error(e.message || 'تعذّر حفظ التوقيع'),
   });

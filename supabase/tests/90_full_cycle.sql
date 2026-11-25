@@ -76,11 +76,12 @@ select pg_temp.login('a0000000-0000-0000-0000-000000000002');
 select transition_contract((select id from t_c), 'pending_approval');
 select transition_contract((select id from t_c), 'approved');
 select transition_contract((select id from t_c), 'awaiting_signature');
-select pg_temp.logout();
-insert into contract_signatures (contract_id, signer_type, signer_name)
-select id, 'customer', 'عبير آل حيدر' from t_c union all select id, 'company', 'فهد آل منصور' from t_c;
-select pg_temp.login('a0000000-0000-0000-0000-000000000002');
-select transition_contract((select id from t_c), 'signed');
+-- 0107: both parties sign through the server function → signed
+select sign_contract_party((select id from t_c), 'customer', 'عبير آل حيدر',
+  coalesce((select regexp_replace(c.national_id, '\D', '', 'g') from customers c
+             where c.id = (select customer_id from contracts where id = (select id from t_c))
+               and nullif(c.national_id, '') is not null), '1000000001'), 'data:image/png;base64,' || repeat('A', 300));
+select sign_contract_party((select id from t_c), 'company', null, null, 'data:image/png;base64,' || repeat('B', 300));
 select transition_contract((select id from t_c), 'active');
 select pg_temp.logout();
 
@@ -114,11 +115,12 @@ grant select on t_h to authenticated;
 select transition_contract((select id from t_h), 'pending_approval');
 select transition_contract((select id from t_h), 'approved');
 select transition_contract((select id from t_h), 'awaiting_signature');
-select pg_temp.logout();
-insert into contract_signatures (contract_id, signer_type, signer_name)
-select id, 'customer', 'عبير آل حيدر' from t_h union all select id, 'company', 'فهد آل منصور' from t_h;
-select pg_temp.login('a0000000-0000-0000-0000-000000000002');
-select transition_contract((select id from t_h), 'signed');
+-- 0107: both parties sign through the server function → signed
+select sign_contract_party((select id from t_h), 'customer', 'عبير آل حيدر',
+  coalesce((select regexp_replace(c.national_id, '\D', '', 'g') from customers c
+             where c.id = (select customer_id from contracts where id = (select id from t_h))
+               and nullif(c.national_id, '') is not null), '1000000001'), 'data:image/png;base64,' || repeat('A', 300));
+select sign_contract_party((select id from t_h), 'company', null, null, 'data:image/png;base64,' || repeat('B', 300));
 select pg_temp.check((select purchases from customer_insights where id = (select customer_id from t_c)) = 2,
   'second purchase (hourly) — the customer is now a repeat customer');
 select pg_temp.check((select count(*) from sales where contract_id in (select id from t_c union select id from t_h)) = 2,

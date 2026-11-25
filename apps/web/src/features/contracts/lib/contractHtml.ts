@@ -1,3 +1,9 @@
+import {
+  ESIG_CSS,
+  fingerprintLine,
+  signerCaption,
+  type SignedPartyView,
+} from '@/features/contracts/lib/signedParties';
 import { sar } from '@/shared/lib/format';
 import { branchLabel, SERVICE_LABEL, type ContractListItem } from '@/features/contracts/types';
 import { CONTRACT_STATUS_LABEL } from '@/features/contracts/lib/contractState';
@@ -17,8 +23,14 @@ import { contractTermLabel, contractTermUnit } from '@/features/contracts/lib/co
 export function buildContractHtml(
   contract: ContractListItem,
   clauses: string[],
-  opts: { autoPrint?: boolean } = {},
+  opts: {
+    autoPrint?: boolean;
+    /** 0107: توقيعات الطرفين في نهاية العقد */
+    signers?: { customer: SignedPartyView | null; company: SignedPartyView | null };
+  } = {},
 ): string {
+  const sigImg = (p: SignedPartyView | null | undefined) =>
+    `<div class="esig-box">${p?.image ? `<img src="${escapeHtml(p.image)}" alt="" />` : ''}</div>`;
   const rows = clauses
     .map((c, i) => `<li><span class="n">${i + 1}.</span> ${escapeHtml(c)}</li>`)
     .join('');
@@ -54,8 +66,11 @@ export function buildContractHtml(
   .n { color: #C8970A; font-weight: 700; }
   .totals { margin-top: 12px; font-size: 14px; }
   .totals .t { font-weight: 700; color: #C8970A; }
-  .sign { display: flex; justify-content: space-between; margin-top: 56px; }
-  .sign div { width: 40%; text-align: center; border-top: 1px solid #120E45; padding-top: 8px; font-size: 12px; }
+  .sign { display: flex; justify-content: space-between; margin-top: 28px; }
+  .sign > div { width: 40%; text-align: center; font-size: 12px; }
+  .esig-box { height: 22mm; border-bottom: 1px solid #120E45; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 8px; }
+  .esig-box img { max-height: 20mm; max-width: 100%; }
+  ${ESIG_CSS}
   footer { margin-top: 48px; border-top: 1px solid #E3E1ED; padding-top: 12px; color: #564E85; font-size: 11px; text-align: center; }
   @media print { body { padding: 24px; } }
 </style>
@@ -95,9 +110,10 @@ export function buildContractHtml(
   </div>
 
   <div class="sign">
-    <div>توقيع الطرف الثاني (العميل)</div>
-    <div>توقيع الطرف الأول (ماسية الشرق)</div>
+    <div>${sigImg(opts.signers?.customer)}توقيع الطرف الثاني (العميل)${signerCaption(opts.signers?.customer ?? null)}</div>
+    <div>${sigImg(opts.signers?.company)}توقيع الطرف الأول (ماسية الشرق)${signerCaption(opts.signers?.company ?? null)}</div>
   </div>
+  ${fingerprintLine([opts.signers?.customer ?? null, opts.signers?.company ?? null])}
 
   <footer>ماسية الشرق للاستقدام · من تطوير قمة كود · QUO-000105</footer>
   ${opts.autoPrint === false ? '' : '<script>window.onload = function () { window.print(); };</script>'}

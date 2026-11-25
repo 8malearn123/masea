@@ -71,9 +71,11 @@ begin
   perform transition_contract(p_id, 'pending_approval');
   perform transition_contract(p_id, 'approved');
   perform transition_contract(p_id, 'awaiting_signature');
-  insert into contract_signatures (contract_id, signer_type, signer_name)
-  values (p_id, 'customer', 'العميل'), (p_id, 'company', 'الشركة');
-  perform transition_contract(p_id, 'signed');
+  perform sign_contract_party(p_id, 'customer', 'عميل التجربة',
+    coalesce((select regexp_replace(c.national_id, '\D', '', 'g') from contracts k join customers c on c.id = k.customer_id
+               where k.id = p_id and nullif(c.national_id, '') is not null), '1000000001'),
+    'data:image/png;base64,' || repeat('A', 300));   -- 0107: signing via the server function
+  perform sign_contract_party(p_id, 'company', null, null, 'data:image/png;base64,' || repeat('B', 300));
 end $$;
 create or replace function pg_temp.sid(p_contract uuid) returns uuid language sql as
 $$ select id from contract_settlements where contract_id = p_contract and status not in ('rejected','cancelled') $$;

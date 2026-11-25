@@ -1,3 +1,4 @@
+import type { SignedPartyView } from '@/features/contracts/lib/signedParties';
 import QRCode from 'qrcode';
 import logoAsset from '@/assets/brand/masiat-logo.jpg';
 import { zatcaQr } from '@/features/accounting/data/zatca';
@@ -13,6 +14,7 @@ export async function rentalContractHtml(
     watermark?: string | null;
     autoPrint?: boolean;
     signatures?: { employee?: string | null; customer?: string | null };
+    signers?: { employee?: SignedPartyView | null; customer?: SignedPartyView | null };
   } = {},
 ): Promise<string> {
   const data = buildRentalContractData(source);
@@ -30,6 +32,7 @@ export async function rentalContractHtml(
     watermark: opts.watermark ?? null,
     autoPrint: opts.autoPrint ?? false,
     ...(opts.signatures ? { signatures: opts.signatures } : {}),
+    ...(opts.signers ? { signers: opts.signers } : {}),
   });
 }
 

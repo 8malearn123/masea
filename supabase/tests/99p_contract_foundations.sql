@@ -58,9 +58,11 @@ begin
   perform transition_contract(p_id, 'pending_approval');
   perform transition_contract(p_id, 'approved');
   perform transition_contract(p_id, 'awaiting_signature');
-  insert into contract_signatures (contract_id, signer_type, signer_name)
-  values (p_id, 'customer', 'سعد آل مريح'), (p_id, 'company', 'منصور المكرمي');
-  perform transition_contract(p_id, 'signed');
+  perform sign_contract_party(p_id, 'customer', 'سعد آل مريح',
+    coalesce((select regexp_replace(c.national_id, '\D', '', 'g') from contracts k join customers c on c.id = k.customer_id
+               where k.id = p_id and nullif(c.national_id, '') is not null), '1000000001'),
+    'data:image/png;base64,' || repeat('A', 300));   -- 0107: signing via the server function
+  perform sign_contract_party(p_id, 'company', null, null, 'data:image/png;base64,' || repeat('B', 300));
 end $$;
 grant execute on all functions in schema pg_temp to authenticated;
 

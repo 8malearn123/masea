@@ -53,6 +53,8 @@ import { useServiceOrigins } from '@/features/contracts/hooks/useServiceOrigins'
 import { isMusaned } from '@/features/contracts/lib/contractOrigin';
 import { StatusBadge } from '@/features/contracts/components/StatusBadge';
 import { SignContractModal } from '@/features/contracts/components/SignContractModal';
+import { SignatureStatusCard } from '@/features/contracts/components/SignatureStatusCard';
+import { signatureState } from '@/features/contracts/lib/signatureStage';
 import { RecruitmentJourney } from '@/features/contracts/components/RecruitmentJourney';
 import { RenewContractButton } from '@/features/contracts/components/RenewContract';
 import { activeRenewalsOf } from '@/features/contracts/lib/contractRenewal';
@@ -159,6 +161,7 @@ export default function ContractDetails() {
   if (!contract) return <EmptyState icon={FileX} title="العقد غير موجود" />;
 
   const musaned = isMusaned(origins, contract.service_code);
+  const sigState = signatureState(contract, signatures, musaned);
 
   function canDo(to: ContractStatus): boolean {
     if (to === 'approved') return can('contracts', 'approve');
@@ -396,6 +399,12 @@ export default function ContractDetails() {
         </div>
       </Card>
 
+      <SignatureStatusCard
+        state={sigState}
+        canSign={can('contracts', 'edit')}
+        onSign={() => setShowSign(true)}
+      />
+
       {/* التبويبات */}
       <div className="mb-4 flex gap-1 overflow-x-auto border-b border-navy-100" role="tablist">
         {visibleTabs.map((t) => (
@@ -596,8 +605,8 @@ export default function ContractDetails() {
               </ol>
             )}
           </Card>
-          {/* Signatures log — in-system signing only (musaned signs on مساند) */}
-          {!musaned && (
+          {/* سجل التوقيعات — كل العقود (عقود مساند: نسخة المكتب) */}
+          {
             <Card>
               <h2 className="mb-3 flex items-center gap-2 text-sm font-bold text-navy">
                 <Signature size={16} /> سجل التوقيعات
@@ -623,28 +632,48 @@ export default function ContractDetails() {
                           رقم الهوية: <span className="num">{s.national_id}</span>
                         </p>
                       )}
+                      {(s.signer_capacity || s.method) && (
+                        <p className="text-[11px] text-purple">
+                          {s.signer_capacity ?? ''}
+                          {s.method === 'in_person' ? ' · حضورياً' : ''}
+                          {s.method === 'remote_link' ? ' · قبول عن بُعد' : ''}
+                        </p>
+                      )}
                       <p className="num text-[11px] text-purple">
                         {s.ip_address ? `IP: ${s.ip_address} · ` : ''}
                         {dateTimeAr(s.signed_at)}
                       </p>
+                      {s.document_sha256 && (
+                        <p className="num text-[10px] text-purple/80" dir="ltr">
+                          SHA-256 {s.document_sha256.slice(0, 16)}…
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ol>
               )}
             </Card>
-          )}{' '}
+          }{' '}
         </div>
       )}
 
       {paying && <RecordPaymentModal contract={contract} onClose={() => setPaying(false)} />}
 
-      {!musaned && (
-        <SignContractModal
-          contractId={contract.id}
-          open={showSign}
-          onClose={() => setShowSign(false)}
-        />
-      )}
+      <SignContractModal
+        contractId={contract.id}
+        open={showSign}
+        onClose={() => setShowSign(false)}
+        customerState={sigState.customer ? 'signed' : 'pending'}
+        companyState={
+          sigState.company ? 'signed' : can('contracts', 'approve') ? 'pending' : 'not_allowed'
+        }
+        signed={{ customer: sigState.customer, company: sigState.company }}
+        note={
+          sigState.musaned
+            ? 'عقد مساند: يُسجَّل التوقيع على نسخة المكتب، ولا يغني عن توقيع العقد على منصة مساند.'
+            : null
+        }
+      />
 
       {showEdit && <EditDraftModal contract={contract} onClose={() => setShowEdit(false)} />}
 

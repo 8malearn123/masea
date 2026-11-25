@@ -16,6 +16,9 @@ import {
 import { defaultRenewalStart, renewalTerm } from '@/features/contracts/lib/contractRenewal';
 import { today } from '@/features/requests/lib/period';
 
+/** صورة توقيع بصيغة PNG (يتحقق منها التوقيع على الخادم — 0107). */
+const SIG_PNG = `data:image/png;base64,${'A'.repeat(300)}`;
+
 const ALL = { status: 'all', service: 'all', branch: 'all', search: '' } as const;
 
 afterEach(() => {
@@ -101,9 +104,13 @@ describe('contract lifecycle (create → approve → sign → activate → compl
       updateDraft(c.id, { start_date: '2026-11-08', end_date: null, branch: 'نجران' }),
     ).rejects.toThrow();
 
+    // التوقيع يتطلب مستخدماً مخوّلاً (العميل: تعديل العقود، الشركة: اعتمادها)
+    const signer = DEMO_ACCOUNTS.find((a) => a.role === 'admin')!;
+    saveDemo(signer);
+    useAuth.setState({ profile: demoProfile(signer) });
     await signContract(c.id, {
-      customer: 'data:,',
-      company: 'data:,',
+      customer: SIG_PNG,
+      company: SIG_PNG,
       customerName: 'فهد العنزي',
       nationalId: '1012345678',
       ipAddress: '10.0.0.1',

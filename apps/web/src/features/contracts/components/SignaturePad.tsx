@@ -20,11 +20,20 @@ export function SignaturePad({
     const c = ref.current;
     if (!c) return { x: 0, y: 0 };
     const r = c.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    // اللوحة تُعرض بعرض الحاوية: تُحوَّل الإحداثيات لمقاس اللوحة حتى يقع الخط تحت الإصبع/المؤشر
+    return {
+      x: ((e.clientX - r.left) * c.width) / (r.width || c.width),
+      y: ((e.clientY - r.top) * c.height) / (r.height || c.height),
+    };
   }
   function start(e: ReactPointerEvent<HTMLCanvasElement>) {
     const g = ctx();
     if (!g) return;
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId); // يبقى الخط مستمراً إن خرج الإصبع عن الحافة
+    } catch {
+      /* بعض المتصفحات/الأحداث لا تدعم الالتقاط — الرسم يعمل دونه */
+    }
     drawing.current = true;
     const p = pos(e);
     g.beginPath();
@@ -71,6 +80,9 @@ export function SignaturePad({
         onPointerMove={move}
         onPointerUp={end}
         onPointerLeave={end}
+        onPointerCancel={end}
+        aria-label={label}
+        data-testid={`pad-${label}`}
         style={{ touchAction: 'none' }}
         className={`w-full rounded-xl border bg-white ${signed ? 'border-navy' : 'border-dashed border-navy-100'}`}
       />

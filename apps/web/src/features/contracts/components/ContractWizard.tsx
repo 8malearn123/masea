@@ -82,6 +82,13 @@ import { bookHourly, getHourlyConfig, listBusySlots } from '@/features/hourly/ap
 import { conflictFor, hoursBetween, validateHours } from '@/features/hourly/lib/hourly';
 import { useAuth } from '@/store/auth';
 import { WorkerPicker } from '@/features/contracts/components/WorkerPicker';
+import { WizardSignSection } from '@/features/contracts/components/WizardSignSection';
+import type { SignCapture } from '@/features/contracts/components/ContractSignForm';
+import {
+  getContract,
+  signCaptured,
+  transitionContract,
+} from '@/features/contracts/api/contracts.api';
 import {
   EMPTY_TRIAL,
   TrialCustomerFields,
@@ -256,7 +263,7 @@ export default function ContractWizard() {
   const fromQuote = params.get('quote');
   const qc = useQueryClient();
   const quote = useMemo(() => (fromQuote ? getQuoteRecord(fromQuote) : null), [fromQuote]);
-  const { meta, branchLabel } = usePermissions();
+  const { meta, branchLabel, can } = usePermissions();
   // branch-scoped roles create contracts for their own branch only (RLS contracts_read)
   const ownBranch = !meta?.crossBranch && branchLabel ? branchLabel : null;
   const branchOptions = ownBranch ? [ownBranch] : [...BRANCHES_AR];
@@ -610,13 +617,43 @@ export default function ContractWizard() {
     if (isTrial && !tr.workerKind) setTrial({ workerKind: workerKindFor(w.profession) });
   }
 
+  // التوقيع الإلكتروني في نهاية المعاينة (0107): يُلتقط هنا ويُسجَّل على العقد بعد حفظه
+  const [sigCap, setSigCap] = useState<SignCapture | null>(null);
+  const [sigErr, setSigErr] = useState<string | null>(null);
+  const canApprove = can('contracts', 'approve');
+  const signAtSave = isTrial || musaned || canApprove;
+  /** بعد الحفظ: العقود الداخلية تُعتمد أولاً (لمن يملك الاعتماد) ثم يوقّع الطرفان على الخادم. */
+  async function finalizeSignature(contractId: string): Promise<boolean> {
+    if (!sigCap || !signAtSave) return false;
+    try {
+      if (!isTrial && !musaned) {
+        const c = await getContract(contractId);
+        if (c?.status === 'draft') await transitionContract(contractId, 'pending_approval');
+        if (c?.status === 'draft' || c?.status === 'pending_approval')
+          await transitionContract(contractId, 'approved');
+      }
+      const r = await signCaptured(contractId, sigCap);
+      void qc.invalidateQueries({ queryKey: ['contracts'] });
+      toast.success(
+        r?.complete
+          ? 'وُقّع العقد من الطرفين'
+          : 'حُفظ التوقيع — يُستكمل توقيع الطرف الآخر من صفحة العقد',
+      );
+      return Boolean(r?.complete);
+    } catch (e) {
+      toast.error(`حُفظ العقد دون التوقيع: ${e instanceof Error ? e.message : ''}`);
+      return false;
+    }
+  }
+
   /** نقل كفالة: حفظ عقد التجربة (create_trial_agreement مع حقول القالب) ثم إرساله للقبول اختيارياً. */
   const [sentLink, setSentLink] = useState<{
     url: string;
     expires: string;
     contractId: string;
   } | null>(null);
-  async function saveTrial(sendLink: boolean) {
+  async function saveTrial(sendLinkRequested: boolean) {
+    let sendLink = sendLinkRequested;
     if (!d.customer || !d.worker) return;
     const parsed = createTrialSchema.safeParse({
       customerId: d.customer.id,
@@ -638,6 +675,8 @@ export default function ContractWizard() {
     try {
       const t = await createTrial(parsed.data);
       await saveMarketing(t.contract_id);
+      const signedNow = await finalizeSignature(t.contract_id);
+      if (signedNow) sendLink = false; // وُقّع حضورياً — لا حاجة لرابط القبول
       clearDraft(uid);
       void qc.invalidateQueries({ queryKey: ['contracts'] });
       void qc.invalidateQueries({ queryKey: ['trials'] });
@@ -738,6 +777,7 @@ export default function ContractWizard() {
       });
       await scheduleDelivery(b.contract_id);
       await saveMarketing(b.contract_id);
+      await finalizeSignature(b.contract_id);
       clearDraft(uid);
       void qc.invalidateQueries({ queryKey: ['contracts'] });
       void qc.invalidateQueries({ queryKey: ['hourly'] });
@@ -856,6 +896,7 @@ export default function ContractWizard() {
             toast.error(`أُنشئ العقد دون جدول الاستحقاقات: ${e instanceof Error ? e.message : ''}`),
           );
         }
+        await finalizeSignature(created.id);
         clearDraft(uid);
         toast.success(
           musaned
@@ -1495,6 +1536,18 @@ export default function ContractWizard() {
           </div>
         )}
 
+        {current === 'review' && (
+          <WizardSignSection
+            available={signAtSave}
+            canSignCompany={canApprove}
+            musaned={musaned}
+            onChange={(c, e) => {
+              setSigCap(c);
+              setSigErr(e);
+            }}
+          />
+        )}
+
         <div className="mt-8 flex items-center justify-between gap-3">
           <Button
             variant="outline"
@@ -1502,7 +1555,9 @@ export default function ContractWizard() {
           >
             السابق
           </Button>
-          {err && <span className="flex-1 text-center text-xs text-red-600">{err}</span>}
+          {(err ?? (current === 'review' ? sigErr : null)) && (
+            <span className="flex-1 text-center text-xs text-red-600">{err ?? sigErr}</span>
+          )}
           {step < stepKeys.length - 1 ? (
             <Button onClick={() => !err && setStep((s) => s + 1)} disabled={Boolean(err)}>
               التالي
@@ -1513,11 +1568,15 @@ export default function ContractWizard() {
                 variant="outline"
                 onClick={() => void saveTrial(false)}
                 loading={booking}
-                disabled={!trialTpl}
+                disabled={!trialTpl || Boolean(sigErr)}
               >
-                <Check size={16} /> حفظ عقد التجربة
+                <Check size={16} /> {sigCap ? 'حفظ عقد التجربة والتوقيع' : 'حفظ عقد التجربة'}
               </Button>
-              <Button onClick={() => void saveTrial(true)} loading={booking} disabled={!trialTpl}>
+              <Button
+                onClick={() => void saveTrial(true)}
+                loading={booking}
+                disabled={!trialTpl || Boolean(sigErr)}
+              >
                 <Check size={16} /> حفظ وإرسال للعميل للقبول
               </Button>
             </div>
@@ -1525,10 +1584,14 @@ export default function ContractWizard() {
             <Button
               onClick={save}
               loading={create.isPending || booking}
-              disabled={!price || (isRental && !rentalTpl)}
+              disabled={!price || (isRental && !rentalTpl) || Boolean(sigErr)}
             >
               <Check size={16} />{' '}
-              {musaned ? 'تسجيل العقد ومتابعة مساند' : 'إنشاء العقد ومتابعة التوقيع'}
+              {sigCap
+                ? 'حفظ العقد والتوقيع'
+                : musaned
+                  ? 'تسجيل العقد ومتابعة مساند'
+                  : 'إنشاء العقد ومتابعة التوقيع'}
             </Button>
           )}
         </div>
