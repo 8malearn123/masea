@@ -1,3 +1,4 @@
+import type { SignedPartyView } from '@/features/contracts/lib/signedParties';
 import logoAsset from '@/assets/brand/trial-contract-logo.png';
 import { sar } from '@/shared/lib/format';
 import type { TrialContractData, TrialTemplateDoc } from './template';
@@ -68,6 +69,8 @@ export interface TrialRenderOptions {
   autoPrint?: boolean;
   /** ختم القبول الإلكتروني (خارج نص العقد) */
   acceptance?: { reference: string; at: string } | null;
+  /** 0107: التوقيع الإلكتروني للطرفين (صورة العميل على سطر «التوقيع» + سجل الطرفين) */
+  signers?: { customer: SignedPartyView | null; company: SignedPartyView | null } | null;
 }
 
 /** صفحة A4 بتصميم الملف الأصلي: الشعار، الترويسة، الحقول، البنود العشرة، التوقيع، التذييل. */
@@ -127,6 +130,10 @@ ol li .k{font-weight:700;white-space:nowrap}
 .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .wm span{transform:rotate(-30deg);font-size:46px;font-weight:700;color:rgba(27,21,100,.10);white-space:nowrap}
 .stamp{margin-top:3mm;border:1px dashed #000;padding:1.5mm 3mm;font-size:12px;text-align:center}
+.sigimg{min-width:48mm;height:13mm;vertical-align:bottom}.sigimg img{max-height:12mm;max-width:46mm}
+.esig{margin-top:3mm;border:1px solid #000;padding:2mm 3mm;display:grid;grid-template-columns:1fr 1fr;gap:4mm;font-size:12px;break-inside:avoid}
+.esig h4{grid-column:1/-1;margin:0;font-size:13px}.esig .p{display:flex;gap:3mm;align-items:center}.esig .p img{max-height:12mm;max-width:30mm}
+.esig .fp{grid-column:1/-1;font-size:10px;color:#333}
 @media screen{.page{box-shadow:0 2px 14px rgba(0,0,0,.12);margin:12px auto}}
 @media print{html,body{background:#fff}.page{margin:0;box-shadow:none;zoom:1!important}}
 </style></head><body>
@@ -153,15 +160,39 @@ ${doc.clauses.map((c, i) => `<li><span class="k">${arDigits(String(i + 1))}-</sp
 </ol>
 <div class="decl">${esc(doc.declaration)}</div>
 <div class="sigs">
-  <div>${sig(sName, data.customer_name)}${sig(sSign, '')}</div>
+  <div>${sig(sName, data.customer_name)}${
+    opts.signers?.customer?.image
+      ? `<div class="sig"><span>${esc(sSign ?? '')}</span><span class="f sigf sigimg"><img src="${esc(opts.signers.customer.image)}" alt="" /></span></div>`
+      : sig(sSign, '')
+  }</div>
   <div>${sig(sAddr, data.address)}${sig(sWork, data.job)}${sig(sMobile, data.mobile, true)}</div>
 </div>
+${opts.signers && (opts.signers.customer || opts.signers.company) ? esigBlock(opts.signers) : ''}
 ${opts.acceptance ? `<div class="stamp">قُبل إلكترونياً في <span class="amt">${esc(opts.acceptance.at)}</span> — مرجع القبول <span class="amt">${esc(opts.acceptance.reference)}</span></div>` : ''}
 <div class="foot">${doc.footer.map((l, i) => `<div class="${i === 1 ? 'en' : ''}">${esc(l)}</div>`).join('')}</div>
 </div>
 <script>(function(){function fit(){var p=document.querySelector('.page');if(!p)return;p.style.zoom='';var s=(document.documentElement.clientWidth-8)/p.offsetWidth;if(s<1)p.style.zoom=String(s);}window.addEventListener('resize',fit);fit();})()</script>
 ${opts.autoPrint ? '<script>window.onload=function(){setTimeout(function(){window.print()},400)}</script>' : ''}
 </body></html>`;
+}
+
+/** سجل التوقيع الإلكتروني للطرفين (خارج نص القالب — مثل ختم القبول). */
+function esigBlock(s: {
+  customer: SignedPartyView | null;
+  company: SignedPartyView | null;
+}): string {
+  const party = (title: string, p: SignedPartyView | null) =>
+    `<div class="p">${p?.image ? `<img src="${esc(p.image)}" alt="" />` : ''}<div><b>${esc(title)}</b><br/>${
+      p
+        ? `${esc(p.name)} — ${esc(p.capacity)}<br/><span class="amt">${esc(p.at)}</span>`
+        : 'لم يوقّع بعد'
+    }</div></div>`;
+  const fp = s.customer?.fingerprint ?? s.company?.fingerprint;
+  return `<div class="esig"><h4>التوقيع الإلكتروني</h4>${party('الطرف الثاني (العميل)', s.customer)}${party('الطرف الأول (ماسية الشرق)', s.company)}${
+    fp
+      ? `<div class="fp">بصمة المستند SHA-256: <span class="amt">${esc(fp.slice(0, 16))}…</span></div>`
+      : ''
+  }</div>`;
 }
 
 function absoluteLogo(): string {

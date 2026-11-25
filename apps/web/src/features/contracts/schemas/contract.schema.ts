@@ -73,6 +73,12 @@ export const contractSignatureSchema = z.object({
   ip_address: z.string().nullable().default(null),
   signature_image: z.string().nullable(),
   signed_at: z.string(),
+  /** 0107: الصفة، طريقة التوقيع، الوكالة، بصمة المحتوى، المتصفح — null في السجلات السابقة */
+  signer_capacity: z.string().nullable().optional(),
+  method: z.enum(['in_person', 'agent', 'remote_link']).nullable().optional(),
+  poa_no: z.string().nullable().optional(),
+  document_sha256: z.string().nullable().optional(),
+  user_agent: z.string().nullable().optional(),
 });
 export type ContractSignature = z.infer<typeof contractSignatureSchema>;
 

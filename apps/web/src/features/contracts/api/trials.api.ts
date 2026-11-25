@@ -555,6 +555,19 @@ export async function issueTrialLink(
   return { token: link.token, expires_at: new Date(link.expires_at).toISOString() };
 }
 
+/** العرض التجريبي: توقيع الطرفين حضورياً على عقد التجربة يكافئ القبول (مرآة 0107). */
+export function demoTrialSignedInPerson(contractId: string, hash: string): void {
+  load();
+  const t = trials.find((x) => x.contract_id === contractId);
+  if (!t || !['draft', 'awaiting_acceptance'].includes(t.status)) return;
+  for (const l of links)
+    if (l.trial_id === t.id && !l.used_at && !l.revoked_at) l.revoked_at = nowIso();
+  t.accepted_at = nowIso();
+  setStatus(t, 'accepted', `توقيع حضوري — بصمة ${hash.slice(0, 12)}`);
+  setStatus(t, 'awaiting_handover', 'بانتظار استكمال متطلبات التسليم');
+  save();
+}
+
 export function trialLinkUrl(token: string): string {
   return `${window.location.origin}/t/${token}`;
 }

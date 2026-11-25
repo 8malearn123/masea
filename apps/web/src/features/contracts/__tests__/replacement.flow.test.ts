@@ -21,6 +21,9 @@ import {
   scheduleReplacement,
 } from '@/features/contracts/api/contractOps.api';
 
+/** صورة توقيع بصيغة PNG (يتحقق منها التوقيع على الخادم — 0107). */
+const SIG_PNG = `data:image/png;base64,${'A'.repeat(300)}`;
+
 function as(role: AppRole): void {
   const acc = DEMO_ACCOUNTS.find((a) => a.role === role);
   if (!acc) throw new Error(`no demo ${role}`);
@@ -54,8 +57,8 @@ async function activeContract() {
   await transitionContract(c.id, 'approved');
   await transitionContract(c.id, 'awaiting_signature');
   await signContract(c.id, {
-    customer: 'data:,',
-    company: 'data:,',
+    customer: SIG_PNG,
+    company: SIG_PNG,
     customerName: 'سارة القحطاني',
     nationalId: '1012345670',
     ipAddress: '10.0.0.3',

@@ -59,6 +59,24 @@ export interface SignPayload {
   ipAddress: string | null;
 }
 
+/** توقيع طرف واحد (sign_contract_party — 0107). */
+export interface PartySignInput {
+  party: 'customer' | 'company';
+  image: string;
+  signerName?: string | null;
+  nationalId?: string | null;
+  ipAddress: string | null;
+  userAgent?: string | null;
+  /** العميل بنفسه حضورياً، أو وكيل بموجب وكالة موثقة */
+  method?: 'in_person' | 'agent';
+  poaNo?: string | null;
+}
+export interface PartySignResult {
+  complete: boolean;
+  status: string;
+  document_sha256: string;
+}
+
 /* --------------------------- offline fallback ---------------------------- */
 function mk(o: {
   id: string;
@@ -1385,62 +1403,185 @@ export async function setMusanedNo(id: string, no: string): Promise<void> {
 
 /** Upload customer + company signatures to Storage, record them (with the
  *  signer's name, national id, and IP), then transition the contract to signed. */
-export async function signContract(contractId: string, payload: SignPayload): Promise<void> {
-  // Demo contract → skip Storage/DB; record the trail in the in-memory store.
-  if (isDemoId(contractId)) {
-    const at = nowIso();
-    const mkSig = (type: 'customer' | 'company', name: string, nid: string | null) => ({
-      id: `sig-${contractId}-${type}-${Date.now()}`,
+const SIGN_DONE = ['signed', 'musaned_signed', 'active', 'completed'];
+
+async function sha256Hex(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** مرآة sign_contract_party في العرض التجريبي (نفس القواعد على المخزن في الذاكرة). */
+async function demoSignParty(contractId: string, i: PartySignInput): Promise<PartySignResult> {
+  const c = FALLBACK.find((x) => x.id === contractId);
+  if (!c) throw new Error('العقد غير موجود');
+  const role = useAuth.getState().profile?.role as RoleCode | undefined;
+  if (!roleCan(role, 'contracts', 'edit')) throw new Error('لا تملك صلاحية إدارة توقيع العقود');
+  if (i.party === 'company' && !roleCan(role, 'contracts', 'approve'))
+    throw new Error('توقيع ممثل الشركة لمن يملك صلاحية اعتماد العقود');
+  if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(i.image) || i.image.length < 200)
+    throw new Error('ارسم التوقيع في المساحة المخصّصة');
+  if (SIGN_DONE.includes(c.status))
+    throw new Error('العقد موقّع — أي تعديل يتطلب نسخة جديدة تُعتمد وتُوقَّع');
+  if (c.status === 'cancelled') throw new Error('العقد ملغى');
+  const origin = DEFAULT_SERVICE_ORIGIN[c.service_code ?? 'monthly_rental'] ?? 'internal';
+  if (c.service_code === 'transfer_trial') {
+    if (!['draft', 'awaiting_signature'].includes(c.status))
+      throw new Error('التجربة ليست بانتظار التوقيع');
+  } else if (origin === 'musaned') {
+    if (!['draft', 'musaned_created'].includes(c.status))
+      throw new Error('العقد ليس بانتظار التوقيع');
+  } else {
+    if (!['approved', 'awaiting_signature'].includes(c.status))
+      throw new Error('يُوقَّع العقد بعد اعتماده — أرسله للاعتماد أولاً');
+    if (c.status === 'approved') {
+      pushDemoHistory(c, 'awaiting_signature');
+      c.status = 'awaiting_signature';
+    }
+  }
+  let name = (i.signerName ?? '').trim();
+  let nid: string | null = (i.nationalId ?? '').replace(/\D/g, '');
+  let capacity = 'العميل (الطرف الثاني)';
+  const method = i.party === 'company' ? 'in_person' : (i.method ?? 'in_person');
+  if (i.party === 'customer') {
+    if (name.length < 3) throw new Error('أدخل اسم الموقّع كاملاً');
+    if (!/^[12]\d{9}$/.test(nid)) throw new Error('رقم الهوية/الإقامة 10 أرقام يبدأ بـ 1 أو 2');
+    if (method === 'agent') {
+      if ((i.poaNo ?? '').trim().length < 3) throw new Error('أدخل رقم الوكالة الموثقة');
+      capacity = `وكيل عن العميل بموجب الوكالة ${(i.poaNo ?? '').trim()}`;
+    }
+  } else {
+    name = useAuth.getState().profile?.full_name || 'ممثل الشركة';
+    nid = null;
+    capacity = 'ممثل الشركة (الطرف الأول) — ماسية الشرق للاستقدام';
+  }
+  const hash = await sha256Hex(
+    JSON.stringify({
+      no: c.contract_no,
+      v: c.version,
+      s: c.service_code,
+      cu: c.customer_id,
+      w: c.worker_profile_id,
+      d: [c.start_date, c.end_date],
+      a: [c.base_amount, c.vat_amount, c.total_amount],
+      clauses: (FALLBACK_CLAUSES[contractId] ?? []).map((x) => x.body),
+    }),
+  );
+  const list = FALLBACK_SIGNATURES[contractId] ?? [];
+  if (list.some((s) => s.signer_type === i.party && s.document_sha256 === hash))
+    throw new Error('سبق توقيع هذا الطرف على هذا العقد');
+  const other = [...list].reverse().find((s) => s.signer_type !== i.party && s.document_sha256);
+  if (other && other.document_sha256 !== hash)
+    throw new Error('تغيّر محتوى العقد بعد توقيع الطرف الآخر — يُصدر نسخة جديدة ويُعاد التوقيع');
+  FALLBACK_SIGNATURES[contractId] = [
+    ...list,
+    {
+      id: `sig-${contractId}-${i.party}-${Date.now()}`,
       contract_id: contractId,
-      signer_type: type,
+      signer_type: i.party,
       signer_name: name,
       national_id: nid,
-      ip_address: payload.ipAddress,
-      signature_image: null,
-      signed_at: at,
-    });
-    FALLBACK_SIGNATURES[contractId] = [
-      ...(FALLBACK_SIGNATURES[contractId] ?? []),
-      mkSig('customer', payload.customerName, payload.nationalId),
-      mkSig('company', 'ماسية الشرق للاستقدام', null),
-    ];
-    await transitionContract(contractId, 'signed');
-    return;
-  }
-  const entries: Array<{
-    type: 'customer' | 'company';
-    dataUrl: string;
-    name: string;
-    nationalId: string | null;
-  }> = [
-    {
-      type: 'customer',
-      dataUrl: payload.customer,
-      name: payload.customerName,
-      nationalId: payload.nationalId,
+      ip_address: i.ipAddress,
+      signature_image: i.image,
+      signed_at: nowIso(),
+      signer_capacity: capacity,
+      method,
+      poa_no: method === 'agent' ? (i.poaNo ?? '').trim() : null,
+      document_sha256: hash,
+      user_agent: i.userAgent ?? null,
     },
-    { type: 'company', dataUrl: payload.company, name: 'ماسية الشرق للاستقدام', nationalId: null },
   ];
-  for (const { type, dataUrl, name, nationalId } of entries) {
-    const blob = await (await fetch(dataUrl)).blob();
-    const path = `${contractId}/${type}-${Date.now()}.png`;
-    const { error: upErr } = await supabase.storage
-      .from('signatures')
-      .upload(path, blob, { contentType: 'image/png', upsert: true });
-    if (upErr && !isIgnorableWriteError(upErr.message)) throw rpcError(upErr.message);
-    const { error: insErr } = await supabase.from('contract_signatures').insert({
-      contract_id: contractId,
-      signer_type: type,
-      signer_name: name,
-      national_id: nationalId,
-      ip_address: payload.ipAddress,
-      signature_image: path,
-    });
-    if (insErr && !isIgnorableWriteError(insErr.message)) throw rpcError(insErr.message);
+  const now = FALLBACK_SIGNATURES[contractId] ?? [];
+  const complete =
+    now.some((s) => s.signer_type === 'customer' && s.document_sha256 === hash) &&
+    now.some((s) => s.signer_type === 'company' && s.document_sha256 === hash);
+  if (complete && origin !== 'musaned') {
+    pushDemoHistory(c, 'signed');
+    Object.assign(c, { status: 'signed', signed_at: nowIso() });
+    if (c.service_code === 'transfer_trial') {
+      const { demoTrialSignedInPerson } = await import('@/features/contracts/api/trials.api');
+      demoTrialSignedInPerson(contractId, hash);
+    }
   }
-  const { error } = await supabase.rpc('transition_contract', {
-    p_contract_id: contractId,
-    p_to_status: 'signed',
+  return { complete, status: c.status, document_sha256: hash };
+}
+
+/** توقيع طرف واحد — على الخادم (sign_contract_party): الصلاحية والهوية والبصمة والحالة والتدقيق. */
+export async function signContractParty(
+  contractId: string,
+  i: PartySignInput,
+): Promise<PartySignResult> {
+  if (isDemoId(contractId)) return demoSignParty(contractId, i);
+  const { data, error } = await supabase.rpc('sign_contract_party', {
+    p_contract: contractId,
+    p_party: i.party,
+    p_signer_name: i.signerName ?? null,
+    p_national_id: i.nationalId ?? null,
+    p_image: i.image,
+    p_ip: i.ipAddress,
+    p_user_agent: i.userAgent ?? null,
+    p_method: i.method ?? 'in_person',
+    p_poa_no: i.poaNo ?? null,
   });
-  if (error && !isIgnorableWriteError(error.message)) throw rpcError(error.message);
+  if (error) throw rpcError(error.message);
+  return data as PartySignResult;
+}
+
+/** يوقّع ما التُقط في نموذج التوقيع: العميل ثم ممثل الشركة (كلٌّ على الخادم). */
+export async function signCaptured(
+  contractId: string,
+  c: {
+    customer: {
+      image: string;
+      name: string;
+      nationalId: string;
+      method: 'in_person' | 'agent';
+      poaNo: string | null;
+    } | null;
+    company: { image: string } | null;
+    ipAddress: string | null;
+  },
+): Promise<PartySignResult | null> {
+  const base = { ipAddress: c.ipAddress, userAgent: navigator.userAgent };
+  let r: PartySignResult | null = null;
+  if (c.customer)
+    r = await signContractParty(contractId, {
+      ...base,
+      party: 'customer',
+      image: c.customer.image,
+      signerName: c.customer.name,
+      nationalId: c.customer.nationalId,
+      method: c.customer.method,
+      poaNo: c.customer.poaNo,
+    });
+  if (c.company)
+    r = await signContractParty(contractId, { ...base, party: 'company', image: c.company.image });
+  return r;
+}
+
+/** توقيع الطرفين معاً (نافذة التوقيع): العميل ثم ممثل الشركة. */
+export async function signContract(contractId: string, payload: SignPayload): Promise<void> {
+  const base = { ipAddress: payload.ipAddress, userAgent: navigator.userAgent };
+  await signContractParty(contractId, {
+    ...base,
+    party: 'customer',
+    image: payload.customer,
+    signerName: payload.customerName,
+    nationalId: payload.nationalId,
+  });
+  await signContractParty(contractId, { ...base, party: 'company', image: payload.company });
+}
+
+/**
+ * صورة التوقيع للعرض/الطباعة: المحفوظة مع السجل (0107) كما هي؛ السجلات السابقة مسار في
+ * مخزن «signatures» ← رابط موقّع مؤقت. لا صورة ← null (لا يُفترض توقيع غير مسجّل).
+ */
+export async function signatureImageUrl(
+  sig: Pick<ContractSignature, 'signature_image'>,
+): Promise<string | null> {
+  const v = sig.signature_image;
+  if (!v) return null;
+  if (v.startsWith('data:image/')) return v;
+  if (isDemoMode()) return null;
+  const { data } = await supabase.storage.from('signatures').createSignedUrl(v, 3600);
+  return data?.signedUrl ?? null;
 }

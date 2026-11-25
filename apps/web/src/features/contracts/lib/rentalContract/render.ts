@@ -1,3 +1,9 @@
+import {
+  ESIG_CSS,
+  fingerprintLine,
+  signerCaption,
+  type SignedPartyView,
+} from '@/features/contracts/lib/signedParties';
 import type { CoverBlock, RentalTemplateDoc, TemplateBlock } from './template';
 import type { RentalContractData } from './fields';
 
@@ -13,6 +19,8 @@ export interface RenderOptions {
   qrDataUrl?: string | null;
   /** صور التوقيع إن وُجدت (contract_signatures). */
   signatures?: { employee?: string | null; customer?: string | null };
+  /** بيانات الموقّعين (الاسم، الصفة، الوقت، البصمة) تحت أماكن التوقيع — 0107 */
+  signers?: { employee?: SignedPartyView | null; customer?: SignedPartyView | null };
   /** علامة مائية للمعاينة قبل اعتماد القالب أو قبل توقيع العقد. */
   watermark?: string | null;
   autoPrint?: boolean;
@@ -102,12 +110,13 @@ function cover(b: CoverBlock, data: RentalContractData, opts: RenderOptions): st
 
 function signatures(items: string[], opts: RenderOptions): string {
   const imgs = [opts.signatures?.employee, opts.signatures?.customer];
+  const metas = [opts.signers?.employee ?? null, opts.signers?.customer ?? null];
   return `<section class="signs">${items
     .map(
       (label, i) =>
-        `<div class="sign"><div class="sign-box">${imgs[i] ? `<img src="${escapeHtml(imgs[i] ?? '')}" alt="${escapeHtml(label)}" />` : ''}</div><div class="sign-label">${escapeHtml(label)}</div></div>`,
+        `<div class="sign"><div class="sign-box">${imgs[i] ? `<img src="${escapeHtml(imgs[i] ?? '')}" alt="${escapeHtml(label)}" />` : ''}</div><div class="sign-label">${escapeHtml(label)}</div>${signerCaption(metas[i] ?? null)}</div>`,
     )
-    .join('')}</section>`;
+    .join('')}</section>${fingerprintLine(metas)}`;
 }
 
 export function buildRentalContractHtml(
@@ -183,6 +192,7 @@ export function buildRentalContractHtml(
   .sign-box { height:26mm; border-bottom:1.5px solid var(--ink); display:flex; align-items:flex-end; justify-content:center; }
   .sign-box img { max-height:24mm; max-width:100%; }
   .sign-label { margin-top:6px; font-weight:600; color:var(--navy); }
+  ${ESIG_CSS}
   .wm { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:3; }
   .wm span { transform:rotate(-30deg); font-size:40px; font-weight:700; color:rgba(200,151,10,.16); white-space:nowrap; }
   .page-break { break-after:page; page-break-after:always; }

@@ -19,6 +19,8 @@ import {
 import { trialDocumentHtml } from '@/features/contracts/lib/trialContract/document';
 import { isTrialContractDoc } from '@/features/contracts/lib/trialContract/template';
 import { dateTimeAr } from '@/shared/lib/format';
+import { signatureImageUrl } from '@/features/contracts/api/contracts.api';
+import { signedParties } from '@/features/contracts/lib/signedParties';
 
 export interface ContractDocument {
   kind: 'rental_template' | 'trial_contract' | 'stored_clauses';
@@ -32,12 +34,20 @@ export async function contractDocumentHtml(
   contract: ContractListItem,
   opts: { clauses: string[]; signatures: ContractSignature[]; autoPrint?: boolean },
 ): Promise<ContractDocument> {
+  // التوقيعات المسجّلة فقط (0107) — تُطبع في نهاية العقد بالاسم والصفة والوقت
+  const images = Object.fromEntries(
+    await Promise.all(
+      opts.signatures.map(async (s) => [s.id, await signatureImageUrl(s)] as const),
+    ),
+  );
+  const parties = signedParties(opts.signatures, images);
   if (contract.service_code === 'transfer_trial') {
     const trial = await getTrialByContract(contract.id);
     if (trial && isTrialContractDoc(trial.terms_snapshot)) {
       const [d, acc] = await Promise.all([getTrialDocument(trial.id), getAcceptance(trial.id)]);
       const html = trialDocumentHtml(d, {
-        watermark: acc ? null : 'بانتظار قبول العميل',
+        watermark: acc || SIGNED.includes(contract.status) ? null : 'بانتظار التوقيع',
+        signers: parties,
         autoPrint: opts.autoPrint ?? false,
         acceptance: acc
           ? {
@@ -54,20 +64,23 @@ export async function contractDocumentHtml(
   if (!doc) {
     return {
       kind: 'stored_clauses',
-      html: buildContractHtml(contract, opts.clauses, { autoPrint: opts.autoPrint ?? false }),
+      html: buildContractHtml(contract, opts.clauses, {
+        autoPrint: opts.autoPrint ?? false,
+        signers: parties,
+      }),
       templateVersion: null,
     };
   }
-  const img = (type: 'customer' | 'company') => {
-    const v = opts.signatures.find((x) => x.signer_type === type)?.signature_image ?? null;
-    return v && v.startsWith('data:image/') ? v : null;
-  };
   return {
     kind: 'rental_template',
     html: await rentalContractHtml(doc.template.doc, doc.source, {
       watermark: SIGNED.includes(contract.status) ? null : 'مسودة — غير موقّعة',
       autoPrint: opts.autoPrint ?? false,
-      signatures: { employee: img('company'), customer: img('customer') },
+      signatures: {
+        employee: parties.company?.image ?? null,
+        customer: parties.customer?.image ?? null,
+      },
+      signers: { employee: parties.company, customer: parties.customer },
     }),
     templateVersion: doc.template.version,
   };

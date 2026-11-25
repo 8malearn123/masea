@@ -41,7 +41,8 @@ describe('contract created from accepted terms', () => {
         </ToastProvider>
       </QueryClientProvider>,
     );
-    expect(await screen.findByText(/موافقة إلكترونية على الشروط ·/)).toBeInTheDocument();
+    // الاسم يظهر في سجل التوقيعات وفي بطاقة حالة التوقيع (0107)
+    expect((await screen.findAllByText(/موافقة إلكترونية على الشروط ·/)).length).toBeGreaterThan(0);
     expect(screen.getByText('REQ-1A2B3C4D')).toBeInTheDocument();
     expect(screen.getByText('تاريخ موافقة العميل')).toBeInTheDocument();
     // البنود في تبويبها
