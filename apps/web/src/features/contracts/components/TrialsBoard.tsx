@@ -122,7 +122,7 @@ function NewTrialModal({ onClose }: { onClose: () => void }) {
           options={BRANCHES_AR.map((b) => ({ value: b, label: b }))}
         />
         <Input
-          label="سعر التجربة المتفق عليه (قبل الضريبة)"
+          label="سعر التجربة المتفق عليه (شامل الضريبة)"
           type="number"
           min={0}
           suffix="ر.س"

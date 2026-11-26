@@ -66,7 +66,10 @@ describe('transfer trial (demo mirror of 0092)', () => {
     const { token } = await issueTrialLink(t);
 
     const v = await viewTrialByToken(token);
-    expect(v.price).toBe(1500);
+    // 0108: 1,500 شامل الضريبة = 1,304.35 + 195.65
+    expect(v.total_amount).toBe(1500);
+    expect(v.price).toBe(1304.35);
+    expect(v.vat_amount).toBe(195.65);
     expect(v.trial_days).toBe(10);
     expect(v.receipt_date).toBe(today);
     expect((await listTrials())[0]?.status).toBe('awaiting_acceptance'); // opening ≠ accepting

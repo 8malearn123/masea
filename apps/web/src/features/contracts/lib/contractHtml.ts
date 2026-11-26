@@ -105,7 +105,7 @@ export function buildContractHtml(
         : ''
     }
     <div>المبلغ الأساسي: <span class="num">${sar(contract.base_amount)}</span> ر.س</div>
-    <div>ضريبة القيمة المضافة (15%): <span class="num">${sar(contract.vat_amount)}</span> ر.س</div>
+    <div>ضريبة القيمة المضافة (${vatPct(contract)}%): <span class="num">${sar(contract.vat_amount)}</span> ر.س</div>
     <div class="t">الإجمالي: <span class="num">${sar(contract.total_amount)}</span> ر.س</div>
   </div>
 
@@ -119,6 +119,11 @@ export function buildContractHtml(
   ${opts.autoPrint === false ? '' : '<script>window.onload = function () { window.print(); };</script>'}
 </body>
 </html>`;
+}
+
+/** نسبة الضريبة كما سُجّلت في العقد نفسه (لا 15٪ ثابتة) — تطابق الفاتورة والتقارير. */
+function vatPct(c: Pick<ContractListItem, 'base_amount' | 'vat_amount'>): number {
+  return c.base_amount > 0 ? Math.round((c.vat_amount / c.base_amount) * 100) : 0;
 }
 
 function escapeHtml(s: string): string {

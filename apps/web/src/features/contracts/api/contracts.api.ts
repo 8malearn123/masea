@@ -4,10 +4,12 @@ import { scopeToViewerBranch } from '@/lib/branchScope';
 import { roleCan, type RoleCode } from '@/lib/permissions';
 import { isDemoId, isDemoMode, isIgnorableWriteError } from '@/shared/lib/demoBackend';
 import {
+  DEFAULT_PRICING_CONFIG,
   evaluatePromotion,
   findByCode,
   priceFromBase,
   ruleFloor,
+  splitVatInclusive,
   type PricingConfig,
 } from '@/shared/lib/pricing';
 import { countPromotionUse, listPromotions } from '@/features/pricing/api/promotions.api';
@@ -100,7 +102,8 @@ function mk(o: {
   /** the same customer across several contracts (purchase history) */
   customer_id?: string;
 }): ContractListItem {
-  const vat = Math.round(o.base_amount * 0.15 * 100) / 100;
+  // بيانات العرض: الصافي + ضريبة النسبة الافتراضية من إعدادات التسعير (لا رقم ثابت هنا)
+  const vat = Math.round(o.base_amount * DEFAULT_PRICING_CONFIG.vat_rate * 100) / 100;
   const total = o.base_amount + vat;
   return {
     id: o.id,
@@ -181,16 +184,19 @@ export function createTrialContract(o: {
   branch: string;
   start_date: string;
   end_date: string | null;
-  base_amount: number;
+  /** السعر المتفق عليه شامل الضريبة (0108) — يُستخرج منه الصافي والضريبة */
+  total_incl_vat: number;
+  vat_rate: number;
 }): ContractListItem {
   trialSeq += 1;
+  const split = splitVatInclusive(o.total_incl_vat, o.vat_rate);
   const row: ContractListItem = {
     ...mk({
       id: `local-trial-${Date.now()}-${trialSeq}`,
       contract_no: formatContractNo(new Date().getFullYear(), 90000 + trialSeq),
       service_code: o.service_code ?? 'transfer_trial',
       status: 'draft',
-      base_amount: o.base_amount,
+      base_amount: split.net,
       amount_paid: 0,
       customer_name: o.customer_name ?? '',
       branch: o.branch,
@@ -200,6 +206,9 @@ export function createTrialContract(o: {
     }),
     worker_profile_id: o.worker_profile_id,
     worker_name: o.worker_name,
+    vat_amount: split.vat,
+    total_amount: split.total,
+    vat_inclusive: true,
   };
   FALLBACK.unshift(row);
   seedDraftHistory(row);

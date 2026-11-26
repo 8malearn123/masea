@@ -2,7 +2,11 @@ import { useMemo } from 'react';
 import { CircleAlert, FileText, Printer } from 'lucide-react';
 import { Button, Input, Select } from '@/shared/ui';
 import { dateAr, sar } from '@/shared/lib/format';
-import { priceFromBase, type PricingConfig } from '@/shared/lib/pricing';
+import {
+  DEFAULT_PRICING_CONFIG,
+  splitVatInclusive,
+  type PricingConfig,
+} from '@/shared/lib/pricing';
 import type { CustomerLite } from '@/features/contracts/api/customers.api';
 import type { TrialFieldsInput } from '@/features/contracts/api/trials.api';
 import { buildTrialContractHtml } from '@/features/contracts/lib/trialContract/render';
@@ -32,7 +36,7 @@ export interface TrialDraft {
   job: string;
   mobile: string;
   customerNo: string;
-  /** السعر المتفق عليه قبل الضريبة */
+  /** السعر المتفق عليه شامل ضريبة القيمة المضافة (0108) */
   price: string;
   paid: string;
   dailyWage: string;
@@ -81,17 +85,20 @@ export function prefillFromCustomer(t: TrialDraft, c: CustomerLite): Partial<Tri
 export const workerKindFor = (profession: string | null | undefined): TrialDraft['workerKind'] =>
   DRIVER_RE.test(profession ?? '') ? 'السائق' : 'العاملة';
 
+/** الإجمالي = السعر المدخل (شامل الضريبة)؛ الصافي والضريبة يُستخرجان منه بنسبة الإعدادات. */
 export function trialTotals(t: TrialDraft, cfg: PricingConfig | undefined) {
-  const base = num(t.price);
-  if (!(base > 0)) return null;
-  const detail = priceFromBase('transfer_trial', base, {}, cfg);
+  const total = num(t.price);
+  if (!(total > 0)) return null;
+  const split = splitVatInclusive(total, (cfg ?? DEFAULT_PRICING_CONFIG).vat_rate);
   const paid = num(t.paid);
+  const paidOk = paid >= 0 ? Math.round(paid * 100) / 100 : 0;
   return {
-    base: detail.net,
-    vat: detail.vat,
-    total: detail.total,
-    paid: paid >= 0 ? paid : 0,
-    remaining: Math.round((detail.total - (paid >= 0 ? paid : 0)) * 100) / 100,
+    base: split.net,
+    vat: split.vat,
+    total: split.total,
+    rate: (cfg ?? DEFAULT_PRICING_CONFIG).vat_rate,
+    paid: paidOk,
+    remaining: Math.round((split.total - paidOk) * 100) / 100,
   };
 }
 
@@ -356,7 +363,7 @@ export function TrialPricing({
     <div className="grid gap-4 lg:grid-cols-2">
       <div className="grid content-start gap-3">
         <Input
-          label="سعر التجربة المتفق عليه (قبل الضريبة)"
+          label="سعر التجربة المتفق عليه (شامل الضريبة)"
           inputMode="decimal"
           className="num"
           value={t.price}
@@ -383,9 +390,15 @@ export function TrialPricing({
         </p>
       </div>
       {totals ? (
-        <dl className="grid content-start gap-2 text-sm sm:grid-cols-3">
+        <dl className="grid content-start gap-2 text-sm sm:grid-cols-2" data-testid="trial-money">
           {[
-            ['المبلغ الإجمالي', totals.total, `يشمل الضريبة ${sar(totals.vat)}`],
+            ['المبلغ قبل الضريبة', totals.base, null],
+            [
+              `ضريبة القيمة المضافة (${Math.round(totals.rate * 10000) / 100}٪)`,
+              totals.vat,
+              'مستخرجة من السعر المدخل',
+            ],
+            ['الإجمالي شامل الضريبة', totals.total, null],
             ['المبلغ المدفوع', totals.paid, null],
             ['المبلغ المتبقي', totals.remaining, null],
           ].map(([k, v, note]) => (

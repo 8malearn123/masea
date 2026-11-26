@@ -11,6 +11,7 @@ import { useAuth } from '@/store/auth';
 import { configValue, listConfig } from '@/features/settings/api/settings.api';
 import { demoLogOp, listLookups } from '@/features/contracts/api/contractOps.api';
 import { createTrialContract, demoMutateContract } from '@/features/contracts/api/contracts.api';
+import { getPricingConfig } from '@/features/pricing/api/pricing.api';
 import {
   TRIAL_CONTRACT_V1,
   isTrialContractDoc,
@@ -391,6 +392,7 @@ export const createTrialSchema = z.object({
   /** جنسية العاملة/السائق (العرض التجريبي فقط — مع قاعدة البيانات من ملفها) */
   workerNationality: z.string().nullable().optional(),
   branch: z.string().min(1, { message: 'اختر الفرع' }),
+  /** السعر المتفق عليه شامل ضريبة القيمة المضافة (0108) */
   price: z.number().positive({ message: 'حدّد سعر التجربة المتفق عليه' }),
   days: z.number().int().positive({ message: 'حدّد عدد أيام التجربة' }),
   receiptDate: z.string().min(1, { message: 'حدّد تاريخ استلام العاملة' }),
@@ -457,7 +459,8 @@ export async function createTrial(input: CreateTrialInput): Promise<Trial> {
     branch: p.branch,
     start_date: p.receiptDate,
     end_date: end,
-    base_amount: p.price,
+    total_incl_vat: p.price,
+    vat_rate: (await getPricingConfig()).vat_rate,
   });
   seq += 1;
   const row: Trial = {
@@ -469,7 +472,7 @@ export async function createTrial(input: CreateTrialInput): Promise<Trial> {
     worker_profile_id: p.workerId,
     worker_name: p.workerName ?? null,
     branch_id: p.branch,
-    price: p.price,
+    price: contract.base_amount, // الصافي (قبل الضريبة) — الإجمالي هو السعر المدخل
     vat_amount: contract.vat_amount,
     total_amount: contract.total_amount,
     trial_days: p.days,
@@ -783,7 +786,8 @@ export async function trialStep(
       branch: row.branch_id ?? '',
       start_date: addDays(todayIso(), 1),
       end_date: null,
-      base_amount: 0,
+      total_incl_vat: 0, // يُسعَّر على مسار مساند
+      vat_rate: (await getPricingConfig()).vat_rate,
     });
     row.transfer_contract_id = transfer.id;
     row.decision_note = note ?? null;
