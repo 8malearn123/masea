@@ -16,6 +16,19 @@ export interface PriceArgs {
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
+/**
+ * السعر المُدخل شامل الضريبة (مرآة vat_split_inclusive — 0108): تُستخرج الضريبة ولا تُضاف.
+ * الصافي = round(الإجمالي ÷ (1 + النسبة)) · الضريبة = الإجمالي − الصافي · الإجمالي = المدخل.
+ */
+export function splitVatInclusive(
+  total: number,
+  rate: number,
+): { net: number; vat: number; total: number } {
+  const t = round2(total);
+  const net = round2(t / (1 + rate));
+  return { net, vat: round2(t - net), total: t };
+}
+
 /** Apply 15% VAT to a base amount. */
 export function applyVat(base: number): PriceBreakdown {
   const b = round2(base);

@@ -81,13 +81,15 @@ select pg_temp.rejects($$select create_trial_agreement('c9200000-0000-0000-0000-
   'المادة التاسعة', 'more than 90 days is refused');
 insert into t_ctx values ('trial', (select id::text from create_trial_agreement('c9200000-0000-0000-0000-000000000001',
   'f9200000-0000-0000-0000-000000000001', 'نجران', 1500, 10, current_date)));
-select pg_temp.check((select t.status = 'draft' and t.end_date = current_date + 9 and t.total_amount = 1725
+-- 0108: the agreed price is VAT-inclusive — 1,500 = 1,304.35 + 195.65
+select pg_temp.check((select t.status = 'draft' and t.end_date = current_date + 9 and t.total_amount = 1500
+                         and t.price = 1304.35 and t.vat_amount = 195.65 and c.total_amount = 1500 and c.vat_inclusive
                          and c.service_code = 'transfer_trial' and c.worker_profile_id = t.worker_profile_id
                          and c.template_version = (select version from contract_templates
                               where template_code = 'transfer_trial_terms' and status = 'approved')
                         from trial_agreements t join contracts c on c.id = t.contract_id
                        where t.id = pg_temp.ctx('trial')::uuid),
-  'trial + its contract (price 1,500 + VAT, 10 days, pinned terms v1)');
+  'trial + its contract (1,500 incl. VAT, 10 days, pinned terms v1)');
 
 -- ---------- the secure link ----------
 insert into t_ctx values ('token', (select issue_trial_link(pg_temp.ctx('trial')::uuid)->>'token'));
@@ -100,7 +102,8 @@ select pg_temp.check((select status from worker_profiles where id = 'f9200000-00
 -- the customer opens the link (anonymous): viewing changes nothing
 set role anon;
 select pg_temp.check((trial_public_view(pg_temp.ctx('token'))->>'trial_days')::int = 10
-                     and (trial_public_view(pg_temp.ctx('token'))->>'price')::numeric = 1500
+                     and (trial_public_view(pg_temp.ctx('token'))->>'total_amount')::numeric = 1500
+                     and (trial_public_view(pg_temp.ctx('token'))->>'price')::numeric = 1304.35
                      and trial_public_view(pg_temp.ctx('token'))->>'receipt_date' = current_date::text,
   'price, days and receipt date are shown');
 reset role;

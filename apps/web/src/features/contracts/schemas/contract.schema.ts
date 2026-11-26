@@ -108,6 +108,8 @@ export const contractSchema = z.object({
   base_amount: z.number(),
   vat_amount: z.number(),
   total_amount: z.number(),
+  /** 0108: السعر أُدخل شاملاً الضريبة (الإجمالي هو المصدر) */
+  vat_inclusive: z.boolean().optional(),
   // Predefined-discount trail (0052): base_amount is the NET after discount.
   gross_amount: z.number().nullable().default(null),
   discount_amount: z.number().default(0),
